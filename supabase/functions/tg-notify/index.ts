@@ -13,7 +13,7 @@ const NOTIFY_PROXY     = Deno.env.get('NOTIFY_PROXY_URL')!;
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, content-type, x-internal',
+  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-internal',
 };
 
 const sb = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
