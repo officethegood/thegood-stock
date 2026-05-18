@@ -2,8 +2,8 @@
 //
 // POST { action: 'login' | 'refresh' | 'logout' | 'verify', ... }
 
-import { create, verify, getNumericDate } from 'djwt';
-import { createClient } from 'supabase';
+import { create, verify, getNumericDate } from 'https://deno.land/x/djwt@v3.0.2/mod.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
 const JWT_SECRET           = Deno.env.get('APP_JWT_HS_SECRET')!;
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
