@@ -7,8 +7,8 @@ window.APP_VERSION_DATE = '2026-05-18';
 
 const CONFIG = {
   // ===== Required (bootstrap) =====
-  SUPABASE_URL:     'https://REPLACE_WITH_PROJECT_REF.supabase.co',
-  SUPABASE_ANON_KEY:'REPLACE_WITH_ANON_KEY',
+  SUPABASE_URL:     'https://xtjsjrfixngfdkaahton.supabase.co',
+  SUPABASE_ANON_KEY:'sb_publishable_Ftlp8-FOgBahQpwnqd-FIQ_80ia_WTb',
   BASE_URL:         '/thegood-stock',
   GAS_AUTH_API_URL: 'https://script.google.com/macros/s/AKfycbxV5tbmeFx8SxEENtFgHNhZJfM26QocQX1bfqSzxxOPFd_CSiRCINGE2FfXuRAVF-IYGw/exec',
 
