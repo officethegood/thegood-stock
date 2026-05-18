@@ -1,0 +1,767 @@
+/* =============================================
+   PT Medical System - Professional UX/UI Theme
+   ============================================= */
+:root { color-scheme: only light; }
+.bg-purple-subtle { background-color: #e8d5f5 !important; }
+.text-purple { color: #6f42c1 !important; }
+
+/* --- BASE --- */
+body {
+    background-color: #f0f2f5;
+    font-family: 'Sarabun', sans-serif;
+    color: #333;
+}
+.view-section { display: none; }
+.view-section.active { display: block; animation: fadeIn 0.35s ease-out; }
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@keyframes blinkPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+.blink-badge { animation: blinkPulse 1.2s ease-in-out infinite; }
+.blink-border { animation: blinkPulse 1.5s ease-in-out infinite; }
+@keyframes spin360 { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.monitor-spin { animation: spin360 0.8s linear infinite; display: inline-block; }
+.monitor-loading { opacity: 0.4; pointer-events: none; transition: opacity 0.3s; }
+@keyframes monitorFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.monitor-fade-in .col-12, .monitor-fade-in .col-lg-6 { animation: monitorFadeIn 0.4s ease-out both; }
+.monitor-fade-in .col-12:nth-child(2), .monitor-fade-in .col-lg-6:nth-child(2) { animation-delay: 0.05s; }
+.monitor-fade-in .col-12:nth-child(3), .monitor-fade-in .col-lg-6:nth-child(3) { animation-delay: 0.1s; }
+.monitor-fade-in .col-12:nth-child(4), .monitor-fade-in .col-lg-6:nth-child(4) { animation-delay: 0.15s; }
+.monitor-fade-in .col-12:nth-child(5), .monitor-fade-in .col-lg-6:nth-child(5) { animation-delay: 0.2s; }
+.monitor-fade-in .col-12:nth-child(6), .monitor-fade-in .col-lg-6:nth-child(6) { animation-delay: 0.25s; }
+
+/* --- NAVBAR --- */
+.bg-modern-primary {
+    background: linear-gradient(135deg, #1e3a5f 0%, #0d6efd 100%);
+    box-shadow: 0 4px 20px rgba(13, 110, 253, 0.15);
+}
+
+/* --- System Toggle (shared_nav) --- */
+.system-toggle .sys-tog { border:1.5px solid rgba(255,255,255,0.35); color:rgba(255,255,255,0.55); background:transparent; font-size:0.78rem; padding:0.3rem 0.55rem; transition:all 0.2s ease; }
+.system-toggle .sys-tog:hover { color:#fff; background:rgba(255,255,255,0.15); }
+.system-toggle .sys-tog.active { color:#fff; font-weight:600; border-color:rgba(255,255,255,0.7); }
+#sys-tog-transport.active { background:#0d6efd; border-color:#0d6efd; }
+#sys-tog-firstaid.active { background:#dc3545; border-color:#dc3545; }
+#sys-tog-location.active { background:#198754; border-color:#198754; }
+.system-toggle .sys-tog { border-radius:0; }
+.system-toggle .sys-tog.rounded-pill-start {
+  border-top-left-radius:50rem !important;
+  border-bottom-left-radius:50rem !important;
+}
+.system-toggle .sys-tog.rounded-pill-end {
+  border-top-right-radius:50rem !important;
+  border-bottom-right-radius:50rem !important;
+}
+.system-toggle .sys-tog:not(:first-child) { border-left:none; }
+
+/* --- LOGIN --- */
+#login-view {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    min-height: 100vh; min-height: -webkit-fill-available;
+    background: linear-gradient(135deg, #f0f2f5 0%, #e3eaf6 100%);
+    z-index: 9999;
+    display: -webkit-flex; display: flex;
+    -webkit-justify-content: center; justify-content: center;
+    -webkit-align-items: center; align-items: center;
+    padding: 16px;
+}
+#login-view .card {
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.8) !important;
+    max-width: 100%;
+}
+/* #app-main-wrapper visibility controlled by JS per page */
+
+/* --- DASHBOARD --- */
+.dashboard-header {
+    font-weight: 700;
+    color: #1a233a;
+    letter-spacing: -0.5px;
+}
+
+/* Search Panel */
+.search-panel {
+    background-color: white;
+    border-radius: 16px;
+    padding: 1.25rem;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(0,0,0,0.04);
+}
+.search-panel .input-group-text {
+    background-color: #f8f9fa;
+    border-right: none;
+    color: #6c757d;
+}
+.search-panel .form-control {
+    background-color: #f8f9fa;
+    border-left: none;
+    box-shadow: none;
+    transition: all 0.2s ease;
+}
+.search-panel .form-control:focus {
+    background-color: #fff;
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.08);
+}
+
+/* Patient Card (Compact) */
+.patient-card {
+    cursor: pointer;
+    border: none;
+    border-radius: 12px;
+    background: #ffffff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.02);
+    margin-bottom: 8px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+}
+.patient-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+.patient-card:active {
+    transform: translateY(-1px);
+}
+
+.card-triage-indicator {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+    border-top-left-radius: 12px;
+    border-bottom-left-radius: 12px;
+}
+
+.fs-7 { font-size: 0.85rem; }
+.fs-8 { font-size: 0.75rem; }
+
+/* ===== Triage Buttons — ensure readable contrast in all states ===== */
+/* "ฉุกเฉิน" (Emergency) — pink, not red */
+.btn-triage-emergency {
+    color: #d63384 !important;
+    border: 1px solid #d63384 !important;
+    background-color: transparent !important;
+}
+.btn-triage-emergency:hover {
+    color: #fff !important;
+    background-color: #d63384 !important;
+    border-color: #d63384 !important;
+}
+.btn-check:checked + .btn-triage-emergency,
+.btn-check:active + .btn-triage-emergency {
+    color: #fff !important;
+    background-color: #d63384 !important;
+    border-color: #d63384 !important;
+    font-weight: 700 !important;
+}
+
+/* "เร่งด่วน" (Urgent) — darker yellow for readability */
+.btn-triage-urgent {
+    color: #b54708 !important;
+    border: 1px solid #f59e0b !important;
+    background-color: transparent !important;
+}
+.btn-triage-urgent:hover {
+    color: #000 !important;
+    background-color: #fbbf24 !important;
+    border-color: #f59e0b !important;
+}
+.btn-check:checked + .btn-triage-urgent,
+.btn-check:active + .btn-triage-urgent {
+    color: #000 !important;
+    background-color: #fbbf24 !important;
+    border-color: #f59e0b !important;
+    font-weight: 700 !important;
+}
+
+/* Force white text on all selected danger/success triage buttons */
+.btn-check:checked + .btn-outline-danger,
+.btn-check:checked + .btn-outline-success {
+    color: #fff !important;
+    font-weight: 700 !important;
+}
+
+/* Force 24-hour time format (en-GB locale on all type=time) */
+input[type="time"] { font-variant-numeric: tabular-nums; }
+/* Suppress AM/PM picker: Chromium uses host locale unless lang set; we set on each input */
+
+/* Thai text overflow fix */
+.text-truncate { padding-bottom: 0.15em; }
+.text-truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.5;
+    padding-bottom: 0.15em;
+}
+
+/* --- LANDING PAGE --- */
+#landing-page {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(135deg, #f0f2f5 0%, #e3eaf6 100%);
+    z-index: 9998;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 24px 16px;
+    padding-top: calc(24px + env(safe-area-inset-top));
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+}
+.landing-wrapper {
+    max-width: 780px; width: 100%;
+    margin: 0 auto;
+    min-height: 100%;
+    display: -webkit-flex; display: flex;
+    -webkit-flex-direction: column; flex-direction: column;
+    -webkit-justify-content: safe center; justify-content: safe center;
+}
+.landing-card {
+    background: white;
+    border-radius: 20px;
+    padding: 32px 24px;
+    text-align: center;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.04);
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.landing-card:hover {
+    border-color: #0d6efd;
+    transform: translateY(-6px);
+    box-shadow: 0 12px 32px rgba(13, 110, 253, 0.12);
+}
+.landing-card:active { transform: translateY(-2px); }
+.landing-card-icon {
+    width: 72px; height: 72px;
+    border-radius: 50%;
+    display: -webkit-inline-flex; display: inline-flex;
+    -webkit-align-items: center; align-items: center;
+    -webkit-justify-content: center; justify-content: center;
+    font-size: 1.8rem;
+    margin-bottom: 16px;
+}
+
+/* --- LANDING PAGE: Mobile tweaks --- */
+@media (max-width: 575.98px) {
+    #landing-page { padding: 16px 12px; padding-top: calc(16px + env(safe-area-inset-top)); padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+    .landing-card { padding: 20px 16px; border-radius: 16px; }
+    .landing-card-icon { width: 56px; height: 56px; font-size: 1.4rem; margin-bottom: 10px; }
+    .landing-card h5 { font-size: 1.05rem; margin-bottom: 0.2rem !important; }
+    .landing-card p { font-size: 0.82rem; }
+    #landing-logo { height: 48px !important; }
+    .landing-wrapper .row.g-4 { --bs-gutter-y: 0.75rem; --bs-gutter-x: 0.75rem; }
+}
+
+/* --- LOCATION: Public Share Screen --- */
+#loc-public-share-screen {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    min-height: 100vh; z-index: 10000;
+    background: linear-gradient(135deg, #f0f2f5 0%, #e3eaf6 100%);
+}
+
+/* --- LOCATION: Sub-Navigation --- */
+.loc-nav-btn {
+    background: transparent; color: #6c757d; border: 1px solid transparent;
+    transition: all 0.2s;
+}
+.loc-nav-btn:hover { background: #f0fdf4; color: #198754; }
+.loc-nav-btn.active {
+    background: #198754 !important; color: #fff !important;
+    border-color: #198754 !important; box-shadow: 0 2px 6px rgba(25,135,84,0.25);
+}
+
+/* --- LOCATION: Leaflet Map Fix --- */
+#loc-map .leaflet-popup-content { font-family: 'Sarabun', sans-serif; }
+
+/* --- FIRST AID: Quick Dispense Buttons --- */
+.fa-qty-btn {
+    width: 40px; height: 40px; padding: 0;
+    font-size: 1.1rem; font-weight: bold;
+    display: -webkit-inline-flex; display: inline-flex;
+    -webkit-align-items: center; align-items: center;
+    -webkit-justify-content: center; justify-content: center;
+}
+.fa-qty-input {
+    width: 56px;
+}
+
+/* --- FIRST AID: Patient Table Mobile --- */
+.fa-table-hide-mobile { }
+@media (max-width: 768px) {
+    .fa-table-hide-mobile { display: none !important; }
+}
+
+/* Status Badges */
+.badge-status {
+    padding: 0.3em 0.6em;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    border: 1px solid transparent;
+}
+
+/* FAB Button */
+.fab-btn {
+    position: fixed;
+    bottom: 30px; right: 30px;
+    width: 60px; height: 60px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #0d6efd, #0b5ed7);
+    color: white; font-size: 24px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 6px 20px rgba(13, 110, 253, 0.35);
+    cursor: pointer; z-index: 1000;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.fab-btn:hover {
+    transform: scale(1.1) translateY(-2px);
+    box-shadow: 0 10px 30px rgba(13, 110, 253, 0.4);
+}
+.fab-btn:active {
+    transform: scale(1.05);
+}
+
+/* --- STEPPER (Professional) --- */
+.step-indicator {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    position: relative;
+    background: white;
+    padding: 0;
+    border-radius: 16px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+    overflow: hidden;
+}
+.step-item {
+    flex: 1;
+    text-align: center;
+    padding: 14px 10px;
+    color: #adb5bd;
+    cursor: default;
+    font-weight: 500;
+    font-size: 0.9rem;
+    border-bottom: 3px solid transparent;
+    transition: all 0.3s ease;
+    position: relative;
+}
+.step-item .step-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: #e9ecef;
+    color: #adb5bd;
+    font-size: 0.8rem;
+    font-weight: 700;
+    margin-right: 8px;
+    transition: all 0.3s ease;
+    vertical-align: middle;
+}
+.step-item.active {
+    border-bottom-color: #0d6efd;
+    color: #0d6efd;
+    font-weight: 700;
+    background: linear-gradient(to bottom, rgba(13, 110, 253, 0.03), transparent);
+}
+.step-item.active .step-number {
+    background: #0d6efd;
+    color: white;
+    box-shadow: 0 2px 8px rgba(13, 110, 253, 0.3);
+}
+.step-item.completed {
+    border-bottom-color: #198754;
+    color: #198754;
+}
+.step-item.completed .step-number {
+    background: #198754;
+    color: white;
+}
+
+/* --- FORM ELEMENTS --- */
+.patient-banner {
+    background: white;
+    border-radius: 16px;
+    padding: 18px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+    border: 1px solid rgba(0,0,0,0.04);
+    overflow: hidden;
+}
+.patient-banner .badge {
+    white-space: normal;
+    word-break: break-word;
+    text-align: left;
+    max-width: 100%;
+}
+
+/* Island Card (Form Sections) */
+.island-card {
+    border: none;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.03), 0 4px 16px rgba(0,0,0,0.03);
+    border-radius: 16px;
+    transition: box-shadow 0.3s ease;
+}
+.island-card:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05), 0 6px 20px rgba(0,0,0,0.04);
+}
+.island-card .card-title {
+    font-size: 1.05rem;
+    letter-spacing: -0.2px;
+}
+.island-card .card-title i {
+    font-size: 1.1rem;
+}
+
+/* Form Controls - Professional Focus States */
+.form-control, .form-select {
+    transition: all 0.2s ease;
+    border-radius: 8px;
+}
+.form-control:focus, .form-select:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
+    background-color: #fff !important;
+}
+.form-control.bg-light, .form-select.bg-light {
+    border: 1px solid #e9ecef;
+}
+.form-control.bg-light:focus, .form-select.bg-light:focus {
+    border-color: #0d6efd;
+    background-color: #fff !important;
+}
+
+/* Radio/Checkbox Button Groups */
+.btn-check:checked + .btn-outline-secondary {
+    background-color: #0d6efd !important;
+    border-color: #0d6efd !important;
+    color: white !important;
+    box-shadow: 0 2px 8px rgba(13, 110, 253, 0.25);
+}
+.btn-outline-secondary.rounded-pill {
+    border-color: #dee2e6;
+    color: #495057;
+}
+.btn-outline-secondary.rounded-pill:hover {
+    background-color: #f8f9fa;
+    border-color: #ced4da;
+}
+
+/* IV Row */
+.iv-row { transition: all 0.3s ease; border-radius: 8px; }
+.v-gcs-group select { padding-left: 2px; padding-right: 2px; text-align: center; }
+.row-locked { background-color: #f8f9fa !important; border-radius: 8px; }
+.row-locked input, .row-locked select { background-color: #f8f9fa !important; color: #6c757d; border-color: #e9ecef; }
+
+/* Vital Log Entry */
+.vital-log-entry {
+    transition: all 0.25s ease;
+    border: 1px solid #e9ecef;
+    border-radius: 14px;
+    background-color: #fff;
+}
+.vital-log-entry:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+    border-color: #dee2e6;
+}
+
+/* Fix Sedate Checkbox Visibility in Locked Row */
+.row-locked .form-check-input:disabled {
+    opacity: 1 !important; filter: none !important;
+    background-color: #0d6efd !important; border-color: #0d6efd !important;
+}
+.row-locked .form-check-input:disabled:not(:checked) {
+    background-color: #e9ecef !important; border-color: #ced4da !important;
+}
+
+/* --- BUTTONS (Polished) --- */
+.btn {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.btn-primary {
+    background: linear-gradient(135deg, #0d6efd, #0b5ed7);
+    border: none;
+}
+.btn-primary:hover {
+    background: linear-gradient(135deg, #0b5ed7, #0a4fc4);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(13, 110, 253, 0.25);
+}
+.btn-success {
+    background: linear-gradient(135deg, #198754, #157347);
+    border: none;
+}
+.btn-success:hover {
+    background: linear-gradient(135deg, #157347, #12633e);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(25, 135, 84, 0.25);
+}
+
+/* --- MODAL (Professional) --- */
+.modal-content {
+    border: none;
+    border-radius: 20px !important;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+.modal-header {
+    border-radius: 20px 20px 0 0 !important;
+}
+
+/* --- PAGINATION --- */
+.page-link {
+    border-radius: 8px !important;
+    margin: 0 2px;
+    border: none;
+    color: #495057;
+    transition: all 0.2s ease;
+}
+.page-link:hover {
+    background-color: #e9ecef;
+    color: #0d6efd;
+}
+.page-item.active .page-link {
+    background: linear-gradient(135deg, #0d6efd, #0b5ed7);
+    box-shadow: 0 2px 8px rgba(13, 110, 253, 0.3);
+}
+
+/* --- ADMIN STATS CARDS --- */
+#stats-content .card {
+    transition: all 0.25s ease;
+}
+#stats-content .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* --- SCROLLBAR --- */
+::-webkit-scrollbar {
+    width: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: #ced4da;
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #adb5bd;
+}
+
+/* --- PRINT LAYOUT --- */
+#print-layout-container { display: none; }
+
+@media print {
+  :root { color-scheme: light only !important; }
+  @page { size: A4; margin: 10mm; }
+  html { background: white !important; color-scheme: light only !important; }
+  body { background-color: white !important; font-size: 11pt; color: black !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0 !important; padding: 0 !important; }
+  #app-main-wrapper, .modal-backdrop, .modal, .fab-btn, #connection-alert { display: none !important; }
+  #print-layout-container, #monitor-print-layout-container { display: block !important; position: absolute; top: 0; left: 0; width: 100%; min-height: 100%; background-color: white !important; z-index: 9999; }
+  .print-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 10pt; }
+  .print-table th, .print-table td { border: 1px solid #000; padding: 4px; vertical-align: top; }
+  .print-table th { background-color: #eee !important; font-weight: bold; text-align: center; }
+  .print-header { text-align: center; margin-bottom: 15px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+  .print-section-title { font-weight: bold; margin-top: 10px; margin-bottom: 5px; text-decoration: underline; font-size: 11pt; }
+  .no-border td { border: none !important; padding: 2px 5px !important; }
+}
+
+/* --- VALIDATION --- */
+.is-invalid-custom {
+    border: 2px solid #dc3545 !important;
+    background-color: #fff5f5 !important;
+}
+.validation-msg {
+    color: #dc3545;
+    font-size: 0.75rem;
+    margin-top: 2px;
+    display: none;
+}
+.is-invalid-custom ~ .validation-msg,
+.is-invalid-custom + .validation-msg {
+    display: block;
+}
+
+/* --- RESPONSIVE: TABLET (768px - 1024px) --- */
+@media (max-width: 1024px) {
+    .container { max-width: 100%; }
+    .search-panel { padding: 1rem; border-radius: 14px; }
+    .step-item { font-size: 0.82rem; padding: 12px 6px; }
+    .step-item .step-number { width: 26px; height: 26px; font-size: 0.75rem; }
+    .island-card { border-radius: 14px; }
+    .island-card .card-title { font-size: 0.95rem; }
+    .fa-qty-btn { width: 38px; height: 38px; }
+    .fa-qty-input { width: 52px; }
+}
+
+/* --- RESPONSIVE: MOBILE (< 768px) --- */
+@media (max-width: 768px) {
+    body { font-size: 0.95rem; }
+
+    /* Stepper - compact on mobile */
+    .step-item {
+        font-size: 0.78rem;
+        padding: 12px 4px;
+    }
+    .step-item .step-number {
+        width: 24px; height: 24px;
+        font-size: 0.7rem;
+        margin-right: 4px;
+    }
+    .step-item .step-label {
+        font-size: 0.72rem;
+    }
+
+    /* Cards */
+    .island-card {
+        border-radius: 12px;
+        padding: 1rem !important;
+    }
+    .island-card .card-title {
+        font-size: 0.95rem;
+    }
+
+    /* Patient Banner */
+    .patient-banner {
+        padding: 12px;
+        border-radius: 12px;
+    }
+    .patient-banner .fs-5 { font-size: 1rem !important; }
+
+    /* FAB */
+    .fab-btn {
+        bottom: 20px; right: 20px;
+        width: 52px; height: 52px;
+        font-size: 20px;
+    }
+
+    /* Dashboard header */
+    .dashboard-header { font-size: 1.3rem; }
+
+    /* Triage button group */
+    .btn-group[role="group"] .btn {
+        font-size: 0.78rem;
+        padding: 0.4rem 0.5rem;
+    }
+
+    /* Drainage/Equipment checkboxes */
+    .form-check.bg-light {
+        padding: 0.5rem !important;
+    }
+
+    /* Search panel */
+    .search-panel {
+        padding: 0.75rem;
+        border-radius: 12px;
+    }
+
+    /* Modal */
+    .modal-content {
+        border-radius: 16px !important;
+        margin: 8px;
+    }
+    .modal-dialog-centered { -webkit-align-items: flex-end; align-items: flex-end; }
+    .modal-body { max-height: 65vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+
+    /* FA Quick Dispense */
+    .fa-qty-btn { width: 44px; height: 44px; font-size: 1.2rem; }
+    .fa-qty-input { width: 54px; }
+
+    /* FA Patient Table - compact on mobile */
+    #fa-patient-table-body td { font-size: 0.82rem; padding: 6px 4px !important; }
+
+    /* Admin tabs */
+    .nav-pills .nav-link {
+        font-size: 0.82rem;
+        padding: 0.4rem 0.8rem;
+    }
+
+    /* Vital log entry */
+    .vital-log-entry {
+        padding: 0.75rem !important;
+    }
+    .vital-log-entry label.small {
+        font-size: 0.68rem !important;
+    }
+
+    /* Arrest log entry */
+    .arrest-log-entry .form-check-inline {
+        margin-right: 0.3rem !important;
+    }
+    .arrest-log-entry .form-check-label {
+        font-size: 0.75rem;
+    }
+    .arrest-log-entry .badge.bg-danger {
+        font-size: 0.65rem;
+        padding: 3px 6px !important;
+    }
+}
+
+/* --- RESPONSIVE: SMALL MOBILE (< 400px) --- */
+@media (max-width: 400px) {
+    .step-item .step-label { display: none; }
+    .step-item .step-number { margin-right: 0; }
+    .step-item { padding: 14px 8px; }
+
+    .navbar-brand span { display: none !important; }
+
+    .btn-group[role="group"] .btn {
+        font-size: 0.7rem;
+        padding: 0.35rem 0.4rem;
+    }
+
+    /* Arrest log compact */
+    .arrest-log-entry .form-check-inline {
+        margin-right: 0.15rem !important;
+    }
+    .arrest-log-entry .form-check-label {
+        font-size: 0.68rem;
+    }
+
+/* =============================================
+   Thegood Stock — Teal accent override
+   ============================================= */
+:root {
+  --stock-accent:        #0d9488;   /* teal-600 */
+  --stock-accent-dark:   #0f766e;   /* teal-700 */
+  --stock-accent-light:  #14b8a6;   /* teal-500 */
+  --stock-accent-subtle: #ccfbf1;   /* teal-100 */
+}
+
+.btn-stock-primary {
+  background-color: var(--stock-accent);
+  border-color:     var(--stock-accent);
+  color: #fff;
+}
+.btn-stock-primary:hover,
+.btn-stock-primary:focus {
+  background-color: var(--stock-accent-dark);
+  border-color:     var(--stock-accent-dark);
+  color: #fff;
+}
+.btn-outline-stock-accent {
+  color: var(--stock-accent);
+  border-color: var(--stock-accent);
+  background-color: transparent;
+}
+.btn-outline-stock-accent:hover {
+  background-color: var(--stock-accent);
+  color: #fff;
+}
+.nav-link.active.stock-tab {
+  background-color: var(--stock-accent-subtle) !important;
+  color: var(--stock-accent-dark) !important;
+  font-weight: 600;
+}
+.text-stock-accent { color: var(--stock-accent) !important; }
+.border-stock-accent { border-color: var(--stock-accent) !important; }
+
+/* Hide module-toggle (V.5 had multi-system nav; Stock is standalone) */
+.system-toggle { display: none !important; }
+}
