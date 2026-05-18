@@ -852,4 +852,11 @@ Tick each row as you verify. Re-run after every material change.
 | Blocked | TBD | — |
 | Pending | TBD | — |
 
-**Phase 2 closure verdict:** TBD until T45–T70 executed.
+**Phase 2 closure verdict (PM, 2026-05-19):** Migrations deployed + verified; DB-level smoke (T1-T7) PASSED including S-3 race-window and S-5 server-side fefo_override; UI live and visually verified (4-segment tabs, "ล็อตยา" empty state, dashboard expiry timeline panel replaces Phase 1 placeholder). T45-T70 full UI flows deferred until at least one MEDICATION item is seeded by Admin. Tag `phase2-medication = d934cda` pushed 2026-05-19.
+
+## Phase 2 deploy smoke (DB-level, 2026-05-19 @ d934cda)
+- [x] **DEPLOY-A**: 9 migrations + S-1 hotfix applied via Mgmt API — all verify counts pass
+- [x] **DEPLOY-B**: Trigger smoke test 7/7 PASSED (T1 receive lot A, T2 multi-lot, T3 FEFO correct, T4 FEFO override server-side, T5 expired-block, T6 S-3 race-window, T7 cron smoke)
+- [x] **DEPLOY-C**: S-1 hotfix verified live — `leaked_service_role: false`
+- [x] **DEPLOY-D**: Browser sanity — 4 sub-views render; ล็อตยา empty state visible
+- [x] **DEPLOY-E**: Dashboard expiry timeline panel replaces placeholder (M-76/M-77 microcopy)
