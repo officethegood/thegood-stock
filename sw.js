@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.2.2';
+const CACHE_VERSION = 'thegood-stock-v0.3.0';
 const STATIC_ASSETS = [
   './',
   './login.html',
@@ -20,12 +20,14 @@ const STATIC_ASSETS = [
   './shared/cloudinary.js',
   './shared/realtime.js',
   './shared/inventory.js',
+  './shared/lots.js',
   './shared/scanner.js',
   './js/login.js',
   './js/admin-shell.js',
   './js/dashboard.js',
   './js/locations.js',
   './js/inventory.js',
+  './js/inventory-lots.js',
   './js/ambulances.js',
   './js/settings-ui.js',
   './js/sessions-ui.js',

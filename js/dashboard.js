@@ -1,19 +1,23 @@
 // js/dashboard.js
-// Phase 1 — Admin Dashboard tab controller (Phase F).
+// Phase 1 + Phase 2 — Admin Dashboard tab controller.
 //
 // Spec refs:
 //   docs/superpowers/specs/2026-05-18-phase1-inventory-design.md   §1 (dashboard line), §7.3, §3 row 7
 //   docs/superpowers/designs/2026-05-18-phase1-ui-design.md        §4 Area 3 (4.3 wireframes, 4.4 states, 4.5 microcopy)
 //   docs/superpowers/plans/2026-05-18-phase1-inventory-plan.md     Phase F → Task F2
+//   docs/superpowers/plans/2026-05-19-phase2-medication-plan.md    Task B4b
+//   docs/superpowers/designs/2026-05-18-phase2-ui-design.md        §3.5, §6.7 (M-67..M-79)
 //
-// Locked decisions (PM Pex 2026-05-18 — DO NOT re-debate):
+// Locked decisions (PM Pex 2026-05-18/19 — DO NOT re-debate):
 //   Q1: NO Transfer modal — irrelevant here anyway
 //   Q2: NO Chart.js — category breakdown is plain text/badge list (design §4.4.3 fallback)
 //   Q3: NO photo upload — irrelevant here anyway
 //
-// Upstream APIs consumed (all via window.AppInventory — never direct Supabase for inventory data):
-//   AppInventory.listItems, listCategories, getLowStock, getItem, subscribeInventory
+// Upstream APIs consumed:
+//   AppInventory.listItems, listCategories, getLowStock, getItem, subscribeInventory (via window.AppInventory)
+//   Phase 2 — reads stock_lots directly via getSupabaseClient() for the expiry timeline panel.
 //   AppUi: showToast, escapeHtml (globals from shared/ui.js)
+//   AppLots.getExpiryBucket (window.AppLots from shared/lots.js — Phase 2, lazy-loaded)
 //
 // Public namespace: window.AppDashboardTab + window.initDashboardTab (called by admin-shell.js)
 
@@ -116,15 +120,17 @@
 
       <!-- D+E. Panel 3 + Panel 4 placeholders — design §4.4.5 -->
       <div class="row g-3 mt-1">
-        <!-- Panel 3 — Expiry overview (Phase 2 placeholder) -->
+        <!-- Panel 3 — Expiry timeline (Phase 2 — replaces "เปิดใช้งานใน Phase 2" placeholder) -->
         <div class="col-12 col-md-6">
-          <div class="card h-100" style="opacity:0.7;" aria-disabled="true">
-            <div class="card-body text-center py-4">
-              <div class="text-muted mb-2" style="font-size:2.5rem;">
-                <i class="bi bi-clock-history"></i>
+          <div class="card h-100" id="dash-panel-expiry" aria-busy="true">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <span><i class="bi bi-clock-history"></i> ภาพรวมวันหมดอายุ</span>
+              <small class="text-muted" id="dash-expiry-updated">—</small>
+            </div>
+            <div id="dash-expiry-body" class="card-body p-0">
+              <div class="text-center text-muted py-4">
+                <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด…
               </div>
-              <h6 class="card-title text-muted mb-1">ภาพรวมสินค้าหมดอายุ</h6>
-              <p class="small text-muted mb-0">🔒 เปิดใช้งานใน Phase 2 (ระบบยา + ล็อต)</p>
             </div>
           </div>
         </div>
@@ -346,6 +352,174 @@
         _gotoInventoryLowStock();
       });
     });
+  }
+
+  // =========================================================================
+  // Panel 3 — Expiry timeline (Phase 2 — replaces placeholder)
+  //
+  // Data: reads stock_lots directly. Buckets client-side into overdue / 30 / 60 / 90 / normal.
+  // Click row → open Inventory > ล็อตยา sub-view with pre-filter (via AppInventoryTab.openLotsSubview).
+  // UX: §3.5, M-67..M-79.
+  // =========================================================================
+
+  async function _loadPanelExpiry() {
+    const body    = document.getElementById('dash-expiry-body');
+    const updated = document.getElementById('dash-expiry-updated');
+    const card    = document.getElementById('dash-panel-expiry');
+    if (!body) return;
+
+    try {
+      const sb = getSupabaseClient();
+      const { data: lots, error } = await sb
+        .from('stock_lots')
+        .select('id,expiry_date,status,current_qty')
+        .neq('status', 'depleted');
+
+      if (error) {
+        body.innerHTML = `<div class="text-danger small p-3">โหลดข้อมูลไม่สำเร็จ (M-79)</div>`;
+        card?.setAttribute('aria-busy', 'false');
+        return;
+      }
+
+      // Lazy-load AppLots for bucket helper (may not be loaded if Inventory tab not opened yet)
+      let bucketFn = null;
+      if (window.AppLots) {
+        bucketFn = window.AppLots.getExpiryBucket;
+      } else {
+        // Inline fallback bucket (mirrors shared/lots.js getExpiryBucket)
+        bucketFn = function (lot) {
+          if (lot.status === 'expired') return 'overdue';
+          if (!lot.expiry_date) return 'normal';
+          const today = new Date(); today.setHours(0,0,0,0);
+          const exp   = new Date(lot.expiry_date); exp.setHours(0,0,0,0);
+          const days  = Math.floor((exp - today) / 86400000);
+          if (days < 0)   return 'overdue';
+          if (days <= 30) return 'within30';
+          if (days <= 60) return 'within60';
+          if (days <= 90) return 'within90';
+          return 'normal';
+        };
+      }
+
+      const counts = { overdue: 0, within30: 0, within60: 0, within90: 0, normal: 0 };
+      for (const lot of (lots || [])) {
+        const bucket = bucketFn(lot);
+        if (counts[bucket] !== undefined) counts[bucket]++;
+      }
+
+      // Update timestamp
+      if (updated) {
+        const now = new Date();
+        updated.textContent = `อัปเดต: ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+      }
+
+      // M-76: no lots at all
+      if (!lots || lots.length === 0) {
+        body.innerHTML = `
+          <div class="text-center text-muted py-4">
+            <p class="mb-1 fw-semibold">ยังไม่มีล็อตยาในระบบ (M-76)</p>
+            <p class="small mb-0">รับเข้าล็อตแรกได้ที่ Inventory → รับเข้า (M-77)</p>
+          </div>`;
+        card?.setAttribute('aria-busy', 'false');
+        return;
+      }
+
+      // M-78: all clear (no concerning lots)
+      const urgentCount = counts.overdue + counts.within30 + counts.within60 + counts.within90;
+      if (urgentCount === 0) {
+        body.innerHTML = `
+          <div class="text-center text-success py-4">
+            <i class="bi bi-check-circle-fill" style="font-size:2rem;"></i>
+            <div class="mt-2 fw-semibold">ล็อตยาทั้งหมดสถานะปกติ ✓ (M-78)</div>
+            <div class="small text-muted mt-1">ปกติ (> 90 วัน): ${counts.normal} ล็อต</div>
+          </div>`;
+        card?.setAttribute('aria-busy', 'false');
+        return;
+      }
+
+      // Normal: 4-row expiry timeline
+      const rows = [
+        {
+          key: 'overdue', label: 'เกินกำหนดแล้ว', count: counts.overdue,
+          badgeCls: 'bg-danger', borderCls: 'border-danger', filter: 'overdue',
+        },
+        {
+          key: 'within30', label: 'ภายใน 30 วัน', count: counts.within30,
+          badgeCls: 'bg-warning text-dark', borderCls: 'border-warning', filter: '30',
+        },
+        {
+          key: 'within60', label: 'ภายใน 31–60 วัน', count: counts.within60,
+          badgeCls: 'bg-warning text-dark opacity-75', borderCls: 'border-warning', filter: '60',
+        },
+        {
+          key: 'within90', label: 'ภายใน 61–90 วัน', count: counts.within90,
+          badgeCls: 'bg-stock-accent-subtle text-stock-accent-dark', borderCls: 'border-stock-accent', filter: '90',
+        },
+      ];
+
+      const rowsHtml = rows.map((r) => `
+        <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center
+                  py-3 ${r.count === 0 ? 'text-muted' : ''}"
+           href="#" data-expiry-filter="${_esc(r.filter)}"
+           aria-label="${_esc(r.label)}: ${r.count} ล็อต">
+          <span class="border-start ${r.borderCls} border-3 ps-2">
+            ${_esc(r.label)}
+          </span>
+          <span class="d-flex align-items-center gap-2">
+            <span class="badge ${r.badgeCls}">${r.count} ล็อต</span>
+            <span class="small text-muted">ดูล็อต →</span>
+          </span>
+        </a>`).join('');
+
+      body.innerHTML = `
+        <div class="list-group list-group-flush">
+          ${rowsHtml}
+        </div>
+        <div class="px-3 py-2 text-muted small border-top">
+          · ปกติ (> 90 วัน): ${counts.normal} ล็อต
+        </div>`;
+
+      // Wire click handlers — switch to Inventory > ล็อตยา sub-view with pre-filter
+      body.querySelectorAll('[data-expiry-filter]').forEach((link) => {
+        link.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          _gotoInventoryLots(link.dataset.expiryFilter);
+        });
+      });
+
+      card?.setAttribute('aria-busy', 'false');
+    } catch (e) {
+      const body2 = document.getElementById('dash-expiry-body');
+      if (body2) body2.innerHTML = `<div class="text-danger small p-3">โหลดข้อมูลไม่สำเร็จ (M-79)</div>`;
+      console.error('[dashboard] _loadPanelExpiry error', e);
+    }
+  }
+
+  /**
+   * Switch to Inventory tab → ล็อตยา sub-view with the given expiry filter.
+   * Phase 2 extension (mirrors _gotoInventoryLowStock pattern).
+   *
+   * @param {string} filter  'overdue'|'30'|'60'|'90'|'all'
+   */
+  function _gotoInventoryLots(filter) {
+    try { location.hash = `#inventory?lotsFilter=${filter}`; } catch { /* ignore */ }
+
+    const invBtn = document.querySelector('[data-tab="inventory"]');
+    if (invBtn) invBtn.click();
+
+    // Poll for AppInventoryTab to be ready (lazy-init tab)
+    let tries = 0;
+    const tick = () => {
+      if (window.AppInventoryTab && typeof window.AppInventoryTab.openLotsSubview === 'function') {
+        window.AppInventoryTab.openLotsSubview(filter);
+        return;
+      }
+      if (typeof window.initInventoryTab === 'function' && tries === 0) {
+        Promise.resolve(window.initInventoryTab()).catch(() => {});
+      }
+      if (++tries < 15) setTimeout(tick, 80);
+    };
+    tick();
   }
 
   /**
@@ -585,6 +759,7 @@
       _refreshTimer = null;
       _loadPanelStock();
       _loadPanelLow();
+      _loadPanelExpiry();   // Phase 2: also refresh expiry timeline on stock changes
     }, 300);
   }
 
@@ -603,10 +778,11 @@
       _categories = r.error ? [] : (r.data || []);
     } catch { _categories = []; }
 
-    // Parallel first load — three independent panels + legacy status
+    // Parallel first load — four independent panels + legacy status
     await Promise.all([
       _loadPanelStock(),
       _loadPanelLow(),
+      _loadPanelExpiry(),   // Phase 2 — expiry timeline
       _loadLegacyStatus(),
     ]);
 
@@ -637,7 +813,7 @@
   window.AppDashboardTab = {
     init,
     teardown,
-    reloadPanels: () => { _loadPanelStock(); _loadPanelLow(); },
+    reloadPanels: () => { _loadPanelStock(); _loadPanelLow(); _loadPanelExpiry(); },
   };
 
   // admin-shell.js expects window.initDashboardTab — shim (matches Phase 0 contract)

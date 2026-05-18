@@ -1,30 +1,38 @@
 // js/staff-scan.js
-// Phase 1 — Staff Scan page controller.
+// Phase 1 + Phase 2 — Staff Scan page controller.
 //
 // Design:  docs/superpowers/designs/2026-05-18-phase1-ui-design.md §3 (Area 2)
+//          docs/superpowers/designs/2026-05-18-phase2-ui-design.md  §3.4, §5.2
 // Spec:    docs/superpowers/specs/2026-05-18-phase1-inventory-design.md §7.3
+//          docs/superpowers/specs/2026-05-19-phase2-decisions-locked.md Q-D1, Q-D2, Q-D4
 // Plan:    docs/superpowers/plans/2026-05-18-phase1-inventory-plan.md Phase E
+//          docs/superpowers/plans/2026-05-19-phase2-medication-plan.md Task B4
 //
 // Locked decisions enforced here:
 //   Q-Phase1-F  Dedicated staff-scan.html (we ARE that page)
 //   Q-Phase1-G  Staff can do `issue` + `adjustment_loss` only — UI hides the rest
 //   Q-Phase1-J  client_ref_id UUID UNIQUE for idempotent retries
 //   Q3 (PM)     NO photo upload — even for adjustment_loss in Phase 1
+//   Q-D1 (Phase 2) NO force-issue override — expired/recalled lots CANNOT be issued, period
+//   Q-D2 (Phase 2) FEFO override warning modal when non-FEFO lot selected
+//                  Exact copy: "ล็อต {lot_number} ไม่ใช่ล็อตที่ควรใช้ก่อน — ยืนยันหรือไม่?"
+//   Q-D4 (Phase 2) Lot picker shows 5 lots by default; accordion for remainder
 //
-// Upstream APIs consumed (read-only; never mutate):
+// Upstream APIs consumed:
 //   window.ensureLoggedIn / getUserName / handleLogout
 //   window.AppScanner.{isSupported, hasNativeDetector, startScanning, stopScanning, parseScanResult}
 //   window.AppInventory.{issue, adjustmentLoss, searchByBarcode, findLocationByCode, getItem, listItems, _uuid}
+//   window.AppLots (shared/lots.js — Phase 2): fetchAvailableLots, renderLotPicker, getLotBadge, formatThaiDate, mapTriggerErrorToToast
 //   window.showToast (shared/ui.js)
 //
-// State machine:
-//   IDLE → ITEM_SCANNED → LOCATION_SCANNED → CONFIRMING → SUCCESS → IDLE (auto)
-//   plus side states for MANUAL_FILL and the permission gate ("PERMISSION_PROMPT" / "PERMISSION_DENIED").
+// State machine (Phase 2 extended):
+//   IDLE → ITEM_SCANNED → LOCATION_SCANNED
+//          ↓ (if item.tracks_lots=true AND action=issue/adjustment_loss)
+//          LOT_LOADING → LOT_EMPTY | LOT_PICK → CONFIRMING → SUCCESS → IDLE (auto)
+//          (non-tracks_lots items skip LOT_* states entirely)
+//   plus side states: MANUAL_FILL, PERMISSION_PROMPT, PERMISSION_DENIED, INSECURE, UNSUPPORTED
 //
-// The state lives entirely on the module-private `state` object below. Every transition
-// goes through `setState(next, patch?)` which (a) records the new state, (b) optionally
-// merges a patch onto `state.ctx`, and (c) calls `render()` exactly once — the renderer
-// is pure-ish: it reads `state` and updates DOM. This keeps "where am I now?" debuggable.
+// Every transition goes through setState(next, patch?) which updates state and calls render().
 
 (function () {
   'use strict';
@@ -35,6 +43,7 @@
 
   /** @typedef {'PERMISSION_PROMPT'|'PERMISSION_DENIED'|'INSECURE'|'UNSUPPORTED'|
    *           'IDLE'|'ITEM_SCANNED'|'LOCATION_SCANNED'|'MANUAL_FILL'|
+   *           'LOT_LOADING'|'LOT_EMPTY'|'LOT_PICK'|
    *           'CONFIRMING'|'SUCCESS'} ScanState */
 
   const state = {
@@ -48,6 +57,10 @@
       /** @type {'issue'|'adjustment_loss'}             */ action:      'issue',
       /** @type {string}                                */ note:        '',
       /** @type {string|null}                          */ clientRefId: null,  // persists across retries
+      // Phase 2 — lot picker state
+      /** @type {Array}                                 */ availableLots:  [],   // FEFO-sorted lots from API
+      /** @type {object|null}                           */ selectedLot:    null, // chosen lot
+      /** @type {boolean}                               */ fefoOverride:   false,// true when non-FEFO lot confirmed
     },
     /** Set true once camera has been successfully started at least once.  */
     cameraStartedEver: false,
@@ -240,8 +253,8 @@
     el.success.classList.toggle('d-none',         state.name !== 'SUCCESS');
 
     // --- Hint (only visible while video is showing) ------------------------
-    el.hint.classList.toggle('d-none',
-      !['IDLE', 'ITEM_SCANNED', 'LOCATION_SCANNED'].includes(state.name));
+    const isScanState = ['IDLE', 'ITEM_SCANNED', 'LOCATION_SCANNED'].includes(state.name);
+    el.hint.classList.toggle('d-none', !isScanState);
     if (state.name === 'IDLE')              el.hint.textContent = 'ขั้นที่ 1: สแกนสินค้า';
     else if (state.name === 'ITEM_SCANNED') el.hint.textContent = 'ขั้นที่ 2: สแกน QR ของตู้/ชั้น';
     else if (state.name === 'LOCATION_SCANNED') el.hint.textContent = 'ขั้นที่ 3: เลือกประเภท + จำนวน';
@@ -262,7 +275,7 @@
       el.chipLoc.classList.remove('done');
     }
 
-    // --- Submit row visibility --------------------------------------------
+    // --- Submit row visibility (NOT shown during lot-picker steps) --------
     const showSubmit = ['LOCATION_SCANNED', 'CONFIRMING'].includes(state.name);
     el.submitRow.classList.toggle('d-none', !showSubmit);
 
@@ -275,6 +288,292 @@
 
     // --- Manual panel visibility ------------------------------------------
     el.manualPanel.classList.toggle('d-none', state.name !== 'MANUAL_FILL');
+
+    // -----------------------------------------------------------------------
+    // Phase 2: Lot picker panels (LOT_LOADING, LOT_EMPTY, LOT_PICK)
+    // -----------------------------------------------------------------------
+    _renderLotPanel();
+  }
+
+  // =========================================================================
+  // Phase 2 — Lot panel renderer
+  // =========================================================================
+
+  /**
+   * Render or update the lot picker panel that overlays the scan stage
+   * during LOT_LOADING, LOT_EMPTY, and LOT_PICK states.
+   * The panel is a sibling of the scan stage — injected once, then toggled.
+   */
+  function _renderLotPanel() {
+    const isLotState = ['LOT_LOADING', 'LOT_EMPTY', 'LOT_PICK'].includes(state.name);
+
+    // Get or create the lot panel container
+    let panel = document.getElementById('lot-panel');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'lot-panel';
+      panel.className = 'lot-panel-overlay';
+      // Insert after the scan stage (or at end of body's scan container)
+      const stage = el.stage;
+      if (stage && stage.parentNode) {
+        stage.parentNode.insertBefore(panel, stage.nextSibling);
+      } else {
+        document.body.appendChild(panel);
+      }
+    }
+
+    panel.classList.toggle('d-none', !isLotState);
+    if (!isLotState) return;
+
+    if (state.name === 'LOT_LOADING') {
+      panel.innerHTML = `
+        <div class="text-center py-5" aria-live="polite">
+          <span class="spinner-border spinner-border text-stock-accent mb-3"></span>
+          <p class="fw-semibold">กำลังโหลดล็อตยา…</p>
+          <p class="text-muted small">ขั้นที่ 2.5: เลือกล็อต (M-60)</p>
+        </div>`;
+      return;
+    }
+
+    if (state.name === 'LOT_EMPTY') {
+      panel.innerHTML = `
+        <div class="text-center py-5" aria-live="polite">
+          <div style="font-size:3rem;" class="mb-3">📦</div>
+          <p class="fw-semibold mb-1">ไม่มีล็อตยาที่พร้อมใช้งาน (M-63)</p>
+          <p class="text-muted small mb-4">ยาทุกล็อตหมดหรือหมดอายุ ติดต่อผู้ดูแลระบบ (M-64)</p>
+          <button type="button" class="btn btn-outline-secondary" id="lot-panel-reset"
+                  style="min-height:44px;">
+            เริ่มใหม่
+          </button>
+        </div>`;
+      panel.querySelector('#lot-panel-reset').addEventListener('click', resetFlow);
+      return;
+    }
+
+    if (state.name === 'LOT_PICK') {
+      // Build lot picker panel
+      const lots = state.ctx.availableLots || [];
+      const selectedId = state.ctx.selectedLot ? state.ctx.selectedLot.id : (lots[0] ? lots[0].id : null);
+
+      // Lot chip display
+      const lotChipHtml = state.ctx.selectedLot
+        ? (function () {
+            const badge = window.AppLots ? window.AppLots.getLotBadge(state.ctx.selectedLot) : { badgeClass: 'bg-secondary text-white', label: '' };
+            const fefoNote = state.ctx.fefoOverride
+              ? ' <span class="badge bg-warning text-dark ms-1 small">FEFO override</span>'
+              : '';
+            return `<span class="badge ${badge.badgeClass}">${escapeHtml(state.ctx.selectedLot.lot_number)}</span>${fefoNote}`;
+          }())
+        : '—';
+
+      panel.innerHTML = `
+        <div class="pb-4">
+          <h6 class="fw-semibold mb-3">
+            ขั้นที่ 2.5: เลือกล็อตยา (M-55)
+          </h6>
+          <div class="mb-2 small text-muted d-flex gap-2 align-items-center flex-wrap">
+            <span>ล็อตที่เลือก:</span>
+            <span id="lot-pick-chip">${lotChipHtml}</span>
+          </div>
+          <div id="lot-picker-container"></div>
+          <div class="d-grid mt-3">
+            <button type="button" class="btn btn-stock-primary" id="lot-pick-next"
+                    style="min-height:44px;"
+                    ${!state.ctx.selectedLot ? 'disabled' : ''}>
+              ขั้นต่อไป: ระบุจำนวน → (M-58)
+            </button>
+          </div>
+          <div class="mt-2 text-center">
+            <button type="button" class="btn btn-link text-muted small" id="lot-pick-cancel">
+              ยกเลิก — เริ่มใหม่
+            </button>
+          </div>
+        </div>`;
+
+      // Render lot picker widget from shared/lots.js (Q-D4)
+      const pickerContainer = panel.querySelector('#lot-picker-container');
+      if (window.AppLots && pickerContainer) {
+        const pickerEl = window.AppLots.renderLotPicker(lots, selectedId, (lot) => {
+          _handleLotSelect(lot);
+        });
+        pickerContainer.appendChild(pickerEl);
+      }
+
+      // Wire "next" button
+      panel.querySelector('#lot-pick-next').addEventListener('click', () => {
+        if (!state.ctx.selectedLot) return;
+        _proceedFromLotPick();
+      });
+
+      // Wire cancel button
+      panel.querySelector('#lot-pick-cancel').addEventListener('click', resetFlow);
+    }
+  }
+
+  /**
+   * Handle a lot being selected in the lot picker.
+   * Q-D2: if the selected lot is NOT the FEFO default (lots[0]), show confirm modal.
+   */
+  function _handleLotSelect(lot) {
+    const lots = state.ctx.availableLots || [];
+    const isFEFO = lots.length > 0 && lots[0].id === lot.id;
+
+    if (isFEFO) {
+      // FEFO default — select immediately, no confirmation
+      setState('LOT_PICK', { selectedLot: lot, fefoOverride: false });
+      return;
+    }
+
+    // Non-FEFO selection — Q-D2 confirm modal
+    // Exact copy: "ล็อต {lot_number} ไม่ใช่ล็อตที่ควรใช้ก่อน — ยืนยันหรือไม่?"
+    _showFEFOConfirmModal(lot);
+  }
+
+  /**
+   * Show FEFO override confirmation modal (Q-D2).
+   * Exact copy per decisions-locked Q-D2.
+   */
+  function _showFEFOConfirmModal(lot) {
+    const old = document.getElementById('fefo-confirm-modal');
+    if (old) old.remove();
+
+    const wrap = document.createElement('div');
+    // Exact copy required by Q-D2:
+    const copyText = `ล็อต ${lot.lot_number} ไม่ใช่ล็อตที่ควรใช้ก่อน — ยืนยันหรือไม่?`;
+
+    wrap.innerHTML = `
+      <div class="modal fade" id="fefo-confirm-modal" tabindex="-1" aria-labelledby="fefo-modal-title">
+        <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title text-warning" id="fefo-modal-title">
+                <i class="bi bi-exclamation-triangle"></i> FEFO: ลำดับการใช้
+              </h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+            </div>
+            <div class="modal-body">
+              <p class="mb-0">${escapeHtml(copyText)}</p>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" id="fefo-cancel-btn"
+                      style="min-height:44px;">ยกเลิก</button>
+              <button type="button" class="btn btn-warning" id="fefo-confirm-btn"
+                      style="min-height:44px;">ยืนยัน</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    const modalEl = wrap.firstChild;
+    document.body.appendChild(modalEl);
+    const modal = new bootstrap.Modal(modalEl);
+
+    modalEl.querySelector('#fefo-confirm-btn').addEventListener('click', () => {
+      modal.hide();
+      // User confirmed non-FEFO lot — set fefoOverride=true
+      setState('LOT_PICK', { selectedLot: lot, fefoOverride: true });
+    });
+
+    modalEl.querySelector('#fefo-cancel-btn').addEventListener('click', () => {
+      modal.hide();
+      // Revert to FEFO default
+      const fefoLot = state.ctx.availableLots[0] || null;
+      setState('LOT_PICK', { selectedLot: fefoLot, fefoOverride: false });
+    });
+
+    modalEl.addEventListener('hidden.bs.modal', () => {
+      try { modalEl.remove(); } catch { /* ignore */ }
+    });
+
+    modal.show();
+  }
+
+  /**
+   * Transition from LOT_PICK to LOCATION_SCANNED (quantity entry step).
+   * selectedLot is already set in ctx.
+   */
+  function _proceedFromLotPick() {
+    // Hide the lot panel and show the submit row by going to LOCATION_SCANNED
+    setState('LOCATION_SCANNED');
+    setTimeout(() => { try { el.mQty.focus(); } catch {} }, 50);
+  }
+
+  // =========================================================================
+  // Phase 2 — Load lots after location is scanned (for tracks_lots items)
+  // =========================================================================
+
+  /**
+   * Check if the current item tracks lots and the action requires a lot.
+   * If so, transition to LOT_LOADING and fetch lots.
+   * Returns true if lot loading was initiated (caller should NOT continue to QTY step).
+   */
+  async function _maybeLaunchLotPicker() {
+    const ctx = state.ctx;
+    if (!ctx.item) return false;
+
+    // Only lot-picking for issue / adjustment_loss
+    const needsLot = ctx.item.tracks_lots &&
+                     ['issue', 'adjustment_loss'].includes(ctx.action || 'issue');
+    if (!needsLot) return false;
+
+    // Ensure shared/lots.js is available
+    if (!window.AppLots) {
+      // Try to load it (may already be in DOM from a previous tab init, or loaded here)
+      await _ensureLotsScript();
+      if (!window.AppLots) {
+        window.showToast('error', 'ระบบล็อตยังไม่พร้อม — รีเฟรชหน้าใหม่');
+        return false;
+      }
+    }
+
+    setState('LOT_LOADING', { availableLots: [], selectedLot: null, fefoOverride: false });
+
+    const { data, error } = await window.AppLots.fetchAvailableLots(ctx.item.id);
+    if (error) {
+      // M-61: load error
+      window.showToast('error', 'โหลดล็อตยาไม่สำเร็จ (M-61) — ลองใหม่อีกครั้ง (M-62)');
+      setState('LOCATION_SCANNED');
+      return true;
+    }
+
+    const lots = window.AppLots.sortFEFO(data || []);
+
+    if (lots.length === 0) {
+      setState('LOT_EMPTY');
+      return true;
+    }
+
+    // Pre-select FEFO default (lots[0])
+    setState('LOT_PICK', {
+      availableLots: lots,
+      selectedLot:   lots[0],
+      fefoOverride:  false,
+    });
+    return true;
+  }
+
+  /**
+   * Dynamically load shared/lots.js if not yet available.
+   */
+  async function _ensureLotsScript() {
+    if (window.AppLots) return;
+    return new Promise((resolve) => {
+      if (document.querySelector('script[src*="shared/lots.js"]')) { resolve(); return; }
+      const s = document.createElement('script');
+      s.src = './shared/lots.js';
+      s.onload = resolve;
+      s.onerror = resolve; // fail gracefully
+      document.head.appendChild(s);
+    });
+  }
+
+  // =========================================================================
+  // Utility — escapeHtml (mirrors shared/ui.js)
+  // =========================================================================
+  function escapeHtml(s) {
+    if (typeof window.escapeHtml === 'function') return window.escapeHtml(s);
+    return String(s ?? '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   // =========================================================================
@@ -339,6 +638,7 @@
   async function onScanResult(text) {
     if (!text) return;
     // Ignore scans during transitional / non-scan states so we don't double-fire.
+    // Phase 2: also ignore during LOT_* states (lot picker uses tap, not scan).
     if (!['IDLE','ITEM_SCANNED'].includes(state.name)) return;
 
     const parsed = window.AppScanner.parseScanResult(text);
@@ -398,8 +698,13 @@
       return;
     }
     setState('LOCATION_SCANNED', { location: data });
-    // UX nicety: focus qty input so user can start typing immediately.
-    setTimeout(() => { try { el.mQty.focus(); } catch {} }, 50);
+
+    // Phase 2: for tracks_lots items + issue/adjustment_loss, launch lot picker
+    const lotLaunched = await _maybeLaunchLotPicker();
+    if (!lotLaunched) {
+      // Non-tracks_lots item: proceed directly to qty (Phase 1 behavior unchanged)
+      setTimeout(() => { try { el.mQty.focus(); } catch {} }, 50);
+    }
   }
 
   // =========================================================================
@@ -443,7 +748,12 @@
       }
       closeManualPanel();
       setState('LOCATION_SCANNED', { item: itemRes.data, location: locRes.data });
-      setTimeout(() => { try { el.mQty.focus(); } catch {} }, 50);
+
+      // Phase 2: check if lot picker is needed (same as handleLocationScan path)
+      const lotLaunched = await _maybeLaunchLotPicker();
+      if (!lotLaunched) {
+        setTimeout(() => { try { el.mQty.focus(); } catch {} }, 50);
+      }
     } finally {
       el.btnManualOk.disabled = false;
     }
@@ -484,14 +794,60 @@
     setState('CONFIRMING');
 
     try {
-      const fn = ctx.action === 'adjustment_loss'
-        ? window.AppInventory.adjustmentLoss
-        : window.AppInventory.issue;
-      const { data, error } = await fn(
-        ctx.item.id, ctx.location.id, ctx.qty, ctx.note || null, ctx.clientRefId
-      );
+      let data, error;
+
+      // Phase 2: if a lot is selected, insert movement with lot_id + fefo_override directly.
+      // (AppInventory.issue / adjustmentLoss don't carry lot_id yet.)
+      if (ctx.selectedLot) {
+        const sb = getSupabaseClient();
+        const POSITIVE = new Set(['receive', 'adjustment_gain']);
+        const qty_delta = POSITIVE.has(ctx.action) ? ctx.qty : -ctx.qty;
+        const rawRes = await sb.from('stock_movements').insert({
+          client_ref_id:  ctx.clientRefId,
+          item_id:        ctx.item.id,
+          location_id:    ctx.location.id,
+          movement_type:  ctx.action,
+          qty_delta:      qty_delta,
+          lot_id:         ctx.selectedLot.id,
+          fefo_override:  ctx.fefoOverride,
+          note:           ctx.note || null,
+        }).select().single();
+        data  = rawRes.data ? { movement: rawRes.data, replay: false, client_ref_id: ctx.clientRefId } : null;
+        error = rawRes.error;
+      } else {
+        // Phase 1 path: no lot
+        const fn = ctx.action === 'adjustment_loss'
+          ? window.AppInventory.adjustmentLoss
+          : window.AppInventory.issue;
+        const res = await fn(
+          ctx.item.id, ctx.location.id, ctx.qty, ctx.note || null, ctx.clientRefId
+        );
+        data  = res.data;
+        error = res.error;
+      }
 
       if (error) {
+        // Phase 2: check for trigger error (Q-Phase2-4 — exact server string)
+        const lotTriggerMsg = window.AppLots
+          ? window.AppLots.mapTriggerErrorToToast(error)
+          : null;
+
+        if (lotTriggerMsg) {
+          // M-65: lot expired/recalled since lot picker loaded — go back to LOT_PICK (re-fetch)
+          window.showToast('error', lotTriggerMsg);
+          setState('LOCATION_SCANNED');
+          // Re-launch lot picker so user sees fresh (updated) list
+          await _maybeLaunchLotPicker();
+          return;
+        }
+
+        // Idempotent replay (23505 on client_ref_id)
+        if (error.code === '23505' && /client_ref_id/.test(error.message || '')) {
+          console.warn('[staff-scan] idempotent replay accepted; client_ref_id =', ctx.clientRefId);
+          onSubmitSuccess();
+          return;
+        }
+
         const friendly =
           error.friendly
           || (error.code === '42501' ? 'ไม่มีสิทธิ์ดำเนินการนี้ — ติดต่อ Admin' : null)
@@ -499,14 +855,10 @@
           || error.message
           || 'บันทึกไม่สำเร็จ — ลองใหม่อีกครั้ง';
 
-        // "ของไม่พอ" comes through as `friendly: 'ของไม่พอ'` from inventory.js _classifyError.
-        // Special-case the trigger's "would drive qty negative" message so the toast is
-        // user-friendly even if classifyError didn't catch it (e.g. wording change in PG).
         const isShortStock = /ของไม่พอ|negative|insufficient/i.test(friendly + ' ' + (error.message || ''));
         window.showToast('error', isShortStock ? 'ของไม่พอที่จุดนี้' : friendly);
 
         // Stay on the same step with qty preserved so user can adjust and retry.
-        // We keep clientRefId so the retry is idempotent.
         setState('LOCATION_SCANNED');
         return;
       }
@@ -518,8 +870,6 @@
 
       onSubmitSuccess();
     } catch (e) {
-      // Network failure (fetch threw before any HTTP response). Keep qty + refId so a
-      // retry will be idempotent.
       window.showToast('error', 'เครือข่ายมีปัญหา — ลองใหม่อีกครั้ง');
       console.error('[staff-scan] submit threw', e);
       setState('LOCATION_SCANNED');
@@ -552,6 +902,8 @@
     state.ctx = {
       item: null, location: null, pendingLoc: '',
       qty: 0, action: 'issue', note: '', clientRefId: null,
+      // Phase 2 lot fields
+      availableLots: [], selectedLot: null, fefoOverride: false,
     };
     el.mQty.value  = '';
     el.mNote.value = '';

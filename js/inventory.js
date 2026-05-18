@@ -1,20 +1,27 @@
 // js/inventory.js
-// Phase 1 — Admin Inventory tab controller (Phase D).
+// Phase 1 + Phase 2 — Admin Inventory tab controller.
 //
 // Spec refs:
 //   docs/superpowers/specs/2026-05-18-phase1-inventory-design.md  §7.1 (Admin Inventory tab)
 //   docs/superpowers/designs/2026-05-18-phase1-ui-design.md       §2 Area 1 (wireframes, microcopy)
 //   docs/superpowers/plans/2026-05-18-phase1-inventory-plan.md    Phase D
+//   docs/superpowers/specs/2026-05-19-phase2-decisions-locked.md  Q-D5 (scroll-x + edge-fade), derived #10 (tracks_lots)
+//   docs/superpowers/plans/2026-05-19-phase2-medication-plan.md   Task B2
+//   docs/superpowers/designs/2026-05-18-phase2-ui-design.md       §3.2, §3.3
 //
-// Locked decisions (PM Pex 2026-05-18 — DO NOT re-debate):
+// Locked decisions (PM Pex 2026-05-18/19 — DO NOT re-debate):
 //   Q1: NO Transfer modal in Phase 1 — only receive / issue / adjustment_loss / adjustment_gain
 //   Q2: NO Chart.js — plain HTML/text for any breakdown
 //   Q3: NO photo upload / camera-photo capture
+//   Q-D5: 4-segment tab uses overflow-x:auto + .inventory-tabs-scroll edge-fade (CSS in shared/styles.css)
+//         NO label shortening.
 //
 // Upstream APIs consumed (all via window.AppInventory — never direct Supabase):
 //   AppInventory.listCategories, listItems, getItem, searchByBarcode, findLocationByCode,
 //                getLowStock, createItem, updateItem, deactivateItem,
 //                receive, adjustmentLoss, adjustmentGain, subscribeInventory
+//   AppLots (window.AppLots from shared/lots.js — Phase 2): createLot, fetchAllLots
+//   AppLotsView (window.initLotsView from js/inventory-lots.js — Phase 2): initLotsView
 //   AppScanner.isSupported, startScanning, stopScanning, parseScanResult
 //   AppUi: showToast, showConfirm, escapeHtml (globals)
 //
@@ -34,6 +41,9 @@
   let _refreshTimer = null;      // debounce for realtime → reload
   let _filters      = { search: '', category: '', lowStockOnly: false };
   let _mounted      = false;
+
+  // Phase 2 — active sub-view ('items'|'receive'|'lots'|'search')
+  let _activeSubview = 'items';
 
   // =========================================================================
   // Helpers
@@ -101,6 +111,7 @@
     const root = document.getElementById('tab-inventory');
     if (!root) return;
     root.innerHTML = `
+      <!-- Phase 2: 4-segment navigation + action buttons -->
       <div class="d-flex flex-wrap align-items-center mb-3 gap-2">
         <h5 class="mb-0 me-auto"><i class="bi bi-box-seam"></i> คลังสินค้า</h5>
         <button class="btn btn-stock-primary" id="inv-btn-add" style="min-height:44px;">
@@ -111,58 +122,138 @@
         </button>
       </div>
 
-      <div class="card mb-3">
-        <div class="card-body py-3">
-          <div class="row g-2 align-items-center">
-            <div class="col-12 col-md-5">
-              <input id="inv-search" type="search" class="form-control"
-                     placeholder="ค้นชื่อ / SKU / Barcode" autocomplete="off"
-                     style="min-height:44px;">
-            </div>
-            <div class="col-7 col-md-4">
-              <select id="inv-category" class="form-select" style="min-height:44px;">
-                <option value="">หมวด: ทั้งหมด</option>
-              </select>
-            </div>
-            <div class="col-5 col-md-3">
-              <div class="form-check mt-1">
-                <input type="checkbox" class="form-check-input" id="inv-low-only">
-                <label class="form-check-label small" for="inv-low-only">เฉพาะของใกล้หมด</label>
+      <!-- Phase 2 Q-D5: 4 segments, overflow-x auto, edge-fade hint via .inventory-tabs-scroll -->
+      <div class="inventory-tabs-scroll mb-3">
+        <ul class="nav nav-pills flex-nowrap" id="inv-subview-tabs" role="tablist"
+            style="white-space:nowrap;">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="inv-tab-items" type="button"
+                    role="tab" data-subview="items" aria-selected="true"
+                    style="min-height:44px; white-space:nowrap;">
+              รายการสินค้า
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="inv-tab-receive" type="button"
+                    role="tab" data-subview="receive" aria-selected="false"
+                    style="min-height:44px; white-space:nowrap;">
+              รับเข้า
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="inv-tab-lots" type="button"
+                    role="tab" data-subview="lots" aria-selected="false"
+                    style="min-height:44px; white-space:nowrap;">
+              ล็อตยา
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="inv-tab-search" type="button"
+                    role="tab" data-subview="search" aria-selected="false"
+                    style="min-height:44px; white-space:nowrap;">
+              ค้นของ
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Sub-view: รายการสินค้า (default visible) -->
+      <div id="inv-subview-items">
+        <div class="card mb-3">
+          <div class="card-body py-3">
+            <div class="row g-2 align-items-center">
+              <div class="col-12 col-md-5">
+                <input id="inv-search" type="search" class="form-control"
+                       placeholder="ค้นชื่อ / SKU / Barcode" autocomplete="off"
+                       style="min-height:44px;">
               </div>
+              <div class="col-7 col-md-4">
+                <select id="inv-category" class="form-select" style="min-height:44px;">
+                  <option value="">หมวด: ทั้งหมด</option>
+                </select>
+              </div>
+              <div class="col-5 col-md-3">
+                <div class="form-check mt-1">
+                  <input type="checkbox" class="form-check-input" id="inv-low-only">
+                  <label class="form-check-label small" for="inv-low-only">เฉพาะของใกล้หมด</label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table table-striped table-hover align-middle mb-0">
+                <thead class="position-sticky top-0 bg-white" style="z-index:1;">
+                  <tr>
+                    <th scope="col" class="d-none d-sm-table-cell">SKU</th>
+                    <th scope="col">ชื่อ</th>
+                    <th scope="col" class="d-none d-md-table-cell">หมวด</th>
+                    <th scope="col" class="d-none d-md-table-cell">หน่วย</th>
+                    <th scope="col" class="text-end">คงเหลือรวม</th>
+                    <th scope="col" class="d-none d-sm-table-cell text-end">เกณฑ์</th>
+                    <th scope="col" class="d-none d-sm-table-cell">สถานะ</th>
+                    <th scope="col" class="text-end" style="width:44px;"></th>
+                  </tr>
+                </thead>
+                <tbody id="inv-tbody">
+                  <tr><td colspan="8" class="text-center text-muted py-4">
+                    <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด…
+                  </td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-body p-0">
-          <div class="table-responsive">
-            <table class="table table-striped table-hover align-middle mb-0">
-              <thead class="position-sticky top-0 bg-white" style="z-index:1;">
-                <tr>
-                  <th scope="col" class="d-none d-sm-table-cell">SKU</th>
-                  <th scope="col">ชื่อ</th>
-                  <th scope="col" class="d-none d-md-table-cell">หมวด</th>
-                  <th scope="col" class="d-none d-md-table-cell">หน่วย</th>
-                  <th scope="col" class="text-end">คงเหลือรวม</th>
-                  <th scope="col" class="d-none d-sm-table-cell text-end">เกณฑ์</th>
-                  <th scope="col" class="d-none d-sm-table-cell">สถานะ</th>
-                  <th scope="col" class="text-end" style="width:44px;"></th>
-                </tr>
-              </thead>
-              <tbody id="inv-tbody">
-                <tr><td colspan="8" class="text-center text-muted py-4">
-                  <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด…
-                </td></tr>
-              </tbody>
-            </table>
+      <!-- Sub-view: รับเข้า (Phase 2 extension: shown when segment clicked) -->
+      <div id="inv-subview-receive" class="d-none">
+        <div class="card">
+          <div class="card-body">
+            <p class="text-muted mb-3">กด "รับเข้า" เพื่อเปิดหน้าต่างรับสินค้า</p>
+            <button type="button" class="btn btn-outline-stock-accent" id="inv-subview-receive-btn"
+                    style="min-height:44px;">
+              <i class="bi bi-box-arrow-in-down"></i> รับเข้า
+            </button>
           </div>
         </div>
+      </div>
+
+      <!-- Sub-view: ล็อตยา (Phase 2 — rendered by js/inventory-lots.js) -->
+      <div id="inv-subview-lots" class="d-none">
+        <!-- initLotsView() will render into this container -->
+      </div>
+
+      <!-- Sub-view: ค้นของ (search panel — same as items list for now) -->
+      <div id="inv-subview-search" class="d-none">
+        <div class="card mb-3">
+          <div class="card-body py-3">
+            <label class="form-label" for="inv-search-q">ค้นหาสินค้า</label>
+            <input id="inv-search-q" type="search" class="form-control"
+                   placeholder="พิมพ์ชื่อ / SKU / Barcode" autocomplete="off"
+                   style="min-height:44px;">
+          </div>
+        </div>
+        <div id="inv-search-results" class="text-muted text-center py-3">พิมพ์เพื่อค้นหา</div>
       </div>
     `;
 
     document.getElementById('inv-btn-add').onclick     = () => openItemModal(null);
     document.getElementById('inv-btn-receive').onclick = () => openReceiveModal(null);
+
+    // Phase 2: sub-view segment tab switching (Q-D5)
+    document.getElementById('inv-subview-tabs').addEventListener('click', (ev) => {
+      const btn = ev.target.closest('[data-subview]');
+      if (!btn) return;
+      _activateSubview(btn.dataset.subview);
+    });
+
+    // Receive sub-view quick-launch button
+    const subviewReceiveBtn = document.getElementById('inv-subview-receive-btn');
+    if (subviewReceiveBtn) subviewReceiveBtn.addEventListener('click', () => openReceiveModal(null));
 
     const searchEl = document.getElementById('inv-search');
     let searchTimer = null;
@@ -191,6 +282,139 @@
     sel.innerHTML = '<option value="">หมวด: ทั้งหมด</option>' +
       _categories.map((c) => `<option value="${_esc(c.id)}">${_esc(c.name)}</option>`).join('');
     if (current) sel.value = current;
+  }
+
+  // =========================================================================
+  // Phase 2 — Sub-view switching (Q-D5: 4 segments, overflow-x)
+  // =========================================================================
+
+  /**
+   * Activate a sub-view by name.
+   * Sub-views: 'items' | 'receive' | 'lots' | 'search'
+   *
+   * @param {string} name
+   * @param {object} [opts]           passed to initLotsView when name='lots'
+   * @param {string} [opts.lotsFilter]  pre-set expiry window filter for lot list
+   */
+  function _activateSubview(name, opts) {
+    _activeSubview = name;
+
+    // Toggle segment button active state
+    document.querySelectorAll('#inv-subview-tabs [data-subview]').forEach((btn) => {
+      const isActive = btn.dataset.subview === name;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-selected', String(isActive));
+    });
+
+    // Toggle sub-view pane visibility
+    ['items', 'receive', 'lots', 'search'].forEach((sv) => {
+      const el = document.getElementById(`inv-subview-${sv}`);
+      if (el) el.classList.toggle('d-none', sv !== name);
+    });
+
+    // Phase 2: lazy-init the lots view when switching to it
+    if (name === 'lots') {
+      const container = document.getElementById('inv-subview-lots');
+      if (container) {
+        // Load shared/lots.js module and inventory-lots.js if not yet loaded, then init.
+        _ensureLotsScripts().then(() => {
+          if (typeof window.initLotsView === 'function') {
+            window.initLotsView(container, { presetFilter: opts && opts.lotsFilter });
+          } else {
+            container.innerHTML = `<div class="text-danger p-3">โหลดโมดูลล็อตยาไม่สำเร็จ — รีเฟรชหน้าใหม่</div>`;
+          }
+        }).catch((e) => {
+          const container2 = document.getElementById('inv-subview-lots');
+          if (container2) container2.innerHTML = `<div class="text-danger p-3">โหลดโมดูลล็อตยาไม่สำเร็จ: ${_esc(e.message || '')}</div>`;
+        });
+      }
+    }
+
+    if (name === 'search') {
+      // Wire search-q input on first activation
+      const qEl = document.getElementById('inv-search-q');
+      if (qEl && !qEl.dataset.wired) {
+        qEl.dataset.wired = '1';
+        let timer = null;
+        qEl.addEventListener('input', () => {
+          clearTimeout(timer);
+          timer = setTimeout(() => _runSubviewSearch(qEl.value.trim()), 250);
+        });
+      }
+    }
+  }
+
+  /**
+   * Ensure shared/lots.js and js/inventory-lots.js are loaded.
+   * Idempotent — resolves immediately if already loaded.
+   */
+  async function _ensureLotsScripts() {
+    // Check if already loaded
+    if (window.AppLots && typeof window.initLotsView === 'function') return;
+
+    // Dynamically inject script tags (no-build-step constraint)
+    async function _loadScript(src) {
+      return new Promise((resolve, reject) => {
+        if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+        const s   = document.createElement('script');
+        s.src     = src;
+        s.onload  = resolve;
+        s.onerror = () => reject(new Error(`Failed to load ${src}`));
+        document.head.appendChild(s);
+      });
+    }
+    // Paths relative to the HTML root (admin.html is at root)
+    await _loadScript('./shared/lots.js');
+    await _loadScript('./js/inventory-lots.js');
+  }
+
+  /**
+   * Run free-text search in the "ค้นของ" sub-view.
+   */
+  async function _runSubviewSearch(q) {
+    const resultsEl = document.getElementById('inv-search-results');
+    if (!resultsEl) return;
+
+    if (!q) {
+      resultsEl.innerHTML = '<span class="text-muted">พิมพ์เพื่อค้นหา</span>';
+      return;
+    }
+    resultsEl.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span>กำลังค้นหา…</span>';
+
+    const { data, error } = await window.AppInventory.listItems({ search: q, limit: 20 });
+    if (error) {
+      resultsEl.innerHTML = `<div class="text-danger">${_esc(error.message || 'ค้นหาไม่สำเร็จ')}</div>`;
+      return;
+    }
+    if (!data || !data.length) {
+      resultsEl.innerHTML = '<span class="text-muted">ไม่พบสินค้าที่ตรงกัน</span>';
+      return;
+    }
+    resultsEl.className = '';
+    resultsEl.innerHTML = `
+      <div class="card">
+        <div class="card-body p-0">
+          <ul class="list-group list-group-flush">
+            ${data.map((it) => `
+              <li class="list-group-item list-group-item-action"
+                  data-id="${_esc(it.id)}" role="button" tabindex="0"
+                  style="cursor:pointer; min-height:48px;">
+                <div class="d-flex justify-content-between align-items-center">
+                  <div>
+                    <div class="fw-semibold">${_esc(it.name)}</div>
+                    <div class="small text-muted"><code>${_esc(it.sku)}</code>
+                      ${it.tracks_lots ? ' · <span class="badge bg-info-subtle text-info">ล็อต</span>' : ''}</div>
+                  </div>
+                  <span class="badge bg-stock-accent-subtle text-stock-accent-dark">${it.total_qty || 0} ${_esc(it.unit || 'ชิ้น')}</span>
+                </div>
+              </li>`).join('')}
+          </ul>
+        </div>
+      </div>`;
+
+    resultsEl.querySelectorAll('[data-id]').forEach((li) => {
+      li.addEventListener('click', () => openItemDetailDrawer(li.dataset.id));
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -472,6 +696,15 @@
               <small class="text-muted">แจ้งเตือน Telegram เมื่อคงเหลือรวม ≤ ค่านี้ (0 = ไม่แจ้ง)</small>
             </div>
           </div>
+          <!-- Phase 2: tracks_lots toggle (derived constraint #10) -->
+          <div class="form-check form-switch mb-3 mt-3">
+            <input class="form-check-input" type="checkbox" id="if-tracks-lots" name="tracks_lots"
+                   role="switch">
+            <label class="form-check-label" for="if-tracks-lots">
+              ติดตามล็อต / วันหมดอายุ
+              <small class="d-block text-muted">ใช้สำหรับยาและเวชภัณฑ์ที่ต้องระบุล็อต</small>
+            </label>
+          </div>
           <div class="form-check mt-2">
             <input type="checkbox" class="form-check-input" id="if-active" checked>
             <label class="form-check-label" for="if-active">ใช้งานอยู่</label>
@@ -488,14 +721,24 @@
     const modal = new bootstrap.Modal(modalEl);
 
     if (isEdit) {
-      modalEl.querySelector('#if-name').value      = existing.name || '';
-      modalEl.querySelector('#if-sku').value       = existing.sku || '';
-      modalEl.querySelector('#if-barcode').value   = existing.barcode || '';
-      modalEl.querySelector('#if-category').value  = existing.category_id || '';
-      modalEl.querySelector('#if-unit').value      = existing.unit || 'ชิ้น';
-      modalEl.querySelector('#if-threshold').value = existing.reorder_threshold || 0;
-      modalEl.querySelector('#if-active').checked  = !!existing.active;
+      modalEl.querySelector('#if-name').value       = existing.name || '';
+      modalEl.querySelector('#if-sku').value        = existing.sku || '';
+      modalEl.querySelector('#if-barcode').value    = existing.barcode || '';
+      modalEl.querySelector('#if-category').value   = existing.category_id || '';
+      modalEl.querySelector('#if-unit').value       = existing.unit || 'ชิ้น';
+      modalEl.querySelector('#if-threshold').value  = existing.reorder_threshold || 0;
+      modalEl.querySelector('#if-active').checked   = !!existing.active;
+      // Phase 2: tracks_lots toggle
+      modalEl.querySelector('#if-tracks-lots').checked = !!existing.tracks_lots;
     }
+
+    // Phase 2: warn when enabling tracks_lots on an item that already has stock (non-blocking)
+    modalEl.querySelector('#if-tracks-lots').addEventListener('change', (ev) => {
+      if (isEdit && ev.target.checked && existing && (existing.total_qty || 0) > 0) {
+        // M-53: non-blocking warning toast
+        _toast('warning', 'สินค้านี้มีสต็อกอยู่แล้ว — ล็อตจะต้องถูกระบุในการรับเข้าครั้งถัดไป');
+      }
+    });
 
     const errEl    = modalEl.querySelector('#if-error');
     const submitEl = modalEl.querySelector('#if-submit');
@@ -517,6 +760,8 @@
         unit:              modalEl.querySelector('#if-unit').value.trim() || 'ชิ้น',
         reorder_threshold: Math.max(0, parseInt(modalEl.querySelector('#if-threshold').value, 10) || 0),
         active:            modalEl.querySelector('#if-active').checked,
+        // Phase 2: tracks_lots — defaults to false for new items
+        tracks_lots:       !!(modalEl.querySelector('#if-tracks-lots').checked),
       };
 
       submitEl.disabled = true;
@@ -698,8 +943,134 @@
     $('rf-scan-stop').onclick = () => stopScan();
     modalEl.addEventListener('hidden.bs.modal', () => { stopScan(); });
 
+    // -------------------------------------------------------------------------
+    // Phase 2: tracks_lots — show/hide lot section when item selection changes
+    // -------------------------------------------------------------------------
+
+    // Lot details section HTML (injected into modal body before rf-error)
+    const LOT_SECTION_HTML = `
+      <div id="rf-lot-section" class="border rounded p-3 mb-3 bg-light d-none">
+        <p class="mb-2 fw-semibold text-stock-accent">
+          <i class="bi bi-capsule"></i> ยาชนิดนี้ต้องระบุข้อมูลล็อต
+        </p>
+        <ul class="nav nav-tabs mb-3" id="rf-lot-tab-toggle" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" type="button" data-lot-tab="new" role="tab">ล็อตใหม่</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" type="button" data-lot-tab="existing" role="tab">เพิ่มให้ล็อตเดิม</button>
+          </li>
+        </ul>
+        <div id="rf-lot-tab-new">
+          <div class="mb-2">
+            <label class="form-label" for="rf-lot-number">หมายเลขล็อต <span class="text-danger">*</span></label>
+            <input type="text" id="rf-lot-number" class="form-control"
+                   placeholder="เช่น LOT-2026-A" autocomplete="off">
+          </div>
+          <div class="mb-2">
+            <label class="form-label" for="rf-lot-expiry">วันหมดอายุ <span class="text-danger">*</span></label>
+            <input type="date" id="rf-lot-expiry" class="form-control">
+          </div>
+          <div class="mb-2">
+            <label class="form-label" for="rf-lot-supplier">Supplier / ผู้จัดจำหน่าย</label>
+            <input type="text" id="rf-lot-supplier" class="form-control"
+                   placeholder="ไม่บังคับ" autocomplete="off">
+          </div>
+          <div class="mb-0">
+            <label class="form-label" for="rf-lot-note">หมายเหตุ</label>
+            <input type="text" id="rf-lot-note" class="form-control" placeholder="ไม่บังคับ">
+          </div>
+        </div>
+        <div id="rf-lot-tab-existing" class="d-none">
+          <label class="form-label" for="rf-lot-select">เลือกล็อตที่มีอยู่</label>
+          <select id="rf-lot-select" class="form-select mb-2">
+            <option value="">กำลังโหลด…</option>
+          </select>
+          <p class="small text-muted mb-0">เลือกล็อตที่มีอยู่เพื่อเพิ่มจำนวนเข้าล็อตเดิม</p>
+        </div>
+        <div id="rf-lot-inline-error" class="alert alert-danger mt-2 d-none" role="alert" aria-live="polite"></div>
+      </div>`;
+
+    // Inject lot section before rf-error
+    const rfError = $('rf-error');
+    rfError.insertAdjacentHTML('beforebegin', LOT_SECTION_HTML);
+
+    // Track selected item's tracks_lots status and the active lot tab
+    let _currentItemTracksLots = prefillItem ? !!prefillItem.tracks_lots : false;
+    let _activeLotTab = 'new';   // 'new' | 'existing'
+
+    function _showLotSection(tracksLots) {
+      const sec = $('rf-lot-section');
+      if (!sec) return;
+      sec.classList.toggle('d-none', !tracksLots);
+    }
+
+    function _switchLotTab(tab) {
+      _activeLotTab = tab;
+      modalEl.querySelectorAll('[data-lot-tab]').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.lotTab === tab);
+      });
+      $('rf-lot-tab-new')      && $('rf-lot-tab-new').classList.toggle('d-none',      tab !== 'new');
+      $('rf-lot-tab-existing') && $('rf-lot-tab-existing').classList.toggle('d-none', tab !== 'existing');
+    }
+
+    // Wire lot tab toggle buttons
+    modalEl.querySelectorAll('[data-lot-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        _switchLotTab(btn.dataset.lotTab);
+        if (btn.dataset.lotTab === 'existing') {
+          _loadExistingLotOptions($('rf-item').value);
+        }
+      });
+    });
+
+    async function _loadExistingLotOptions(itemId) {
+      const sel = $('rf-lot-select');
+      if (!sel || !itemId) return;
+      sel.innerHTML = '<option value="">กำลังโหลด…</option>';
+      if (!window.AppLots) {
+        sel.innerHTML = '<option value="">ระบบล็อตยังไม่พร้อม</option>';
+        return;
+      }
+      const { data, error } = await window.AppLots.fetchAllLots(itemId);
+      if (error || !data || !data.length) {
+        sel.innerHTML = '<option value="">ยังไม่มีล็อต — สร้างล็อตใหม่</option>';
+        return;
+      }
+      sel.innerHTML = '<option value="">— เลือกล็อต —</option>' +
+        data.map((lot) => {
+          const badge = window.AppLots.getLotBadge(lot);
+          return `<option value="${_esc(lot.id)}">${_esc(lot.lot_number)} — หมดอายุ ${window.AppLots.formatThaiDate(lot.expiry_date)} (${badge.label})</option>`;
+        }).join('');
+    }
+
+    // When item changes, detect tracks_lots and show/hide lot section
+    async function _onItemChange(itemId) {
+      if (!itemId) {
+        _currentItemTracksLots = false;
+        _showLotSection(false);
+        return;
+      }
+      // Check from _items cache first, then fall back to API
+      const cached = _items.find((x) => x.id === itemId);
+      if (cached) {
+        _currentItemTracksLots = !!cached.tracks_lots;
+      } else {
+        const r = await window.AppInventory.getItem(itemId);
+        _currentItemTracksLots = r.data ? !!r.data.item.tracks_lots : false;
+      }
+      _showLotSection(_currentItemTracksLots);
+      // Ensure AppLots is available if tracks_lots=true
+      if (_currentItemTracksLots) await _ensureLotsScripts();
+    }
+
+    $('rf-item').addEventListener('change', (ev) => _onItemChange(ev.target.value));
+    if (prefillItem) {
+      _showLotSection(!!prefillItem.tracks_lots);
+      _currentItemTracksLots = !!prefillItem.tracks_lots;
+    }
+
     // Submit
-    $('inv-receive-form'); // no-op (just locate by form id below)
     modalEl.querySelector('#inv-receive-form').onsubmit = async (ev) => {
       ev.preventDefault();
       const errEl = $('rf-error');
@@ -714,17 +1085,104 @@
         errEl.classList.remove('d-none');
         return;
       }
+
+      // -----------------------------------------------------------------------
+      // Phase 2: lot validation for tracks_lots items
+      // -----------------------------------------------------------------------
+      let lotId = null;
+      if (_currentItemTracksLots) {
+        await _ensureLotsScripts();
+        const lotInlineErr = $('rf-lot-inline-error');
+        if (lotInlineErr) { lotInlineErr.classList.add('d-none'); lotInlineErr.textContent = ''; }
+
+        if (_activeLotTab === 'new') {
+          const lotNumber  = ($('rf-lot-number')  ? $('rf-lot-number').value.trim()  : '');
+          const lotExpiry  = ($('rf-lot-expiry')   ? $('rf-lot-expiry').value         : '');
+          const lotSupplier= ($('rf-lot-supplier') ? $('rf-lot-supplier').value.trim(): '');
+          const lotNote    = ($('rf-lot-note')     ? $('rf-lot-note').value.trim()    : '');
+
+          if (!lotNumber) {
+            if (lotInlineErr) { lotInlineErr.textContent = 'กรุณาระบุหมายเลขล็อต'; lotInlineErr.classList.remove('d-none'); }
+            errEl.textContent = 'กรุณาระบุหมายเลขล็อต (M-44)';
+            errEl.classList.remove('d-none');
+            return;
+          }
+          if (!lotExpiry) {
+            if (lotInlineErr) { lotInlineErr.textContent = 'กรุณาระบุวันหมดอายุ'; lotInlineErr.classList.remove('d-none'); }
+            errEl.textContent = 'กรุณาระบุวันหมดอายุ';
+            errEl.classList.remove('d-none');
+            return;
+          }
+          // Create lot first
+          const createRes = await window.AppLots.createLot({
+            item_id:      itemId,
+            lot_number:   lotNumber,
+            expiry_date:  lotExpiry,
+            received_qty: qty,
+            supplier:     lotSupplier || null,
+            note:         lotNote || null,
+          });
+          if (createRes.error) {
+            const isDupe = createRes.error.code === '23505';
+            const lotErrMsg = isDupe
+              ? 'ล็อตนี้มีอยู่แล้วสำหรับสินค้านี้ — ใช้แท็บ "เพิ่มให้ล็อตเดิม" หรือเปลี่ยนหมายเลขล็อต (M-47)'
+              : _friendly(createRes.error, 'สร้างล็อตไม่สำเร็จ');
+            if (lotInlineErr) { lotInlineErr.textContent = lotErrMsg; lotInlineErr.classList.remove('d-none'); }
+            errEl.textContent = lotErrMsg;
+            errEl.classList.remove('d-none');
+            return;
+          }
+          lotId = createRes.data.id;
+        } else {
+          // 'existing' tab
+          lotId = $('rf-lot-select') ? $('rf-lot-select').value : '';
+          if (!lotId) {
+            errEl.textContent = 'กรุณาเลือกล็อต';
+            errEl.classList.remove('d-none');
+            return;
+          }
+        }
+      }
+
       const submitEl = $('rf-submit');
       submitEl.disabled = true;
       submitEl.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>กำลังบันทึก…';
 
       const clientRefId = (crypto.randomUUID ? crypto.randomUUID() : window.AppInventory._uuid());
-      const r = await window.AppInventory.receive(itemId, locId, qty, note, clientRefId);
+
+      // Build raw movement insert (lot_id extension requires raw insert, not the helper)
+      let r;
+      if (lotId) {
+        // Insert movement directly with lot_id (AppInventory.receive doesn't carry lot_id yet)
+        const sb = getSupabaseClient();
+        const rawRes = await sb.from('stock_movements').insert({
+          client_ref_id:  clientRefId,
+          item_id:        itemId,
+          location_id:    locId,
+          movement_type:  'receive',
+          qty_delta:      qty,
+          lot_id:         lotId,
+          note:           note || null,
+        }).select().single();
+        r = rawRes.error
+          ? rawRes
+          : { data: { movement: rawRes.data, replay: false, client_ref_id: clientRefId }, error: null };
+      } else {
+        r = await window.AppInventory.receive(itemId, locId, qty, note, clientRefId);
+      }
 
       submitEl.disabled = false;
       submitEl.textContent = 'บันทึก';
 
       if (r.error) {
+        // Handle idempotent replay
+        if (r.error.code === '23505' && /client_ref_id/.test(r.error.message || '')) {
+          _toast('info', 'รายการนี้บันทึกแล้ว (M-48)');
+          stopScan();
+          modal.hide();
+          reload();
+          return;
+        }
         errEl.textContent = _friendly(r.error, 'บันทึกไม่สำเร็จ');
         errEl.classList.remove('d-none');
         return;
@@ -733,7 +1191,7 @@
       const locRow  = _locations.find((x) => x.id === locId) || { code: '?' };
 
       if (r.data && r.data.replay) {
-        _toast('info', 'รายการนี้บันทึกแล้ว');
+        _toast('info', 'รายการนี้บันทึกแล้ว (M-48)');
       } else {
         _toast('success', `รับเข้าแล้ว: ${itemRow.name} x${qty} ที่ ${locRow.code}`);
       }
@@ -910,6 +1368,9 @@
     openReceiveModal,
     openAdjustModal,
     openItemDetailDrawer,
+    // Phase 2: sub-view activation (used by dashboard drill-down)
+    activateSubview: _activateSubview,
+    openLotsSubview: (filter) => _activateSubview('lots', { lotsFilter: filter }),
   };
 
   // admin-shell.js expects window.initInventoryTab — shim wrapper.

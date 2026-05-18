@@ -18,7 +18,7 @@ and implementers (BE/FE) must treat these as binding.
 | **Q-Phase2-1** | `stock_lots`: `UNIQUE(item_id, lot_number)` — lot numbers unique **per item**, NOT global. Vendors can reuse same lot string across SKUs. | BA recommended |
 | **Q-Phase2-2** | Recall workflow: **soft flag** (`status='recalled'`). Lot stays in `stock_item_locations` qty; UI + RLS block issue. NO quarantine-location move. | BA recommended |
 | **Q-Phase2-3** | Auto-expire: **always-on**. Daily 09:00 Asia/Bangkok cron sets `status='expired'` for any lot whose `expiry_date < CURRENT_DATE` and `status='active'`. | BA recommended |
-| **Q-Phase2-4** | **BEFORE INSERT trigger** on `stock_movements`: when `movement_type IN ('issue','adjustment_loss','borrow','transfer_out')` and `lot_id` is provided, look up `stock_lots.status`; if status in (`expired`,`recalled`) → `RAISE EXCEPTION 'ล็อตหมดอายุหรือถูกเรียกคืน'`. Belt-and-braces guards the race between 00:00 and 09:00 cron on expiry day. | BA recommended (Option A) |
+| **Q-Phase2-4** | **BEFORE INSERT trigger** on `stock_movements`: when `movement_type IN ('issue','adjustment_loss','borrow','transfer_out')` and `lot_id` is provided, look up `stock_lots.status` AND `expiry_date`; if status in (`expired`,`recalled`) OR `expiry_date < CURRENT_DATE` → `RAISE EXCEPTION 'ล็อตหมดอายุหรือถูกเรียกคืน'`. **S-3 amendment 2026-05-19** adds the `expiry_date < CURRENT_DATE` predicate to close the 00:00-09:00 BKK race window where status is still 'active' on expiry day before the daily cron flips it. | BA + Security audit S-3 |
 
 ## Patient safety / UX (design)
 
@@ -63,7 +63,21 @@ These follow from the above; implementers don't need to re-derive:
 
 10. **Items master form:** add toggle `tracks_lots`. Edit-time warning when enabling on item with existing qty.
 
-11. **FEFO override audit:** add `fefo_override boolean NOT NULL DEFAULT false` to `stock_movements`. UI confirm sets to true. Reportable via `SELECT count(*) WHERE fefo_override` for compliance.
+11. **FEFO override audit:** add `fefo_override boolean NOT NULL DEFAULT false` to `stock_movements`. **S-5 amendment 2026-05-19:** computed SERVER-SIDE inside the `check_lot_status` BEFORE INSERT trigger; client-supplied value is overwritten. Reportable via `SELECT count(*) WHERE fefo_override` for compliance. The UI confirm modal (Q-D2) still fires for UX, but does NOT need to set the column — DB is authoritative.
+
+---
+
+## Security audit amendments (2026-05-19)
+
+Security review (`docs/superpowers/audits/2026-05-19-phase2-security.md`) found 4 HIGH-severity items. Three are reflected above (Q-Phase2-4 + derived #11). The fourth — **S-1** — was applied as a hotfix to LIVE production BEFORE Phase 2 code lands:
+
+- **S-1 hotfix** (`20260519005000_hotfix_settings_secret_rls.sql`): adds `settings.is_secret boolean DEFAULT false`, marks `NOTIFY_SERVICE_ROLE_KEY` as `is_secret=true`, replaces the `set_read USING (true)` policy with `USING (is_secret = false OR app_user_role() = 'Admin')`. Verified live 2026-05-19: Employee REST GET `/settings` returns 7 non-secret rows; service_role key absent.
+
+- **S-3 mitigation** (in `20260519010400_stock_lot_triggers.sql`): trigger checks `expiry_date < CURRENT_DATE` in addition to status. See Q-Phase2-4 row above.
+
+- **S-5 mitigation** (in `20260519010400_stock_lot_triggers.sql`): server-side `fefo_override` computation. See derived #11 above.
+
+- **S-2 + S-4** (MEDIUM, accepted risk): documented in audit; no code change for Phase 2. Revisit Phase 2.1.
 
 ---
 
