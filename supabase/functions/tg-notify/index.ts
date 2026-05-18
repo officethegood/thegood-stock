@@ -5,7 +5,7 @@
 import { verify } from 'djwt';
 import { createClient } from 'supabase';
 
-const JWT_SECRET       = Deno.env.get('SUPABASE_JWT_SECRET')!;
+const JWT_SECRET       = Deno.env.get('APP_JWT_HS_SECRET')!;
 const SUPABASE_URL     = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const NOTIFY_PROXY     = Deno.env.get('NOTIFY_PROXY_URL')!;
