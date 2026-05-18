@@ -1,0 +1,22 @@
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Node (only used by Supabase CLI / tooling, no app deps)
+node_modules/
+
+# Supabase
+.supabase/
+supabase/.temp/
+supabase/.branches/
+
+# Local env / secrets
+.env
+.env.local
+*.local.json
+
+# Build artifacts (none expected — static site, but defensive)
+dist/
+build/
