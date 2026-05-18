@@ -860,3 +860,54 @@ Tick each row as you verify. Re-run after every material change.
 - [x] **DEPLOY-C**: S-1 hotfix verified live — `leaked_service_role: false`
 - [x] **DEPLOY-D**: Browser sanity — 4 sub-views render; ล็อตยา empty state visible
 - [x] **DEPLOY-E**: Dashboard expiry timeline panel replaces placeholder (M-76/M-77 microcopy)
+
+---
+
+# Phase 1.1 Polish + Phase 2 Security Tightening — Manual Test Checklist (T71–T75)
+
+> **Pre-flight:** Phase 2 migrations `20260519010000`–`20260519010900` deployed + verified (DEPLOY-A..E pass). Phase 1.1 polish migrations `20260519020000`–`20260519020100` deployed + verified (Tasks A1, A2 probes pass). FE changes from Tasks B1–B6 pushed to GitHub Pages.
+
+## Realtime (P1 fix)
+- [ ] T71: Realtime auto-refresh — Admin Inventory tab updates within 400ms of a DB change without manual reload
+  - Steps: Open admin.html → Inventory tab. In SQL Editor run `UPDATE stock_items SET updated_at = now() WHERE id = (SELECT id FROM stock_items LIMIT 1);`. Observe Inventory list.
+  - Expected: Item list re-renders within ~400ms. No console `ReferenceError: _scheduleRealtimeReload`. No thundering-herd on rapid DB writes (true debounce: only one reload fires 300ms after the last event).
+  - DB probe: `SELECT count(*) FROM stock_items;` — count unchanged (update not insert).
+
+## Staff scan note field (P2 confirmation)
+- [ ] T72: Staff scan `note` field persists to DB — confirmed fixed in Phase 2 (d934cda)
+  - Steps: staff-scan.html → manual panel → SKU `SUP-GAUZE-001` + location `ROOM-A` + qty 1 + note "T72 note confirm" → submit.
+  - Expected: success overlay shown. DB probe:
+    ```sql
+    SELECT note, reason FROM stock_movements ORDER BY performed_at DESC LIMIT 1;
+    -- Expected: note = 'T72 note confirm', reason = NULL
+    ```
+
+## Over-issue toast (P3 fix)
+- [ ] T73: Over-issue toast shows "ของไม่พอ" (not generic Thai) when 23514 qty_check fires
+  - Steps: DevTools Console (Admin JWT):
+    ```javascript
+    const { error } = await window.AppInventory.issue('<SUP-GAUZE-001 id>', '<ROOM-A id>', 99999, null);
+    console.log(error?.friendly, error?.code);
+    ```
+  - Expected: `error.code = '23514'`, `error.friendly = 'ของไม่พอ'`. UI toast shows "ของไม่พอ".
+
+## Dashboard low-stock SKU drill-down (P7 fix)
+- [ ] T74: Dashboard low-stock "→ ดู" link pre-filters Inventory tab to that SKU
+  - Steps: Dashboard tab → Low-stock panel → click "→ ดู" next to any low-stock item (e.g. SUP-GAUZE-001).
+  - Expected: Inventory tab activates, `#inv-search` value = clicked SKU, list shows only that item.
+    `location.hash` = `#inventory?sku=<SKU>`.
+
+## S2-B: recalled_reason constraint (A2 fix)
+- [ ] T75: recalled_reason constraint enforced — recall with reason < 5 chars rejected
+  - Steps: SQL Editor:
+    ```sql
+    BEGIN;
+    INSERT INTO stock_lots (item_id, lot_number, expiry_date, received_qty, current_qty, status,
+                            recalled_reason, recalled_by, recalled_at)
+    SELECT id, 'TEST-RECALL-CONSTRAINT', '2030-01-01', 10, 10, 'recalled',
+           'short', 'qa', now()
+    FROM stock_items WHERE sku = 'MED-AMOX-500';
+    ROLLBACK;
+    ```
+  - Expected: `ERROR: new row for relation "stock_lots" violates check constraint "chk_recalled_reason_required"`.
+  - Confirm valid reason (>= 5 chars) succeeds — change `'short'` to `'ผู้ผลิตแจ้งเรียกคืน'` and confirm no error (then ROLLBACK either way).

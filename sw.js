@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.3.0';
+const CACHE_VERSION = 'thegood-stock-v0.3.1';
 const STATIC_ASSETS = [
   './',
   './login.html',

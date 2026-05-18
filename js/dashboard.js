@@ -345,11 +345,12 @@
     `;
     card?.setAttribute('aria-busy', 'false');
 
-    // Wire "→ ดู" click — switch to Inventory tab with low-stock filter on.
+    // Wire "→ ดู" click — switch to Inventory tab and pre-filter to clicked SKU (P7 B6).
     body.querySelectorAll('[data-act="goto-inv"]').forEach((btn) => {
       btn.addEventListener('click', (ev) => {
         ev.preventDefault();
-        _gotoInventoryLowStock();
+        const sku = btn.dataset.sku || '';
+        _gotoInventoryItem(sku);
       });
     });
   }
@@ -548,6 +549,36 @@
           cb.checked = true;
           cb.dispatchEvent(new Event('change', { bubbles: true }));
         }
+        return;
+      }
+      if (++tries < 10) setTimeout(tick, 60);
+    };
+    tick();
+  }
+
+  /**
+   * Switch to Inventory tab and pre-filter search to a specific SKU.
+   * Used by the low-stock panel "→ ดู" per-item buttons (Phase 1.1 P7 polish).
+   * Pattern mirrors _gotoInventoryLowStock() — polls for lazy-init DOM elements.
+   *
+   * @param {string} sku  The SKU to pre-fill into the inventory search input.
+   */
+  function _gotoInventoryItem(sku) {
+    try { location.hash = `#inventory?sku=${encodeURIComponent(sku)}`; } catch { /* ignore */ }
+
+    const invBtn = document.querySelector('[data-tab="inventory"]');
+    if (invBtn) invBtn.click();
+
+    if (!sku) return;
+
+    // Poll for #inv-search up to ~600ms (10 × 60ms) — Inventory tab is lazy-init.
+    let tries = 0;
+    const tick = () => {
+      const searchEl = document.getElementById('inv-search');
+      if (searchEl) {
+        searchEl.value = sku;
+        // Dispatch input event to trigger AppInventoryTab's debounced search listener.
+        searchEl.dispatchEvent(new Event('input', { bubbles: true }));
         return;
       }
       if (++tries < 10) setTimeout(tick, 60);

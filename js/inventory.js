@@ -517,12 +517,15 @@
 
   // -------------------------------------------------------------------------
   // Realtime — debounce reloads (spec §5.7, design 300ms)
+  // Phase 1.1 B1: cancels previous timer so bursts of events collapse into
+  // one reload 300ms after the LAST event (true debounce, not throttle).
   // -------------------------------------------------------------------------
+  /** Debounced realtime reload — 300ms window, cancels prior timer on each call. */
   function _scheduleRealtimeReload() {
-    if (_refreshTimer) return;
+    if (_refreshTimer) clearTimeout(_refreshTimer);
     _refreshTimer = setTimeout(() => {
       _refreshTimer = null;
-      reload();
+      reload().catch(() => {});
     }, 300);
   }
 
@@ -836,6 +839,15 @@
           </div>
 
           <div class="row g-2">
+            <!-- Phase 1.1 B4: movement-type selector (Admin only; hidden for tracks_lots items
+                 since those always use raw insert with movement_type='receive'). -->
+            <div class="col-12 mb-2" id="rf-move-type-wrap">
+              <label class="form-label" for="rf-move-type">ประเภทการรับ</label>
+              <select id="rf-move-type" class="form-select" style="min-height:44px;">
+                <option value="receive" selected>รับเข้า (receive)</option>
+                <option value="adjustment_gain">ปรับยอดเพิ่ม (adjustment_gain)</option>
+              </select>
+            </div>
             <div class="col-12 col-sm-4 mb-2">
               <label class="form-label" for="rf-qty">จำนวน *</label>
               <input id="rf-qty" type="number" min="1" step="1" class="form-control"
@@ -1003,6 +1015,10 @@
       const sec = $('rf-lot-section');
       if (!sec) return;
       sec.classList.toggle('d-none', !tracksLots);
+      // Phase 1.1 B4: hide movement-type selector for tracks_lots items —
+      // those always insert movement_type='receive' via the raw lot path.
+      const moveWrap = $('rf-move-type-wrap');
+      if (moveWrap) moveWrap.classList.toggle('d-none', !!tracksLots);
     }
 
     function _switchLotTab(tab) {
@@ -1168,7 +1184,11 @@
           ? rawRes
           : { data: { movement: rawRes.data, replay: false, client_ref_id: clientRefId }, error: null };
       } else {
-        r = await window.AppInventory.receive(itemId, locId, qty, note, clientRefId);
+        // Phase 1.1 B4: read movement-type selector (falls back to 'receive' if absent).
+        const mvType = ($('rf-move-type') ? $('rf-move-type').value : 'receive') || 'receive';
+        r = mvType === 'adjustment_gain'
+          ? await window.AppInventory.adjustmentGain(itemId, locId, qty, note, clientRefId)
+          : await window.AppInventory.receive(itemId, locId, qty, note, clientRefId);
       }
 
       submitEl.disabled = false;
@@ -1190,10 +1210,14 @@
       const itemRow = _items.find((x) => x.id === itemId) || { name: '?', unit: 'ชิ้น' };
       const locRow  = _locations.find((x) => x.id === locId) || { code: '?' };
 
+      // Phase 1.1 B4: verb matches the selected movement type.
+      const _mvTypeNow = ($('rf-move-type') ? $('rf-move-type').value : 'receive') || 'receive';
+      const _verb = _mvTypeNow === 'adjustment_gain' ? 'ปรับยอดเพิ่มแล้ว' : 'รับเข้าแล้ว';
+
       if (r.data && r.data.replay) {
         _toast('info', 'รายการนี้บันทึกแล้ว (M-48)');
       } else {
-        _toast('success', `รับเข้าแล้ว: ${itemRow.name} x${qty} ที่ ${locRow.code}`);
+        _toast('success', `${_verb}: ${itemRow.name} x${qty} ที่ ${locRow.code}`);
       }
       stopScan();
       modal.hide();

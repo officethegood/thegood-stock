@@ -84,7 +84,14 @@
       return { replay: true, friendly: null };  // idempotent retry — treat as success
     }
     if (err.code === '23505') return { replay: false, friendly: 'รหัสซ้ำ' };
-    if (err.code === '23514') return { replay: false, friendly: 'ค่าไม่ถูกต้องตามเงื่อนไข' };
+    if (err.code === '23514') {
+      // Phase 1.1 B3: qty_check constraint on stock_item_locations fires when issue would go negative.
+      // Map to Thai "ของไม่พอ" per backlog item #3 (T38 evidence). Other CHECK violations keep generic text.
+      if (/qty_check|stock_item_locations/.test(msg)) {
+        return { replay: false, friendly: 'ของไม่พอ' };
+      }
+      return { replay: false, friendly: 'ค่าไม่ถูกต้องตามเงื่อนไข' };
+    }
     if (err.code === '42501') return { replay: false, friendly: 'ไม่มีสิทธิ์ทำรายการนี้' };
     if (/would drive qty negative/i.test(msg)) return { replay: false, friendly: 'ของไม่พอ' };
     return { replay: false, friendly: null };
@@ -228,9 +235,11 @@
       const sb = getSupabaseClient();
       const v = _orSafe(barcodeOrSku);
       if (!v) return { data: null, error: null };
+      // Phase 1.1 B5: use ilike for partial barcode/SKU matching (EAN-13 variants, partial scan).
+      const like = `%${v}%`;
       const r = await sb.from('stock_items')
         .select('id,sku,barcode,name,name_en,category_id,unit,reorder_threshold,active')
-        .or(`barcode.eq.${v},sku.eq.${v}`)
+        .or(`barcode.ilike.${like},sku.ilike.${like}`)
         .eq('active', true)
         .limit(1);
       if (r.error) return r;
