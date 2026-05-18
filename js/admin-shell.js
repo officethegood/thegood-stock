@@ -19,6 +19,7 @@
   const inits = {
     dashboard:  () => window.initDashboardTab  && window.initDashboardTab(),
     locations:  () => window.initLocationsTab  && window.initLocationsTab(),
+    inventory:  () => window.initInventoryTab  && window.initInventoryTab(),
     ambulances: () => window.initAmbulancesTab && window.initAmbulancesTab(),
     settings:   () => window.initSettingsTab   && window.initSettingsTab(),
     sessions:   () => window.initSessionsTab   && window.initSessionsTab(),

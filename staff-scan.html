@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1e3a5f">
+<title>สแกนเบิก-จ่าย — Thegood Stock</title>
+
+<!-- Design: docs/superpowers/designs/2026-05-18-phase1-ui-design.md §3 (Area 2)
+     Spec:   docs/superpowers/specs/2026-05-18-phase1-inventory-design.md §7.3
+     Plan:   docs/superpowers/plans/2026-05-18-phase1-inventory-plan.md Phase E
+     Locked: Q-Phase1-F (dedicated page), Q-Phase1-G (issue + adjustment_loss only),
+             Q3 (NO photo upload in Phase 1). -->
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./shared/styles.css">
+
+<style>
+  /* Page-local styles — design §3.9 + §5.1 tokens. Kept inline so we don't bloat
+     shared/styles.css with one-page-only rules. Shared tokens (--stock-accent etc.)
+     live in styles.css under "Thegood Stock — Teal accent override". */
+  :root {
+    --scan-viewfinder-color: var(--stock-accent, #0d9488);
+    --scan-viewfinder-width: 2px;
+    --scan-overlay-dim-bg:   rgba(0,0,0,0.55);
+    --scan-chip-bg-pending:  #e9ecef;
+    --scan-chip-bg-done:     #d1e7dd;
+  }
+
+  /* Lock the body to a calm light bg; this page is full-screen scan-first. */
+  body { background-color: #f5f7fa; }
+
+  .scan-wrap { max-width: 480px; margin: 0 auto; padding: 0 12px 24px; }
+
+  .chip-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 12px; }
+  .scan-chip {
+    flex: 1 1 0;
+    min-width: 140px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: var(--scan-chip-bg-pending);
+    color: #495057;
+    font-size: 0.9rem;
+    line-height: 1.2;
+    border: 1px solid #dee2e6;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .scan-chip.done {
+    background: var(--scan-chip-bg-done);
+    color: #0f5132;
+    border-color: #badbcc;
+    font-weight: 600;
+  }
+
+  /* Camera viewfinder container. 55vh max per design §3.3.1. */
+  .scan-stage {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    max-height: 55vh;
+    background: #000;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  }
+  .scan-stage video {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .scan-viewfinder {
+    position: absolute;
+    top: 15%; left: 15%; right: 15%; bottom: 15%;
+    pointer-events: none;
+    border: var(--scan-viewfinder-width) solid var(--scan-viewfinder-color);
+    border-radius: 12px;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.15);
+  }
+  .scan-viewfinder::before, .scan-viewfinder::after,
+  .scan-viewfinder > .vf-tl, .scan-viewfinder > .vf-tr {
+    content: '';
+    position: absolute;
+    width: 22px; height: 22px;
+    border: 3px solid var(--scan-viewfinder-color);
+  }
+  .scan-viewfinder::before { top: -2px; left: -2px;  border-right: 0; border-bottom: 0; border-top-left-radius: 8px; }
+  .scan-viewfinder::after  { bottom: -2px; right: -2px; border-left: 0; border-top: 0;  border-bottom-right-radius: 8px; }
+  .scan-viewfinder > .vf-tl { top: -2px; right: -2px; border-left: 0; border-bottom: 0; border-top-right-radius: 8px; }
+  .scan-viewfinder > .vf-tr { bottom: -2px; left: -2px; border-right: 0; border-top: 0;  border-bottom-left-radius: 8px; }
+
+  .scan-hint {
+    position: absolute;
+    left: 0; right: 0; bottom: 14px;
+    text-align: center;
+    color: #fff;
+    font-size: 0.95rem;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+    padding: 0 12px;
+    pointer-events: none;
+  }
+
+  /* Permission gate / fallback panel inside scan-stage. */
+  .scan-overlay-dim {
+    position: absolute; inset: 0;
+    background: var(--scan-overlay-dim-bg);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    padding: 16px;
+    text-align: center;
+  }
+  .scan-overlay-dim .gate-inner {
+    max-width: 320px;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+  }
+  .scan-overlay-dim .gate-icon { font-size: 3rem; line-height: 1; }
+  .scan-overlay-dim .gate-text { font-size: 1rem; line-height: 1.4; }
+  .scan-overlay-dim .gate-btn  { min-height: 48px; min-width: 220px; }
+
+  /* Success overlay (design §3.5.1). */
+  .scan-success {
+    position: absolute; inset: 0;
+    background: rgba(25, 135, 84, 0.92);
+    color: #fff;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center;
+    padding: 16px;
+    animation: fadeIn 0.18s ease-out;
+  }
+  .scan-success .ok-icon { font-size: 4rem; line-height: 1; }
+  .scan-success .ok-main { font-size: 1.4rem; font-weight: 700; margin-top: 8px; }
+  .scan-success .ok-detail { font-size: 1rem; margin-top: 4px; opacity: 0.95; }
+
+  /* Submit row + qty input. */
+  .submit-row { background: #fff; border-radius: 14px; padding: 14px; margin-top: 12px;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+  .submit-row .form-label { font-weight: 500; font-size: 0.9rem; margin-bottom: 4px; color: #495057; }
+  .submit-row input[type="number"], .submit-row .form-select, .submit-row textarea {
+    min-height: 48px;
+    font-size: 1.05rem;
+  }
+  .submit-row .btn-submit { min-height: 52px; font-size: 1.05rem; font-weight: 600; }
+
+  .divider-label {
+    text-align: center; color: #6c757d; font-size: 0.85rem;
+    margin: 18px 0 8px;
+  }
+  .divider-label::before, .divider-label::after {
+    content: '── '; opacity: 0.5;
+  }
+  .divider-label::after { content: ' ──'; }
+
+  /* Manual fallback panel. */
+  .manual-panel { background: #fff; border-radius: 14px; padding: 14px;
+                  box-shadow: 0 1px 4px rgba(0,0,0,0.04); margin-top: 12px; }
+  .manual-panel input { min-height: 48px; font-size: 1.05rem; }
+
+  /* Finder section (below fold). */
+  .finder-section { background: #fff; border-radius: 14px; padding: 14px; margin-top: 16px;
+                    box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+  .finder-result-row { padding: 10px 0; border-bottom: 1px solid #f1f3f5; }
+  .finder-result-row:last-child { border-bottom: 0; }
+
+  .toolbar-link { color: var(--stock-accent-dark, #0f766e); text-decoration: none; font-size: 0.9rem; }
+  .toolbar-link:hover { text-decoration: underline; }
+
+  /* Mobile primary CTA must hit ≥44 px. Hide system-toggle via styles.css. */
+  @media (max-width: 575.98px) {
+    .scan-wrap { padding: 0 8px 24px; }
+    .scan-stage { aspect-ratio: 3 / 4; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Top navbar — design §3.3.1 + D-S3. Back-arrow brand IS the back affordance. -->
+<nav class="navbar bg-modern-primary navbar-dark px-3" role="navigation">
+  <a href="./staff.html" class="navbar-brand mb-0 d-flex align-items-center" aria-label="ย้อนกลับ">
+    <i class="bi bi-arrow-left me-2"></i><span>Thegood Stock</span>
+  </a>
+  <div>
+    <span class="text-white-50 me-2 d-none d-sm-inline">👤 <span id="user-name">…</span></span>
+    <button class="btn btn-sm btn-outline-light" id="btn-logout" type="button">ออก</button>
+  </div>
+</nav>
+
+<main class="scan-wrap" id="scan-page">
+
+  <!-- Section A — Scan panel. Design §3.2. -->
+  <section aria-labelledby="scan-title" class="pt-3">
+    <div class="d-flex align-items-center justify-content-between mb-1">
+      <h5 id="scan-title" class="mb-0">📷 สแกนเบิก-จ่าย</h5>
+      <a href="#finder-anchor" class="toolbar-link" id="finder-jump">ค้นของ ↓</a>
+    </div>
+
+    <!-- Chips row — design §3.3.1. aria-live for screen reader (§3.7). -->
+    <div class="chip-row" role="status" aria-live="polite">
+      <div class="scan-chip" id="chip-item" aria-label="สินค้า">สินค้า: —</div>
+      <div class="scan-chip" id="chip-loc"  aria-label="สถานที่">สถานที่: —</div>
+    </div>
+
+    <!-- Camera stage. JS swaps overlays inside this container. -->
+    <div class="scan-stage" id="scan-stage">
+      <!-- video element is referenced by AppScanner.startScanning -->
+      <video id="scan-video" playsinline muted aria-label="ภาพจากกล้องสำหรับสแกน QR"></video>
+
+      <!-- decorative viewfinder; pointer-events:none so taps fall through -->
+      <div class="scan-viewfinder" aria-hidden="true"><span class="vf-tl"></span><span class="vf-tr"></span></div>
+
+      <!-- floating hint over the video (text changes per state) -->
+      <div class="scan-hint" id="scan-hint">ขั้นที่ 1: สแกนสินค้า</div>
+
+      <!-- Permission gate (first paint). Design §3.4.1. JS toggles .d-none. -->
+      <div class="scan-overlay-dim" id="gate-prompt">
+        <div class="gate-inner">
+          <div class="gate-icon" aria-hidden="true"><i class="bi bi-camera"></i></div>
+          <div class="gate-text">ระบบต้องใช้กล้องเพื่อสแกน QR</div>
+          <button type="button" id="btn-grant-camera" class="btn btn-stock-primary btn-lg gate-btn">
+            <i class="bi bi-camera me-2"></i>อนุญาตให้ใช้กล้อง
+          </button>
+          <a href="#" id="link-manual-from-gate" class="toolbar-link text-white-50">หรือพิมพ์รหัสแทน</a>
+        </div>
+      </div>
+
+      <!-- Permission denied. Design §3.4.2. -->
+      <div class="scan-overlay-dim d-none" id="gate-denied">
+        <div class="gate-inner">
+          <div class="gate-icon" aria-hidden="true"><i class="bi bi-exclamation-triangle"></i></div>
+          <div class="gate-text">
+            เบราว์เซอร์บล็อกกล้องอยู่<br>
+            <span class="small">เปิดสิทธิ์กล้องในการตั้งค่าเบราว์เซอร์ หรือพิมพ์รหัสแทน</span>
+          </div>
+          <button type="button" id="btn-manual-from-denied" class="btn btn-stock-primary btn-lg gate-btn">
+            <i class="bi bi-keyboard me-2"></i>พิมพ์รหัสแทน
+          </button>
+        </div>
+      </div>
+
+      <!-- HTTPS required (very rare; iOS Safari). -->
+      <div class="scan-overlay-dim d-none" id="gate-insecure">
+        <div class="gate-inner">
+          <div class="gate-icon" aria-hidden="true"><i class="bi bi-shield-lock"></i></div>
+          <div class="gate-text">หน้านี้ต้องเปิดผ่าน HTTPS เท่านั้น</div>
+          <button type="button" id="btn-manual-from-insecure" class="btn btn-stock-primary btn-lg gate-btn">
+            <i class="bi bi-keyboard me-2"></i>พิมพ์รหัสแทน
+          </button>
+        </div>
+      </div>
+
+      <!-- Browser unsupported entirely. -->
+      <div class="scan-overlay-dim d-none" id="gate-unsupported">
+        <div class="gate-inner">
+          <div class="gate-icon" aria-hidden="true"><i class="bi bi-emoji-frown"></i></div>
+          <div class="gate-text">เบราว์เซอร์นี้ไม่รองรับการสแกนกล้อง<br><span class="small">โปรดใช้การพิมพ์รหัสแทน</span></div>
+          <button type="button" id="btn-manual-from-unsupported" class="btn btn-stock-primary btn-lg gate-btn">
+            <i class="bi bi-keyboard me-2"></i>พิมพ์รหัสแทน
+          </button>
+        </div>
+      </div>
+
+      <!-- Success overlay. Design §3.5.1. -->
+      <div class="scan-success d-none" id="overlay-success" role="alert" aria-live="assertive">
+        <div class="ok-icon"><i class="bi bi-check-circle-fill"></i></div>
+        <div class="ok-main">บันทึกแล้ว</div>
+        <div class="ok-detail" id="success-detail"></div>
+        <div class="small mt-2 opacity-75">เริ่มสแกนใหม่ใน 0.8 วินาที</div>
+      </div>
+    </div>
+
+    <!-- Manual fallback link (always available below the camera; design §3.4.3). -->
+    <div class="text-end mt-2">
+      <a href="#" class="toolbar-link" id="link-manual-toggle">พิมพ์รหัสแทน →</a>
+    </div>
+
+    <!-- Manual fallback panel — hidden by default. Design §3.4.3. -->
+    <div class="manual-panel d-none" id="manual-panel">
+      <div class="divider-label">พิมพ์รหัสแทนการสแกน</div>
+      <div class="mb-2">
+        <label class="form-label" for="m-sku">SKU หรือ Barcode</label>
+        <input type="text" id="m-sku" class="form-control" autocomplete="off" inputmode="text">
+      </div>
+      <div class="mb-2">
+        <label class="form-label" for="m-loc">รหัสตู้/ชั้น</label>
+        <input type="text" id="m-loc" class="form-control" autocomplete="off" inputmode="text">
+      </div>
+      <div class="d-flex gap-2">
+        <button type="button" id="btn-manual-confirm" class="btn btn-stock-primary flex-grow-1">ยืนยันรหัส</button>
+        <button type="button" id="btn-manual-cancel"  class="btn btn-outline-secondary">กลับไปสแกน</button>
+      </div>
+    </div>
+
+    <!-- Submit row (qty + action). Hidden until both chips are filled. Design §3.3.1. -->
+    <div class="submit-row d-none" id="submit-row">
+      <div class="divider-label">ดำเนินการ</div>
+      <div class="row g-2">
+        <div class="col-7">
+          <label class="form-label" for="m-type">ประเภท</label>
+          <select id="m-type" class="form-select" aria-label="ประเภท">
+            <option value="issue" selected>เบิก-จ่าย (issue)</option>
+            <option value="adjustment_loss">รายงานของชำรุด/หาย</option>
+          </select>
+        </div>
+        <div class="col-5">
+          <label class="form-label" for="m-qty">จำนวน</label>
+          <input type="number" id="m-qty" class="form-control" min="1" step="1"
+                 inputmode="numeric" pattern="[0-9]*" placeholder="0" autocomplete="off">
+        </div>
+        <div class="col-12">
+          <label class="form-label" for="m-note">หมายเหตุ (ไม่บังคับ)</label>
+          <textarea id="m-note" class="form-control" rows="2" maxlength="200" autocomplete="off"></textarea>
+        </div>
+        <div class="col-12 d-grid">
+          <button type="button" id="btn-submit" class="btn btn-stock-primary btn-submit">
+            <i class="bi bi-check2-circle me-1"></i><span>บันทึก</span>
+          </button>
+        </div>
+        <div class="col-12 text-center">
+          <button type="button" id="btn-reset" class="btn btn-link btn-sm">เริ่มใหม่</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="my-4">
+
+  <!-- Section B — Item Finder. Design §3.2 + §3.6. -->
+  <section aria-labelledby="finder-title" class="finder-section" id="finder-anchor">
+    <h6 id="finder-title" class="mb-2">ค้นของ (ดูสถานที่จัดเก็บ)</h6>
+    <div class="input-group mb-2">
+      <span class="input-group-text"><i class="bi bi-search"></i></span>
+      <input type="search" id="finder-q" class="form-control"
+             placeholder="ค้นชื่อ / SKU / Barcode" autocomplete="off">
+    </div>
+    <div id="finder-results" class="small text-muted">— พิมพ์เพื่อค้นหา —</div>
+  </section>
+
+</main>
+
+<!-- Scripts — same bootstrap order as staff.html so auth, supabase, scanner, inventory wire up. -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./shared/config.js"></script>
+<script src="./shared/supabase-client.js"></script>
+<script src="./shared/auth.js"></script>
+<script src="./shared/auth-jwt.js"></script>
+<script src="./shared/ui.js"></script>
+<script src="./shared/settings.js"></script>
+<script src="./shared/scanner.js"></script>
+<script src="./shared/inventory.js"></script>
+<script src="./js/staff-scan.js"></script>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () =>
+      navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('SW failed', e))
+    );
+  }
+</script>
+
+</body>
+</html>

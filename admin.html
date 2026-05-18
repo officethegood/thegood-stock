@@ -23,6 +23,7 @@
   <ul class="nav nav-pills mb-3 flex-wrap gap-1">
     <li><button class="btn nav-link stock-tab" data-tab="dashboard"><i class="bi bi-speedometer2"></i> Dashboard</button></li>
     <li><button class="btn nav-link stock-tab" data-tab="locations"><i class="bi bi-geo-alt"></i> Locations</button></li>
+    <li><button class="btn nav-link stock-tab" data-tab="inventory"><i class="bi bi-box-seam"></i> Inventory</button></li>
     <li><button class="btn nav-link stock-tab" data-tab="ambulances"><i class="bi bi-truck"></i> Ambulances</button></li>
     <li><button class="btn nav-link stock-tab" data-tab="settings"><i class="bi bi-gear"></i> Settings</button></li>
     <li><button class="btn nav-link stock-tab" data-tab="sessions"><i class="bi bi-people"></i> Sessions</button></li>
@@ -30,6 +31,7 @@
 
   <div id="tab-dashboard"  class="tab-pane d-none"></div>
   <div id="tab-locations"  class="tab-pane d-none"></div>
+  <div id="tab-inventory"  class="tab-pane d-none"></div>
   <div id="tab-ambulances" class="tab-pane d-none"></div>
   <div id="tab-settings"   class="tab-pane d-none"></div>
   <div id="tab-sessions"   class="tab-pane d-none"></div>
@@ -45,8 +47,12 @@
 <script src="./shared/settings.js"></script>
 <script src="./shared/notify.js"></script>
 
+<script src="./shared/inventory.js"></script>
+<script src="./shared/scanner.js"></script>
+
 <script src="./js/dashboard.js"></script>
 <script src="./js/locations.js"></script>
+<script src="./js/inventory.js"></script>
 <script src="./js/ambulances.js"></script>
 <script src="./js/settings-ui.js"></script>
 <script src="./js/sessions-ui.js"></script>

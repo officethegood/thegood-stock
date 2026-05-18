@@ -1,12 +1,13 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.1.0';
+const CACHE_VERSION = 'thegood-stock-v0.2.2';
 const STATIC_ASSETS = [
   './',
   './login.html',
   './index.html',
   './admin.html',
   './staff.html',
+  './staff-scan.html',
   './403.html',
   './shared/styles.css',
   './shared/config.js',
@@ -18,14 +19,18 @@ const STATIC_ASSETS = [
   './shared/notify.js',
   './shared/cloudinary.js',
   './shared/realtime.js',
+  './shared/inventory.js',
+  './shared/scanner.js',
   './js/login.js',
   './js/admin-shell.js',
   './js/dashboard.js',
   './js/locations.js',
+  './js/inventory.js',
   './js/ambulances.js',
   './js/settings-ui.js',
   './js/sessions-ui.js',
   './js/staff-home.js',
+  './js/staff-scan.js',
 ];
 
 self.addEventListener('install', (e) => {

@@ -119,7 +119,7 @@ User explicitly chose to **not install** Supabase CLI ("กลัวชนกั
   - `phase0-foundation` — initial Phase 0 deploy
   - `phase0.1-ambulance-sync` — after Ambulance GAS patch + CORS fix
 - **Local clone:** `F:\@Coding\ระบบ\The Good Stock\`
-- **Commits to date:** ~44 on `main`
+- **Commits to date:** 42 on `main` (verified by PM 2026-05-18 via `git rev-list --count HEAD` at commit `0098daa`)
 
 ### 4.2 Supabase
 - **Project name:** `thegood-stock`
@@ -182,7 +182,7 @@ Auto-provided by Supabase: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (deprecat
 
 ## 5. What's been built (Phase 0 deliverables)
 
-### 5.1 Frontend (33 files)
+### 5.1 Frontend (24 code files: 5 HTML + 8 js/ + 10 shared/ + 1 sw.js — verified by PM 2026-05-18)
 - `login.html` + `js/login.js` — Sarabun font, navy gradient background, teal accent button
 - `index.html` — auth check + role-based redirect to admin.html or staff.html
 - `admin.html` + `js/admin-shell.js` — top nav, 5 tabs with lazy init
@@ -234,10 +234,14 @@ Auto-provided by Supabase: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (deprecat
 
 | Test | Status | Details |
 |---|---|---|
-| T1 Login | ✅ | `admin/thegood` → admin.html as Admin |
-| T11 Locations CRUD | ✅ | Created ROOM-A "ห้องคลังหลัก" via Generate, toast "เพิ่มแล้ว" |
-| T22 Sessions audit | ✅ | Admin sees own session row in `user_sessions` |
-| T16 Ambulance sync | ✅ | 4 ambulances upserted (TG1, TG2, TG4, TG6) from Ambulance Dashboard GAS |
+| T1 Login | ✅ | `admin/thegood` → admin.html as Admin (re-confirmed by PM Chrome MCP 2026-05-18) |
+| T2 Wrong password | ✅ | PM Chrome MCP 2026-05-18: wrong pwd → exact text "ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง" |
+| T6 Logout | ✅ | PM Chrome MCP 2026-05-18: logout → login.html, F5 → still login.html (no auto-login) |
+| T11 Locations CRUD | 🟡 | Claude Code created ROOM-A "ห้องคลังหลัก" via Generate. PM 2026-05-18 verified display + CRUD buttons; full nested-create not re-executed to avoid leaving test data |
+| T16 Ambulance sync | ✅ | 4 ambulances upserted (TG1, TG2, TG4, TG6) from Ambulance Dashboard GAS (tag `phase0.1-ambulance-sync`) |
+| T22 Sessions audit | ✅ | PM Chrome MCP 2026-05-18: Sessions tab shows current active + previous revoked admin sessions correctly |
+
+Full test status: see `docs/test-checklist.md` — 5 fully verified, 3 partial/soft-pass, 4 blocked (need creds/data), 11 pending low-priority edge cases.
 
 ---
 
@@ -280,6 +284,8 @@ The Ambulances table has a `+ Location` action that currently shows a toast "ไ
 7. **The Phase 0 plan file references `supabase` CLI commands** in some tasks (originally written before user chose Dashboard-only path). When using the plan as reference, translate those to Dashboard actions per `docs/deploy.md`.
 
 8. **`pt_user_meta` localStorage key is shared with pt-medical V.5.** This is intentional — preserves compatibility if user navigates between Thegood apps in the same browser. JWT keys (`stock_access_token` etc.) are Stock-specific.
+
+9. **Phase 1 deployment deviation: `ALTER DATABASE postgres SET app.*` is not permitted via Supabase's `pg-meta` API or the dashboard SQL editor on Free/Nano plans** (ERROR 42501: `permission denied to set parameter "app.supabase_url"`). The original spec for the low-stock trigger expected `current_setting('app.supabase_url')` + `current_setting('app.service_role_key')`. Resolution: the trigger function (`check_low_stock` in `20260518010500_stock_triggers.sql`) now reads from the Phase 0 `settings` table — keys `NOTIFY_SUPABASE_URL` and `NOTIFY_SERVICE_ROLE_KEY` — seeded by `20260518010700_notify_settings.sql`. The deploy operator (or future Admin → Settings UI) must populate the two values; trigger WARN-and-skips the pg_net call if they're empty. End-to-end DB→Edge path verified 2026-05-18: trigger fired, `tg-notify` returned `{ok:true,sent:false,reason:"disabled"}` (Telegram not enabled yet, but plumbing works).
 
 ---
 

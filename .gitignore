@@ -20,3 +20,9 @@ supabase/.branches/
 # Build artifacts (none expected — static site, but defensive)
 dist/
 build/
+
+# Temporary installer package for global agents — delete after running install.bat
+_install-global-agents/
+
+# Claude Code worktrees (transient per-branch checkouts)
+.claude/worktrees/
