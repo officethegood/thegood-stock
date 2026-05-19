@@ -581,7 +581,7 @@
           const item = _items.find((x) => x.id === printBtn.dataset.id);
           if (item && window.QRPrint) {
             window.QRPrint.single(item.sku, {
-              size:       '38mm',
+              size:       '50x30',
               label:      item.sku,
               subtitle:   item.name,
               entityType: 'item',

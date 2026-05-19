@@ -242,73 +242,246 @@
   // PNG generation helpers
   // -------------------------------------------------------------------------
 
-  /**
-   * Render a single QR sticker onto an offscreen canvas and return the canvas.
-   * Canvas is 1024×1024 px.
-   *
-   * @param {string} code
-   * @param {string} label     — human-readable code text below QR
-   * @param {string} subtitle  — Thai name below label (optional)
-   * @returns {HTMLCanvasElement}
-   */
-  function _renderSingleToCanvas(code, label, subtitle) {
-    var SIZE = 1024;
-    var QR_SIZE = 768;   // QR occupies top 75%
-    var PAD = 24;
+  // -------------------------------------------------------------------------
+  // FC sticker design system (Phase 0.6 Wave 4)
+  // Vital teal #00B8A9, Mitr/JetBrains Mono via canvas font strings
+  // -------------------------------------------------------------------------
 
-    var canvas = document.createElement('canvas');
-    canvas.width  = SIZE;
-    canvas.height = SIZE;
-    var ctx = canvas.getContext('2d');
+  var FC_VITAL = '#00B8A9';
+  var FC_INK   = '#0c1929';
+  var FC_SOFT  = 'rgba(12,25,41,0.62)';
+  var FC_MUTE  = 'rgba(12,25,41,0.40)';
+  var FC_LINE  = 'rgba(12,25,41,0.18)';
 
-    // White background
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, SIZE, SIZE);
-
-    // Render QR into a temporary hidden div, then copy to canvas
+  /** Render QR-only image into a canvas region. Returns the qr element. */
+  function _drawQRInto(ctx, code, x, y, size) {
     var tempDiv = document.createElement('div');
     tempDiv.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
     document.body.appendChild(tempDiv);
-
     try {
       new window.QRCode(tempDiv, {
-        text:         String(code),
-        width:        QR_SIZE,
-        height:       QR_SIZE,
+        text: String(code),
+        width: size,
+        height: size,
         correctLevel: window.QRCode.CorrectLevel.M,
       });
-
-      // qrcode.js renders a canvas or img; we need the image data
       var qrEl = tempDiv.querySelector('canvas') || tempDiv.querySelector('img');
-      if (qrEl) {
-        var offsetX = (SIZE - QR_SIZE) / 2;
-        var offsetY = PAD;
-        if (qrEl.tagName === 'CANVAS') {
-          ctx.drawImage(qrEl, offsetX, offsetY, QR_SIZE, QR_SIZE);
-        } else {
-          // img element
-          ctx.drawImage(qrEl, offsetX, offsetY, QR_SIZE, QR_SIZE);
-        }
-      }
+      if (qrEl) ctx.drawImage(qrEl, x, y, size, size);
     } finally {
       tempDiv.remove();
     }
+  }
 
-    // Label text
-    var textY = PAD + QR_SIZE + 32;
-    ctx.textAlign   = 'center';
-    ctx.fillStyle   = '#000000';
-    ctx.font        = 'bold 36pt monospace';
-    ctx.fillText(String(label || code), SIZE / 2, textY, SIZE - PAD * 2);
+  /** Truncate text to fit max width on canvas, append … if cut. */
+  function _fit(ctx, text, maxW) {
+    text = String(text || '');
+    if (ctx.measureText(text).width <= maxW) return text;
+    while (text.length > 1 && ctx.measureText(text + '…').width > maxW) {
+      text = text.slice(0, -1);
+    }
+    return text + '…';
+  }
 
-    // Subtitle
-    if (subtitle) {
-      ctx.font      = '24pt sans-serif';
-      ctx.fillStyle = '#444444';
-      ctx.fillText(String(subtitle).slice(0, 32), SIZE / 2, textY + 52, SIZE - PAD * 2);
+  /**
+   * 50×50 mm square layout (1000×1000 px @ 508dpi).
+   * Layout: top vital-teal stripe, brand wordmark + entity-type tag, QR centered,
+   * monospace code below QR, subtle subtitle, scan hint footer.
+   */
+  function _renderSquare50(code, label, subtitle, entityType) {
+    var W = 1000, H = 1000;
+    var QR_SIZE = 620;
+    var canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    var ctx = canvas.getContext('2d');
+
+    // Background
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+
+    // Hairline border
+    ctx.strokeStyle = FC_LINE;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, W - 2, H - 2);
+
+    // Top vital-teal stripe (brand identifier)
+    ctx.fillStyle = FC_VITAL;
+    ctx.fillRect(0, 0, W, 14);
+
+    // Brand wordmark (top-left)
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = FC_INK;
+    ctx.font = '600 22pt "Mitr", system-ui, sans-serif';
+    ctx.fillText('thegood', 36, 38);
+    ctx.fillStyle = FC_VITAL;
+    ctx.font = '600 22pt "JetBrains Mono", monospace';
+    ctx.fillText('/stock', 175, 38);
+
+    // Entity-type tag (top-right uppercase)
+    if (entityType) {
+      ctx.textAlign = 'right';
+      ctx.fillStyle = FC_MUTE;
+      ctx.font = '500 12pt "JetBrains Mono", monospace';
+      var tag = String(entityType).toUpperCase();
+      ctx.fillText(tag, W - 36, 46);
     }
 
+    // QR centered horizontally, vertically positioned with breathing room
+    var qrX = (W - QR_SIZE) / 2;
+    var qrY = 130;
+    _drawQRInto(ctx, code, qrX, qrY, QR_SIZE);
+
+    // Subtle vital corners around QR (4 brand marks at QR corners)
+    ctx.strokeStyle = FC_VITAL;
+    ctx.lineWidth = 4;
+    var c = 18; // corner length
+    [[qrX, qrY], [qrX + QR_SIZE, qrY], [qrX, qrY + QR_SIZE], [qrX + QR_SIZE, qrY + QR_SIZE]].forEach(function (p, i) {
+      var dx = (i === 1 || i === 3) ? -1 : 1;
+      var dy = (i >= 2) ? -1 : 1;
+      ctx.beginPath();
+      ctx.moveTo(p[0], p[1] + dy * c);
+      ctx.lineTo(p[0], p[1]);
+      ctx.lineTo(p[0] + dx * c, p[1]);
+      ctx.stroke();
+    });
+
+    // Code text (monospace, large, bold)
+    var codeY = qrY + QR_SIZE + 50;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = FC_INK;
+    ctx.font = '700 34pt "JetBrains Mono", monospace';
+    var codeTxt = _fit(ctx, label || code, W - 80);
+    ctx.fillText(codeTxt, W / 2, codeY);
+
+    // Subtitle (Thai name)
+    if (subtitle) {
+      ctx.font = '400 20pt "IBM Plex Sans Thai", "Sarabun", sans-serif';
+      ctx.fillStyle = FC_SOFT;
+      var subTxt = _fit(ctx, subtitle, W - 80);
+      ctx.fillText(subTxt, W / 2, codeY + 55);
+    }
+
+    // Bottom hairline + scan hint
+    ctx.strokeStyle = FC_LINE;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(36, H - 50);
+    ctx.lineTo(W - 36, H - 50);
+    ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.fillStyle = FC_MUTE;
+    ctx.font = '400 11pt "JetBrains Mono", monospace';
+    ctx.fillText('SCAN TO LOOK UP', W / 2, H - 38);
+
     return canvas;
+  }
+
+  /**
+   * 50×30 mm landscape layout (1000×600 px).
+   * Layout: QR on left, brand + code + subtitle + scan hint on right.
+   */
+  function _renderLandscape5030(code, label, subtitle, entityType) {
+    var W = 1000, H = 600;
+    var QR_SIZE = 500;
+    var canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    var ctx = canvas.getContext('2d');
+
+    // Background + border
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = FC_LINE;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, W - 2, H - 2);
+
+    // Left vital-teal stripe
+    ctx.fillStyle = FC_VITAL;
+    ctx.fillRect(0, 0, 12, H);
+
+    // QR positioned left with breathing room
+    var qrX = 50;
+    var qrY = (H - QR_SIZE) / 2;
+    _drawQRInto(ctx, code, qrX, qrY, QR_SIZE);
+
+    // Vital corners around QR
+    ctx.strokeStyle = FC_VITAL;
+    ctx.lineWidth = 4;
+    var c = 14;
+    [[qrX, qrY], [qrX + QR_SIZE, qrY], [qrX, qrY + QR_SIZE], [qrX + QR_SIZE, qrY + QR_SIZE]].forEach(function (p, i) {
+      var dx = (i === 1 || i === 3) ? -1 : 1;
+      var dy = (i >= 2) ? -1 : 1;
+      ctx.beginPath();
+      ctx.moveTo(p[0], p[1] + dy * c);
+      ctx.lineTo(p[0], p[1]);
+      ctx.lineTo(p[0] + dx * c, p[1]);
+      ctx.stroke();
+    });
+
+    // Right side: text block
+    var rightX = qrX + QR_SIZE + 50;
+    var rightW = W - rightX - 30;
+
+    // Brand wordmark
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = FC_INK;
+    ctx.font = '600 18pt "Mitr", system-ui, sans-serif';
+    ctx.fillText('thegood', rightX, 60);
+    ctx.fillStyle = FC_VITAL;
+    ctx.font = '600 18pt "JetBrains Mono", monospace';
+    ctx.fillText('/stock', rightX + 118, 60);
+
+    // Entity-type tag
+    if (entityType) {
+      ctx.fillStyle = FC_MUTE;
+      ctx.font = '500 11pt "JetBrains Mono", monospace';
+      ctx.fillText(String(entityType).toUpperCase(), rightX, 100);
+    }
+
+    // Divider hairline
+    ctx.strokeStyle = FC_LINE;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(rightX, 138);
+    ctx.lineTo(rightX + rightW, 138);
+    ctx.stroke();
+
+    // Code text (large monospace bold)
+    ctx.fillStyle = FC_INK;
+    ctx.font = '700 30pt "JetBrains Mono", monospace';
+    var codeTxt = _fit(ctx, label || code, rightW);
+    ctx.fillText(codeTxt, rightX, 165);
+
+    // Subtitle (Thai name, multi-line if needed)
+    if (subtitle) {
+      ctx.fillStyle = FC_SOFT;
+      ctx.font = '400 18pt "IBM Plex Sans Thai", "Sarabun", sans-serif';
+      var subTxt = _fit(ctx, subtitle, rightW);
+      ctx.fillText(subTxt, rightX, 235);
+    }
+
+    // Bottom scan hint with arrow
+    ctx.fillStyle = FC_MUTE;
+    ctx.font = '400 11pt "JetBrains Mono", monospace';
+    ctx.fillText('SCAN TO LOOK UP ↗', rightX, H - 60);
+
+    return canvas;
+  }
+
+  /**
+   * Render a single QR sticker. Routes to the layout matching `size`.
+   *
+   * @param {string} code
+   * @param {string} label
+   * @param {string} subtitle
+   * @param {string} size       '50x50' | '50x30' (default '50x50')
+   * @param {string} entityType 'ITEM'|'LOCATION'|'BAG'|'TANK'|'LOT' (informational only)
+   * @returns {HTMLCanvasElement}
+   */
+  function _renderSingleToCanvas(code, label, subtitle, size, entityType) {
+    if (size === '50x30') return _renderLandscape5030(code, label, subtitle, entityType);
+    return _renderSquare50(code, label, subtitle, entityType);
   }
 
   /**
@@ -318,19 +491,32 @@
    * @param {Array<{code, label?, subtitle?}>} rows
    * @returns {HTMLCanvasElement}
    */
-  function _renderBulkToCanvas(rows) {
-    var COLS      = 6;
-    var CELL      = 380;
-    var GAP       = 8;
-    var H_PAD     = 40;
-    var V_PAD     = 40;
-    var QR_SZ     = 260;
-    var PAGE_W    = 2480;
+  /**
+   * Render bulk stickers on an A4 page (2480×3508 @ 300dpi).
+   * Cell size matches `size`:
+   *   '50x50' — 4 cols × 5 rows = 20 stickers/page (each ≈ 500×500 px)
+   *   '50x30' — 4 cols × 8 rows = 32 stickers/page (each ≈ 500×300 px)
+   */
+  function _renderBulkToCanvas(rows, size) {
+    var isLandscape = (size === '50x30');
+    var PAGE_W = 2480;   // A4 portrait width at 300dpi
+    var PAGE_H = 3508;   // A4 portrait height
+    var H_PAD  = 40;
+    var V_PAD  = 50;
+    var GAP    = 20;
+    var COLS, CELL_W, CELL_H, ROWS_PER_PAGE;
 
-    var numRows   = Math.ceil(rows.length / COLS);
-    var PAGE_H    = V_PAD * 2 + numRows * (CELL + GAP) - GAP;
-    // Minimum A4 height
-    PAGE_H = Math.max(PAGE_H, 3508);
+    if (isLandscape) {
+      COLS = 4; CELL_W = 590; CELL_H = 354;
+      ROWS_PER_PAGE = 8;
+    } else {
+      COLS = 4; CELL_W = 590; CELL_H = 590;
+      ROWS_PER_PAGE = 5;
+    }
+
+    var numRows = Math.ceil(rows.length / COLS);
+    var pages   = Math.ceil(numRows / ROWS_PER_PAGE);
+    PAGE_H = Math.max(PAGE_H, pages * 3508);
 
     var canvas = document.createElement('canvas');
     canvas.width  = PAGE_W;
@@ -341,55 +527,17 @@
     ctx.fillRect(0, 0, PAGE_W, PAGE_H);
 
     rows.forEach(function (row, idx) {
-      var col  = idx % COLS;
-      var r    = Math.floor(idx / COLS);
-      var cellX = H_PAD + col * (CELL + GAP);
-      var cellY = V_PAD + r   * (CELL + GAP);
+      var col = idx % COLS;
+      var r   = Math.floor(idx / COLS);
+      var cellX = H_PAD + col * (CELL_W + GAP);
+      var cellY = V_PAD + r   * (CELL_H + GAP);
 
-      // Cell border
-      ctx.strokeStyle = '#cccccc';
-      ctx.lineWidth   = 1;
-      ctx.setLineDash([4, 4]);
-      ctx.strokeRect(cellX + 0.5, cellY + 0.5, CELL - 1, CELL - 1);
-      ctx.setLineDash([]);
+      // Render mini-canvas using same single-sticker renderer (consistent design)
+      var miniCanvas = isLandscape
+        ? _renderLandscape5030(row.code || '', row.label || row.code || '', row.subtitle || '', row.entityType || '')
+        : _renderSquare50(row.code || '', row.label || row.code || '', row.subtitle || '', row.entityType || '');
 
-      // QR
-      var code     = row.code || '';
-      var label    = row.label    || code;
-      var subtitle = row.subtitle || '';
-
-      var tempDiv = document.createElement('div');
-      tempDiv.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
-      document.body.appendChild(tempDiv);
-      try {
-        new window.QRCode(tempDiv, {
-          text:         String(code),
-          width:        QR_SZ,
-          height:       QR_SZ,
-          correctLevel: window.QRCode.CorrectLevel.M,
-        });
-        var qrEl = tempDiv.querySelector('canvas') || tempDiv.querySelector('img');
-        if (qrEl) {
-          var qrX = cellX + (CELL - QR_SZ) / 2;
-          var qrY = cellY + 8;
-          ctx.drawImage(qrEl, qrX, qrY, QR_SZ, QR_SZ);
-        }
-      } finally {
-        tempDiv.remove();
-      }
-
-      // Label
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#000000';
-      ctx.font      = 'bold 18pt monospace';
-      ctx.fillText(String(label).slice(0, 20), cellX + CELL / 2, cellY + QR_SZ + 28, CELL - 12);
-
-      // Subtitle
-      if (subtitle) {
-        ctx.font      = '12pt sans-serif';
-        ctx.fillStyle = '#555555';
-        ctx.fillText(String(subtitle).slice(0, 24), cellX + CELL / 2, cellY + QR_SZ + 52, CELL - 12);
-      }
+      ctx.drawImage(miniCanvas, cellX, cellY, CELL_W, CELL_H);
     });
 
     return canvas;
@@ -442,9 +590,12 @@
    */
   async function single(code, opts) {
     opts = opts || {};
-    var size  = opts.size || '38mm';
+    // Phase 0.6 Wave 4: size '50x50' (square) | '50x30' (landscape).
+    // Legacy values '38mm'/'50mm'/'76mm' mapped to '50x50' for compat.
+    var size = opts.size === '50x30' ? '50x30' : '50x50';
     var label = opts.label || code;
     var sub   = opts.subtitle || '';
+    var entityType = (opts.entityType || '').toUpperCase();
 
     try {
       await _waitForQRCode();
@@ -453,10 +604,8 @@
       return;
     }
 
-    // Phase 0.6 Wave 2 PM decision: always download PNG, skip print dialog.
-    // User feedback: print dialog UX awkward (defaults to PDF/no-printer paths).
-    // Solution: deliver PNG file, user prints themselves with their preferred tool.
-    downloadPNG(code, { label: label, subtitle: sub });
+    // PM decision (Wave 2): always download PNG, skip print dialog.
+    downloadPNG(code, { label: label, subtitle: sub, size: size, entityType: entityType });
   }
 
   /**
@@ -516,8 +665,10 @@
    */
   async function downloadPNG(code, opts) {
     opts = opts || {};
-    var label    = opts.label    || code;
-    var subtitle = opts.subtitle || '';
+    var label      = opts.label      || code;
+    var subtitle   = opts.subtitle   || '';
+    var size       = opts.size       || '50x50';   // '50x50' | '50x30'
+    var entityType = opts.entityType || '';
 
     try {
       await _waitForQRCode();
@@ -526,8 +677,13 @@
       return;
     }
 
-    var canvas   = _renderSingleToCanvas(code, label, subtitle);
-    var filename = 'qr-' + String(code).replace(/[^A-Za-z0-9\-_ก-๙]/g, '_') + '.png';
+    // Ensure web fonts are loaded before drawing text (Mitr, JetBrains Mono, IBM Plex Sans Thai)
+    if (document.fonts && document.fonts.ready) {
+      try { await document.fonts.ready; } catch (e) { /* non-fatal */ }
+    }
+
+    var canvas   = _renderSingleToCanvas(code, label, subtitle, size, entityType);
+    var filename = 'qr-' + String(code).replace(/[^A-Za-z0-9\-_ก-๙]/g, '_') + '-' + size + '.png';
     _downloadCanvasAsPNG(canvas, filename);
   }
 
@@ -543,6 +699,8 @@
       alert('กรุณาเลือกรายการที่ต้องการดาวน์โหลด');
       return;
     }
+    opts = opts || {};
+    var size = opts.size || '50x50';
 
     try {
       await _waitForQRCode();
@@ -551,8 +709,12 @@
       return;
     }
 
-    var canvas   = _renderBulkToCanvas(rows);
-    var filename = 'qr-bulk-' + _dateStamp() + '.png';
+    if (document.fonts && document.fonts.ready) {
+      try { await document.fonts.ready; } catch (e) { /* non-fatal */ }
+    }
+
+    var canvas   = _renderBulkToCanvas(rows, size);
+    var filename = 'qr-bulk-' + size + '-' + _dateStamp() + '.png';
     _downloadCanvasAsPNG(canvas, filename);
   }
 

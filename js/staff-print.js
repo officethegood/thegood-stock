@@ -127,12 +127,19 @@
       btnBulk.addEventListener('click', () => {
         const rows = _filtered.filter((r) => _selected.has(_rowCode(r)));
         if (!rows.length) return;
+        const sz = _resolveSize();
         const printRows = rows.map((r) => ({
           code: _rowCode(r),
           label: _rowCode(r),
           subtitle: _rowName(r),
+          entityType: (_activeTab || '').toUpperCase(),
         }));
-        window.QRPrint.bulk(printRows, {});
+        if (sz.bulkA4) {
+          window.QRPrint.bulk(printRows, { size: sz.single });
+        } else {
+          // Single-row size selected; download each as separate PNG via bulk-as-grid mode
+          window.QRPrint.bulk(printRows, { size: sz.single });
+        }
       });
     }
 
@@ -330,11 +337,12 @@
       btn.addEventListener('click', () => {
         const code     = btn.dataset.code;
         const subtitle = btn.dataset.name;
-        const singleSize = (_activeSize === 'a4') ? '38mm' : _activeSize;
+        const sz       = _resolveSize();
         window.QRPrint.single(code, {
-          size:     singleSize,
-          label:    code,
-          subtitle: subtitle,
+          size:       sz.single,
+          label:      code,
+          subtitle:   subtitle,
+          entityType: (_activeTab || '').toUpperCase(),
         });
       });
     });

@@ -238,7 +238,7 @@
         const name = btn.dataset.bagName;
         if (window.QRPrint) {
           window.QRPrint.single(code, {
-            size:       '38mm',
+            size:       '50x50',
             label:      code,
             subtitle:   name,
             entityType: 'bag',

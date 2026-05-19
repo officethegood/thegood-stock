@@ -342,7 +342,7 @@
         const locCode = btn.dataset.locCode;
         if (window.QRPrint) {
           window.QRPrint.single(serial, {
-            size:       '38mm',
+            size:       '50x50',
             label:      serial,
             subtitle:   size + (locCode ? ' • ' + locCode : ''),
             entityType: 'tank',

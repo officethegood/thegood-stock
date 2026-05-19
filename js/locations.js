@@ -63,7 +63,7 @@
           if (!loc) return;
           if (window.QRPrint) {
             window.QRPrint.single(loc.code, {
-              size:       '38mm',
+              size:       '50x50',
               label:      loc.code,
               subtitle:   loc.name,
               entityType: 'location',
