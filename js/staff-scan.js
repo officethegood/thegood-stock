@@ -1,12 +1,25 @@
 // js/staff-scan.js
-// Phase 1 + Phase 2 — Staff Scan page controller.
+// Phase 1 + Phase 2 + Phase 6 — Staff Scan page controller.
 //
 // Design:  docs/superpowers/designs/2026-05-18-phase1-ui-design.md §3 (Area 2)
 //          docs/superpowers/designs/2026-05-18-phase2-ui-design.md  §3.4, §5.2
+//          docs/superpowers/designs/2026-05-19-phase6-linens-ui-design.md §3.5–§3.8
 // Spec:    docs/superpowers/specs/2026-05-18-phase1-inventory-design.md §7.3
 //          docs/superpowers/specs/2026-05-19-phase2-decisions-locked.md Q-D1, Q-D2, Q-D4
+//          docs/superpowers/specs/2026-05-19-phase6-linens-laundry-design.md §7.2
 // Plan:    docs/superpowers/plans/2026-05-18-phase1-inventory-plan.md Phase E
 //          docs/superpowers/plans/2026-05-19-phase2-medication-plan.md Task B4
+//
+// Phase 6 changes (additive only — all existing Phase 1/2/3/4/5 code unchanged):
+//   — When a cabinet QR is scanned (type='cabinet') and it has LINEN items,
+//     shows the linen cabinet view (overlay, same pattern as Phase 4 bag checklist).
+//   — Linen cabinet view: ส่งซัก / รับคืน / นับใหม่ buttons per item row.
+//   — Each flow uses PhotoCaptureModal (shared/photo-capture.js, Phase 3) — reused as-is.
+//   — ส่งซัก/รับคืน: AppLinens.sendToLaundry / receiveFromLaundry (shared/linens.js)
+//   — นับใหม่: AppLinens.submitLinenCount (shared/linens.js)
+//   — photo required=true for ส่งซัก/รับคืน; required=false for นับใหม่ (Q6-B)
+//   — RBAC: รับคืน button visible for all roles (Q6-F Option B — Staff allowed)
+//   — If cabinet has no LINEN items, fall through to standard Phase 1 scan flow
 //
 // Locked decisions enforced here:
 //   Q-Phase1-F  Dedicated staff-scan.html (we ARE that page)
@@ -697,6 +710,39 @@
       window.showToast('warning', 'ไม่พบสถานที่นี้');
       return;
     }
+
+    // ── Phase 4: Bag QR routing ─────────────────────────────────────────────
+    // If the scanned location is type='bag', switch to read-only bag checklist view.
+    // Spec: docs/superpowers/specs/2026-05-19-phase4-als-bags-design.md §7.2
+    // UX:  docs/superpowers/designs/2026-05-19-phase4-als-bags-ui-design.md §8
+    if (data.type === 'bag') {
+      // Stop scanner while showing the checklist view.
+      if (state.scanning) {
+        window.AppScanner.stopScanning().catch(() => {});
+        state.scanning = false;
+      }
+      _showBagChecklistView(data);
+      return;
+    }
+    // ── End Phase 4 bag routing ─────────────────────────────────────────────
+
+    // ── Phase 6: Cabinet LINEN routing ──────────────────────────────────────
+    // If the scanned location is type='cabinet', check for LINEN items.
+    // If found, show linen cabinet view. If no LINEN items, fall through to standard scan.
+    if (data.type === 'cabinet') {
+      if (state.scanning) {
+        window.AppScanner.stopScanning().catch(() => {});
+        state.scanning = false;
+      }
+      const hasLinen = await _checkCabinetHasLinens(data.id);
+      if (hasLinen) {
+        _showLinenCabinetView(data);
+        return;
+      }
+      // No LINEN items — fall through to standard scan flow
+    }
+    // ── End Phase 6 cabinet routing ─────────────────────────────────────────
+
     setState('LOCATION_SCANNED', { location: data });
 
     // Phase 2: for tracks_lots items + issue/adjustment_loss, launch lot picker
@@ -747,6 +793,22 @@
         return;
       }
       closeManualPanel();
+
+      // Phase 4: if location is type='bag', route to bag checklist (read-only for Staff)
+      if (locRes.data.type === 'bag') {
+        _showBagChecklistView(locRes.data);
+        return;
+      }
+
+      // Phase 6: if location is type='cabinet', check for LINEN items
+      if (locRes.data.type === 'cabinet') {
+        const hasLinen = await _checkCabinetHasLinens(locRes.data.id);
+        if (hasLinen) {
+          _showLinenCabinetView(locRes.data);
+          return;
+        }
+      }
+
       setState('LOCATION_SCANNED', { item: itemRes.data, location: locRes.data });
 
       // Phase 2: check if lot picker is needed (same as handleLocationScan path)
@@ -992,6 +1054,595 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
+
+  // ==========================================================================
+  // Phase 4 — Bag checklist view (S-4.5)
+  //
+  // Spec:  docs/superpowers/specs/2026-05-19-phase4-als-bags-design.md §7.2
+  // UX:    docs/superpowers/designs/2026-05-19-phase4-als-bags-ui-design.md §8
+  //
+  // Read-only for Staff (A-2 in spec §7.2): no restock button, no qty inputs.
+  // Triggered when scanned/typed location has type='bag'.
+  //
+  // Implementation note:
+  //   This function injects a full-screen overlay panel over the scan UI.
+  //   "สแกนใหม่" button dismisses it and resumes scanning.
+  // ==========================================================================
+
+  async function _showBagChecklistView(location) {
+    // Inject or reuse bag checklist overlay
+    let overlay = document.getElementById('bag-checklist-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'bag-checklist-overlay';
+      overlay.className = 'container-fluid py-3';
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:#fff;z-index:1050;overflow-y:auto;';
+      document.body.appendChild(overlay);
+    }
+    overlay.style.display = 'block';
+
+    // Loading state
+    overlay.innerHTML = `
+      <div class="text-center py-5">
+        <span class="spinner-border text-stock-accent mb-3"></span>
+        <p>กำลังโหลดข้อมูลถุง…</p>
+      </div>`;
+
+    // Load bag status
+    const bagStatus = window.AppBags ? await window.AppBags.getBagStatusByCode(location.code) : null;
+    const bag       = bagStatus?.data;
+
+    if (!bag) {
+      overlay.innerHTML = `
+        <div class="alert alert-warning m-3">ไม่พบข้อมูลถุง ${escapeHtml(location.code)}</div>
+        <div class="px-3">
+          <button class="btn btn-outline-secondary w-100" id="bag-cl-back-btn">
+            <i class="bi bi-arrow-left me-1"></i> สแกนใหม่
+          </button>
+        </div>`;
+      overlay.querySelector('#bag-cl-back-btn').addEventListener('click', _dismissBagChecklist);
+      return;
+    }
+
+    const alertBadge = window.AppBags?.getAlertBadge(bag.alert_level) ||
+                       { cssClass: 'bg-secondary text-white', label: bag.alert_level };
+    const pct        = bag.completion_pct;
+    const barCls     = pct === null ? 'bg-secondary' : pct === 100 ? 'bg-success' : pct >= 70 ? 'bg-warning' : 'bg-danger';
+
+    overlay.innerHTML = `
+      <style>.badge-stock-expiring{background-color:#fd7e14;color:#fff;}</style>
+
+      <div class="d-flex align-items-center mb-3">
+        <i class="bi bi-bag-heart me-2 fs-4 text-stock-accent"></i>
+        <div>
+          <span class="fw-bold">${escapeHtml(bag.bag_code)}</span>
+          <span class="badge ${alertBadge.cssClass} ms-2">${alertBadge.label}</span>
+        </div>
+      </div>
+      <p class="text-muted small mb-2">${escapeHtml(bag.bag_name || '')}</p>
+
+      ${pct !== null ? `
+      <div class="mb-3">
+        <div class="progress" style="height:8px;" role="progressbar"
+             aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"
+             aria-label="ความสมบูรณ์ ${pct}%">
+          <div class="progress-bar ${barCls}" style="width:${pct}%"></div>
+        </div>
+        <small class="text-muted">${pct}% สมบูรณ์</small>
+      </div>` : ''}
+
+      ${!bag.bag_template_id ? `
+        <div class="alert alert-warning small">ถุงนี้ยังไม่มีเทมเพลต — ไม่สามารถตรวจสอบได้</div>` : ''}
+
+      ${['low_stock','expiring','expired'].includes(bag.alert_level) ? `
+        <div class="alert alert-warning small">
+          <i class="bi bi-info-circle me-1"></i>ถุงนี้ยังไม่สมบูรณ์ — แจ้ง Admin เพื่อเติมของ
+        </div>` : ''}
+
+      ${bag.alert_level === 'expired' ? `
+        <div class="alert alert-danger small">
+          <i class="bi bi-exclamation-triangle-fill me-1"></i>มียาหมดอายุในถุงนี้ — แจ้ง Admin ทันที
+        </div>` : ''}
+
+      ${bag.alert_level === 'complete' ? `
+        <div class="alert alert-success small">
+          <i class="bi bi-check-circle-fill me-1"></i>ถุงนี้สมบูรณ์พร้อมใช้งาน
+        </div>` : ''}
+
+      <h6>ตรวจสอบของในถุง</h6>
+      <div id="bag-cl-composition">
+        ${bag.bag_template_id
+          ? '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>กำลังโหลดรายการ…</div>'
+          : '<p class="text-muted small">ไม่มีเทมเพลต</p>'}
+      </div>
+
+      <div class="mt-3">
+        <button class="btn btn-outline-secondary w-100" id="bag-cl-scan-btn" style="min-height:52px;">
+          <i class="bi bi-arrow-left me-1"></i> สแกนใหม่
+        </button>
+      </div>
+      <!-- NOTE: No restock button for Staff (read-only per spec §7.2 A-2) -->`;
+
+    overlay.querySelector('#bag-cl-scan-btn').addEventListener('click', _dismissBagChecklist);
+
+    // Load composition async
+    if (bag.bag_template_id) {
+      const { data: comp, error: compErr } = await window.AppBags.getBagComposition(
+        bag.location_id, bag.bag_template_id
+      );
+      const compEl = document.getElementById('bag-cl-composition');
+      if (!compEl) return;
+
+      if (compErr || !comp || comp.length === 0) {
+        compEl.innerHTML = `<p class="text-muted small">ไม่พบรายการในเทมเพลต</p>`;
+        return;
+      }
+
+      const getLotBadge = window.AppLots?.getLotBadge || (() => ({ cls: '', label: '' }));
+      const rowsHtml = comp.map((r) => {
+        let resultHtml;
+        if (r.actual_qty >= r.target_qty) {
+          resultHtml = `<span class="text-success small"><i class="bi bi-check-circle-fill"></i> ครบ</span>`;
+        } else if (r.mandatory) {
+          resultHtml = `<span class="text-danger small fw-bold"><i class="bi bi-x-circle-fill"></i> ขาด ${r.target_qty - r.actual_qty}</span>`;
+        } else {
+          resultHtml = `<span class="text-secondary small"><i class="bi bi-dash"></i> ไม่บังคับ</span>`;
+        }
+        return `
+          <tr class="${r.mandatory && r.deficit > 0 ? 'table-danger' : ''}">
+            <td><small>${r.mandatory ? '★' : '○'} ${escapeHtml(r.name)}</small></td>
+            <td class="text-center"><small>${r.actual_qty}/${r.target_qty}</small></td>
+            <td>${resultHtml}</td>
+          </tr>`;
+      }).join('');
+
+      compEl.innerHTML = `
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered align-middle">
+            <thead class="table-light">
+              <tr><th>สินค้า</th><th class="text-center">ปัจจุบัน/เป้า</th><th>ผล</th></tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>`;
+    }
+  }
+
+  function _dismissBagChecklist() {
+    const overlay = document.getElementById('bag-checklist-overlay');
+    if (overlay) overlay.style.display = 'none';
+
+    // Resume scanning if camera was previously started
+    if (state.cameraStartedEver && !state.scanning) {
+      startScanLoop().catch(handleCameraError);
+    } else if (!state.cameraStartedEver) {
+      setState('PERMISSION_PROMPT');
+    }
+  }
+
+  // ==========================================================================
+  // Phase 6 — Linen Cabinet View + ส่งซัก / รับคืน / นับใหม่ workflows
+  //
+  // Spec:    docs/superpowers/specs/2026-05-19-phase6-linens-laundry-design.md §7.2
+  // UX:      docs/superpowers/designs/2026-05-19-phase6-linens-ui-design.md §3.5–§3.8
+  // Decisions: Q6-B (photo required for laundry, advisory for count)
+  //            Q6-F Option B (Staff allowed to รับคืน)
+  //            Q6-E (independent movements — no pairing)
+  //
+  // Reuse:   shared/photo-capture.js (PhotoCaptureModal) — DO NOT redefine
+  //          shared/linens.js (AppLinens) — fetchLinenByCabinet, sendToLaundry,
+  //                                          receiveFromLaundry, submitLinenCount
+  //
+  // Architecture: overlay panel (same pattern as Phase 4 _showBagChecklistView)
+  // ==========================================================================
+
+  /** Check whether a cabinet location has any LINEN items assigned to it. */
+  async function _checkCabinetHasLinens(locationId) {
+    if (!window.AppLinens) return false;
+    const { data, error } = await window.AppLinens.fetchLinenByCabinet(locationId);
+    if (error || !data) return false;
+    return data.length > 0;
+  }
+
+  /** Dismiss linen cabinet overlay and resume scanning. */
+  function _dismissLinenCabinet() {
+    const overlay = document.getElementById('linen-cabinet-overlay');
+    if (overlay) overlay.style.display = 'none';
+    if (state.cameraStartedEver && !state.scanning) {
+      startScanLoop().catch(handleCameraError);
+    } else if (!state.cameraStartedEver) {
+      setState('PERMISSION_PROMPT');
+    }
+  }
+
+  /**
+   * Show the linen cabinet view overlay.
+   * Fetches LINEN items for the cabinet and renders the card list with action buttons.
+   * @param {{ id: string, code: string, name: string, type: string }} location
+   */
+  async function _showLinenCabinetView(location) {
+    let overlay = document.getElementById('linen-cabinet-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'linen-cabinet-overlay';
+      overlay.className = 'scan-wrap';
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:#f5f7fa;z-index:1050;overflow-y:auto;padding-top:16px;';
+      document.body.appendChild(overlay);
+    }
+    overlay.style.display = 'block';
+
+    // Loading state
+    overlay.innerHTML = `
+      <div class="d-flex align-items-center mb-3">
+        <button id="linen-back-btn" class="btn btn-sm btn-outline-secondary me-2" style="min-height:44px;">
+          <i class="bi bi-arrow-left"></i>
+        </button>
+        <h6 class="mb-0">ตู้ ${escapeHtml(location.name)} — รายการผ้า</h6>
+      </div>
+      <div class="text-center py-4 text-muted">
+        <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลดรายการผ้า...
+      </div>`;
+    overlay.querySelector('#linen-back-btn').addEventListener('click', _dismissLinenCabinet);
+
+    if (!window.AppLinens) {
+      overlay.innerHTML += `<div class="alert alert-danger m-2">โมดูล AppLinens ไม่พร้อม — ตรวจสอบ shared/linens.js</div>`;
+      return;
+    }
+
+    const { data: rows, error } = await window.AppLinens.fetchLinenByCabinet(location.id);
+    if (error) {
+      _renderLinenOverlayError(overlay, location);
+      return;
+    }
+    _renderLinenCabinetList(overlay, location, rows || []);
+  }
+
+  function _renderLinenOverlayError(overlay, location) {
+    overlay.innerHTML = `
+      <div class="d-flex align-items-center mb-3">
+        <button class="btn btn-sm btn-outline-secondary me-2 linen-back-btn-err" style="min-height:44px;">
+          <i class="bi bi-arrow-left"></i>
+        </button>
+        <h6 class="mb-0">ตู้ ${escapeHtml(location.name)} — รายการผ้า</h6>
+      </div>
+      <div class="alert alert-danger m-2" role="alert">
+        โหลดรายการผ้าไม่สำเร็จ — ลองสแกนใหม่
+      </div>
+      <div class="px-2">
+        <button class="btn btn-outline-secondary w-100 linen-back-btn-err" style="min-height:44px;">
+          <i class="bi bi-arrow-left me-1"></i> สแกนใหม่
+        </button>
+      </div>`;
+    overlay.querySelectorAll('.linen-back-btn-err').forEach((b) =>
+      b.addEventListener('click', _dismissLinenCabinet));
+  }
+
+  function _renderLinenCabinetList(overlay, location, rows) {
+    const L = window.AppLinens;
+    const backBtn = `<div class="d-flex align-items-center mb-3">
+      <button id="linen-back-btn2" class="btn btn-sm btn-outline-secondary me-2" style="min-height:44px;">
+        <i class="bi bi-arrow-left"></i>
+      </button>
+      <h6 class="mb-0">ตู้ ${escapeHtml(location.name)} — รายการผ้า</h6>
+    </div>`;
+
+    if (rows.length === 0) {
+      overlay.innerHTML = backBtn + `
+        <div class="text-center py-5 text-muted">
+          <div style="font-size:3rem;">🚫</div>
+          <p class="mt-2">ตู้นี้ยังไม่มีรายการผ้า</p>
+          <p class="small">ติดต่อผู้ดูแลระบบเพื่อเพิ่มสินค้า</p>
+          <button class="btn btn-outline-secondary" id="linen-rescan-btn" style="min-height:44px;">
+            <i class="bi bi-arrow-left me-1"></i> สแกนใหม่
+          </button>
+        </div>`;
+      overlay.querySelector('#linen-back-btn2, #linen-rescan-btn')?.addEventListener('click', _dismissLinenCabinet);
+      overlay.querySelectorAll('#linen-back-btn2, #linen-rescan-btn').forEach((b) =>
+        b.addEventListener('click', _dismissLinenCabinet));
+      return;
+    }
+
+    const cards = rows.map((row) => {
+      const lastDate   = L ? L.formatDate(row.counted_at) : (row.counted_at ? row.counted_at.slice(0, 10) : 'ยังไม่เคยนับ');
+      const badge      = L ? L.discrepancyBadgeHtml(row) : '';
+      const statusText = row.counted_at
+        ? `นับล่าสุด: ${escapeHtml(lastDate)}`
+        : 'ยังไม่เคยนับ';
+      return `
+        <div class="card mb-3" data-item-id="${escapeHtml(row.item_id)}"
+             data-item-name="${escapeHtml(row.item_name)}"
+             data-item-sku="${escapeHtml(row.sku)}"
+             data-location-id="${escapeHtml(location.id)}"
+             data-location-code="${escapeHtml(location.code)}"
+             data-current-qty="${row.current_qty ?? 0}">
+          <div class="card-body py-3">
+            <div class="fw-bold mb-1">${escapeHtml(row.item_name)}</div>
+            <div class="text-muted small mb-2">
+              คงเหลือ: ${row.current_qty ?? 0} ผืน  •  ${escapeHtml(statusText)}
+              ${badge ? '  <span class="ms-1">' + badge + '</span>' : ''}
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+              <button class="btn btn-warning text-dark btn-sm linen-btn-send" style="min-height:44px;min-width:80px;" data-flow="laundry_out">
+                ส่งซัก
+              </button>
+              <button class="btn btn-success btn-sm linen-btn-receive" style="min-height:44px;min-width:80px;" data-flow="laundry_in">
+                รับคืน
+              </button>
+              <button class="btn btn-stock-primary btn-sm linen-btn-count" style="min-height:44px;min-width:80px;" data-flow="count">
+                นับใหม่
+              </button>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+
+    overlay.innerHTML = backBtn + cards;
+    overlay.querySelector('#linen-back-btn2')?.addEventListener('click', _dismissLinenCabinet);
+
+    // Bind action buttons
+    overlay.querySelectorAll('[data-item-id]').forEach((card) => {
+      const itemId      = card.dataset.itemId;
+      const itemName    = card.dataset.itemName;
+      const itemSku     = card.dataset.itemSku;
+      const locationId  = card.dataset.locationId;
+      const locationCode = card.dataset.locationCode;
+      const currentQty  = parseInt(card.dataset.currentQty, 10) || 0;
+
+      card.querySelector('.linen-btn-send')?.addEventListener('click', () =>
+        _startLinenFlow('laundry_out', { itemId, itemName, itemSku, locationId, locationCode, currentQty }, location, rows));
+      card.querySelector('.linen-btn-receive')?.addEventListener('click', () =>
+        _startLinenFlow('laundry_in', { itemId, itemName, itemSku, locationId, locationCode, currentQty }, location, rows));
+      card.querySelector('.linen-btn-count')?.addEventListener('click', () =>
+        _startLinenFlow('count', { itemId, itemName, itemSku, locationId, locationCode, currentQty }, location, rows));
+    });
+  }
+
+  /**
+   * Start a linen workflow (ส่งซัก / รับคืน / นับใหม่).
+   * Steps: Photo → Qty/Count → Confirm → Submit
+   * Photo required=true for laundry flows (Q6-B); required=false for count.
+   */
+  function _startLinenFlow(flow, item, location, allRows) {
+    // Step 1: Photo
+    if (!window.PhotoCaptureModal) {
+      window.showToast('error', 'PhotoCaptureModal ไม่พร้อม — ตรวจสอบ shared/photo-capture.js');
+      return;
+    }
+
+    const isLaundry = flow === 'laundry_out' || flow === 'laundry_in';
+    const isCount   = flow === 'count';
+    const folder    = `thegood-stock/linen/${item.locationCode}/${item.itemSku}`;
+    const flowLabels = {
+      laundry_out: 'ส่งซัก',
+      laundry_in:  'รับคืน',
+      count:       'นับใหม่',
+    };
+    const label = flowLabels[flow] || flow;
+    const photoLabel = isLaundry
+      ? (flow === 'laundry_out' ? 'ถ่ายรูปผ้าก่อนส่งซัก (บังคับ)' : 'ถ่ายรูปผ้าที่รับคืน (บังคับ)')
+      : 'ถ่ายรูปผ้าที่นับ (แนะนำ — ไม่บังคับ)';
+
+    let capturedPhotoUrl = null;
+
+    window.PhotoCaptureModal.open({
+      folder:     folder,
+      label:      photoLabel,
+      optional:   !isLaundry,   // Q6-B: required for laundry, optional for count
+      entityId:   item.itemId + '-' + Date.now(),
+      onUploaded: (url) => {
+        capturedPhotoUrl = url;
+        _showLinenQtyStep(flow, item, location, allRows, capturedPhotoUrl);
+      },
+      onSkipped:  isCount ? () => {
+        capturedPhotoUrl = null;
+        _showLinenQtyStep(flow, item, location, allRows, null);
+      } : undefined,
+      onError:    (msg) => {
+        window.showToast('error', 'อัปโหลดรูปไม่สำเร็จ: ' + (msg || ''));
+      },
+    });
+  }
+
+  /**
+   * Step 2: Qty / Count input screen (injected into linen-cabinet-overlay).
+   */
+  function _showLinenQtyStep(flow, item, location, allRows, photoUrl) {
+    const overlay = document.getElementById('linen-cabinet-overlay');
+    if (!overlay) return;
+
+    const isCount  = flow === 'count';
+    const isOut    = flow === 'laundry_out';
+    const maxQty   = isOut ? item.currentQty : null;   // no ceiling for laundry_in
+    const flowTitle = isCount ? 'นับใหม่' : (isOut ? 'ส่งซัก' : 'รับคืน');
+    const qtyLabel  = isCount ? 'จำนวนที่นับได้จริง' : (isOut ? 'จำนวนที่ส่งซัก' : 'จำนวนที่รับคืน');
+
+    overlay.innerHTML = `
+      <div class="d-flex align-items-center mb-3">
+        <button id="linen-qty-back" class="btn btn-sm btn-outline-secondary me-2" style="min-height:44px;">
+          <i class="bi bi-arrow-left"></i>
+        </button>
+        <h6 class="mb-0">${escapeHtml(flowTitle)}: ${escapeHtml(item.itemName)}</h6>
+      </div>
+      <div class="alert alert-light border mb-3 py-2 px-3 small">
+        ตู้: ${escapeHtml(location.name)}  •  คงเหลือปัจจุบัน: ${item.currentQty} ผืน
+        ${photoUrl ? ' • <span class="text-success"><i class="bi bi-check-circle-fill"></i> มีรูปถ่าย</span>' : ''}
+      </div>
+      ${isCount ? `<div class="alert alert-info small py-2 px-3 mb-3">
+        <i class="bi bi-info-circle me-1"></i>
+        การบันทึกนี้คือ "ภาพถ่ายจำนวน" เท่านั้น จะไม่เปลี่ยนยอดคงเหลือในระบบโดยอัตโนมัติ
+      </div>` : ''}
+      <div class="card mb-3">
+        <div class="card-body">
+          <label class="form-label fw-bold">${escapeHtml(qtyLabel)} *</label>
+          <div class="d-flex align-items-center gap-3">
+            <button id="linen-qty-minus" class="btn btn-outline-secondary" style="min-width:44px;min-height:44px;font-size:1.3rem;">−</button>
+            <input id="linen-qty-input" type="number" class="form-control text-center"
+                   min="${isCount ? 0 : 1}" max="${maxQty !== null ? maxQty : ''}"
+                   value="${isCount ? item.currentQty : 1}"
+                   style="font-size:2rem;height:64px;max-width:140px;" inputmode="numeric">
+            <button id="linen-qty-plus" class="btn btn-outline-secondary" style="min-width:44px;min-height:44px;font-size:1.3rem;">+</button>
+          </div>
+          ${isOut ? `<div id="linen-qty-warn" class="alert alert-warning d-none mt-2 py-2 small" role="alert">
+            ไม่สามารถส่งซักเกินจำนวนที่มี (สูงสุด ${item.currentQty} ผืน)
+          </div>` : ''}
+        </div>
+      </div>
+      <button id="linen-qty-next" class="btn btn-stock-primary w-100 mb-2" style="min-height:52px;">
+        ถัดไป →
+      </button>
+      <button id="linen-qty-cancel" class="btn btn-link text-muted w-100" style="min-height:44px;">
+        ยกเลิก ${escapeHtml(flowTitle)}
+      </button>
+    `;
+
+    const qtyEl   = overlay.querySelector('#linen-qty-input');
+    const minusBtn = overlay.querySelector('#linen-qty-minus');
+    const plusBtn  = overlay.querySelector('#linen-qty-plus');
+    const nextBtn  = overlay.querySelector('#linen-qty-next');
+    const warnEl   = overlay.querySelector('#linen-qty-warn');
+
+    function _validateQty() {
+      const v = parseInt(qtyEl.value, 10);
+      const valid = !isNaN(v) && v >= (isCount ? 0 : 1) && (maxQty === null || v <= maxQty);
+      nextBtn.disabled = !valid;
+      if (warnEl) warnEl.classList.toggle('d-none', !(maxQty !== null && v > maxQty));
+      return valid;
+    }
+
+    qtyEl.addEventListener('input', _validateQty);
+    minusBtn.addEventListener('click', () => { qtyEl.value = Math.max(isCount ? 0 : 1, parseInt(qtyEl.value || '1', 10) - 1); _validateQty(); });
+    plusBtn.addEventListener('click',  () => { qtyEl.value = parseInt(qtyEl.value || '0', 10) + 1; _validateQty(); });
+    overlay.querySelector('#linen-qty-back').addEventListener('click', () => _showLinenCabinetView(location));
+    overlay.querySelector('#linen-qty-cancel').addEventListener('click', () => _showLinenCabinetView(location));
+
+    nextBtn.addEventListener('click', () => {
+      if (!_validateQty()) return;
+      const qty = parseInt(qtyEl.value, 10);
+      _showLinenConfirmStep(flow, item, location, allRows, photoUrl, qty);
+    });
+
+    _validateQty();
+  }
+
+  /**
+   * Step 3: Confirm screen.
+   */
+  function _showLinenConfirmStep(flow, item, location, allRows, photoUrl, qty) {
+    const overlay = document.getElementById('linen-cabinet-overlay');
+    if (!overlay) return;
+
+    const isCount = flow === 'count';
+    const isOut   = flow === 'laundry_out';
+    const flowTitle  = isCount ? 'บันทึกการนับ' : (isOut ? 'ส่งซัก' : 'รับคืน');
+    const confirmBtn = isCount ? 'btn-stock-primary' : (isOut ? 'btn-warning text-dark' : 'btn-success');
+    const afterQty   = isOut
+      ? (item.currentQty - qty)
+      : (isCount ? '—' : (item.currentQty + qty));
+
+    // Delta hint for count confirmation
+    const delta = isCount ? (item.currentQty - qty) : null;
+    const deltaHtml = isCount && delta !== 0 ? `
+      <div class="alert ${Math.abs(delta) > 2 ? 'alert-warning' : 'alert-info'} small py-2 mt-2">
+        ต่างจากระบบ: ${delta > 0 ? '+' : ''}${delta} ผืน
+        ${Math.abs(delta) > 2 ? '<br><small>หากต้องการแก้ไขยอดคงเหลือ ให้ใช้ ส่งซัก หรือ รับคืน</small>' : ''}
+      </div>` : '';
+
+    overlay.innerHTML = `
+      <div class="d-flex align-items-center mb-3">
+        <button id="linen-conf-back" class="btn btn-sm btn-outline-secondary me-2" style="min-height:44px;">
+          <i class="bi bi-arrow-left"></i>
+        </button>
+        <h6 class="mb-0">สรุป${escapeHtml(flowTitle)}</h6>
+      </div>
+      <div class="card mb-3">
+        <div class="card-body">
+          <div class="row mb-2"><div class="col-5 text-muted small">รายการ:</div><div class="col-7 fw-bold">${escapeHtml(item.itemName)}</div></div>
+          <div class="row mb-2"><div class="col-5 text-muted small">ตู้:</div><div class="col-7">${escapeHtml(location.name)}</div></div>
+          <div class="row mb-2">
+            <div class="col-5 text-muted small">${isCount ? 'จำนวนที่นับ:' : (isOut ? 'จำนวนที่ส่ง:' : 'จำนวนที่รับ:')}</div>
+            <div class="col-7 fw-bold">${qty} ผืน</div>
+          </div>
+          ${!isCount ? `<div class="row mb-2"><div class="col-5 text-muted small">คงเหลือหลัง:</div><div class="col-7">${afterQty} ผืน</div></div>` : ''}
+          ${photoUrl ? '<div class="row mb-2"><div class="col-5 text-muted small">รูปถ่าย:</div><div class="col-7"><span class="badge bg-success"><i class="bi bi-check-circle-fill me-1"></i>มีรูป</span></div></div>' : '<div class="row mb-2"><div class="col-5 text-muted small">รูปถ่าย:</div><div class="col-7 text-muted small">ข้าม</div></div>'}
+          ${deltaHtml}
+        </div>
+      </div>
+      <button id="linen-confirm-btn" class="btn ${confirmBtn} w-100 mb-2" style="min-height:52px;">
+        ยืนยัน ${escapeHtml(flowTitle)}
+      </button>
+      <button id="linen-conf-cancel" class="btn btn-link text-muted w-100" style="min-height:44px;">
+        ยกเลิก
+      </button>
+      <div id="linen-conf-error" class="alert alert-danger d-none mt-2" role="alert"></div>
+    `;
+
+    overlay.querySelector('#linen-conf-back').addEventListener('click', () =>
+      _showLinenQtyStep(flow, item, location, allRows, photoUrl));
+    overlay.querySelector('#linen-conf-cancel').addEventListener('click', () =>
+      _showLinenCabinetView(location));
+
+    overlay.querySelector('#linen-confirm-btn').addEventListener('click', async () => {
+      const btn    = overlay.querySelector('#linen-confirm-btn');
+      const errEl  = overlay.querySelector('#linen-conf-error');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>กำลังบันทึก...';
+      if (errEl) errEl.classList.add('d-none');
+
+      let result;
+      const L = window.AppLinens;
+      if (!L) {
+        if (errEl) { errEl.textContent = 'AppLinens ไม่พร้อม'; errEl.classList.remove('d-none'); }
+        btn.disabled = false;
+        btn.textContent = `ยืนยัน ${flowTitle}`;
+        return;
+      }
+
+      if (isCount) {
+        result = await L.submitLinenCount({
+          locationId:  item.locationId,
+          itemId:      item.itemId,
+          countedQty:  qty,
+          photoUrl:    photoUrl || null,
+        });
+      } else if (isOut) {
+        result = await L.sendToLaundry({
+          itemId:     item.itemId,
+          locationId: item.locationId,
+          qty,
+          photoUrl,
+        });
+      } else {
+        result = await L.receiveFromLaundry({
+          itemId:     item.itemId,
+          locationId: item.locationId,
+          qty,
+          photoUrl,
+        });
+      }
+
+      if (result.error) {
+        const msg = result.error.message || result.error.code || 'เกิดข้อผิดพลาด';
+        if (errEl) { errEl.textContent = 'บันทึกไม่สำเร็จ — ' + msg; errEl.classList.remove('d-none'); }
+        btn.disabled = false;
+        btn.textContent = `ยืนยัน ${flowTitle}`;
+        return;
+      }
+
+      // Success
+      const successMsg = isCount
+        ? `บันทึกการนับแล้ว — ${item.itemName} จำนวน ${qty} ผืน`
+        : isOut
+        ? `ส่งซักเรียบร้อย — qty ${item.itemName} ลดแล้ว ${qty} ผืน`
+        : `รับคืนเรียบร้อย — qty ${item.itemName} เพิ่มแล้ว ${qty} ผืน`;
+      window.showToast('success', successMsg);
+
+      // Refresh linen cabinet view (re-fetch updated data)
+      _showLinenCabinetView(location);
+    });
+  }
+
+  // ── End Phase 6 linen cabinet view ──────────────────────────────────────
+
 })();
 
 // =============================================================================

@@ -1,5 +1,5 @@
 // js/inventory.js
-// Phase 1 + Phase 2 — Admin Inventory tab controller.
+// Phase 1 + Phase 2 + Phase 6 — Admin Inventory tab controller.
 //
 // Spec refs:
 //   docs/superpowers/specs/2026-05-18-phase1-inventory-design.md  §7.1 (Admin Inventory tab)
@@ -8,6 +8,15 @@
 //   docs/superpowers/specs/2026-05-19-phase2-decisions-locked.md  Q-D5 (scroll-x + edge-fade), derived #10 (tracks_lots)
 //   docs/superpowers/plans/2026-05-19-phase2-medication-plan.md   Task B2
 //   docs/superpowers/designs/2026-05-18-phase2-ui-design.md       §3.2, §3.3
+//   docs/superpowers/specs/2026-05-19-phase6-linens-laundry-design.md §7.1 (Admin inventory extension)
+//   docs/superpowers/designs/2026-05-19-phase6-linens-ui-design.md    §3.1–§3.5
+//
+// Phase 6 changes (additive only — all existing Phase 1/2 code unchanged):
+//   — "ผ้า" option added to category dropdown (LINEN code detected via data-code attribute)
+//   — When category=LINEN active in สินค้า subview: swap to v_linen_audit table
+//     + sub-category pills + discrepancy banner
+//   — Receive modal: LINEN item pre-fills reason field (laundry_in/laundry_out)
+//   — New Phase 6 functions: _loadLinenAudit, _renderLinenAudit, _renderLinenSubcatPills
 //
 // Locked decisions (PM Pex 2026-05-18/19 — DO NOT re-debate):
 //   Q1: NO Transfer modal in Phase 1 — only receive / issue / adjustment_loss / adjustment_gain
@@ -44,6 +53,11 @@
 
   // Phase 2 — active sub-view ('items'|'receive'|'lots'|'search')
   let _activeSubview = 'items';
+
+  // Phase 6 — LINEN mode state
+  let _linenMode       = false;   // true when category=LINEN + subview=items
+  let _linens          = [];      // v_linen_audit rows (LINEN mode)
+  let _activeSubcat    = 'all';   // linen sub-category filter (client-side)
 
   // =========================================================================
   // Helpers
@@ -267,6 +281,10 @@
 
     document.getElementById('inv-category').addEventListener('change', (e) => {
       _filters.category = e.target.value;
+      // Phase 6: LINEN mode toggle
+      _linenMode   = _selectedCatIsLinen();
+      _activeSubcat = 'all';
+      _toggleLinenUI(_linenMode);
       reload();
     });
     document.getElementById('inv-low-only').addEventListener('change', (e) => {
@@ -279,9 +297,18 @@
     const sel = document.getElementById('inv-category');
     if (!sel) return;
     const current = sel.value;
+    // Phase 6: add data-code attribute so we can detect LINEN selection by code, not UUID
     sel.innerHTML = '<option value="">หมวด: ทั้งหมด</option>' +
-      _categories.map((c) => `<option value="${_esc(c.id)}">${_esc(c.name)}</option>`).join('');
+      _categories.map((c) => `<option value="${_esc(c.id)}" data-code="${_esc(c.code)}">${_esc(c.name)}</option>`).join('');
     if (current) sel.value = current;
+  }
+
+  // Phase 6 — detect if the selected category option has code='LINEN'
+  function _selectedCatIsLinen() {
+    const sel = document.getElementById('inv-category');
+    if (!sel || !sel.value) return false;
+    const opt = sel.options[sel.selectedIndex];
+    return opt && opt.dataset.code === 'LINEN';
   }
 
   // =========================================================================
@@ -491,6 +518,12 @@
   // Data loaders
   // -------------------------------------------------------------------------
   async function reload() {
+    // Phase 6: branch to linen audit path when LINEN category is active in สินค้า subview
+    if (_linenMode && _activeSubview === 'items') {
+      await _loadLinenAudit();
+      return;
+    }
+
     const tbody = document.getElementById('inv-tbody');
     if (tbody && !_items.length) {
       tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">
@@ -527,6 +560,178 @@
       _refreshTimer = null;
       reload().catch(() => {});
     }, 300);
+  }
+
+  // =========================================================================
+  // Phase 6 — LINEN audit view (spec §7.1, design §3.1–§3.3)
+  // =========================================================================
+
+  /**
+   * Show or hide the LINEN-specific UI elements (subcat pills, discrepancy banner).
+   * Swaps the main table header to linen columns when active.
+   * @param {boolean} active
+   */
+  function _toggleLinenUI(active) {
+    // Sub-category pills row (injected lazily in the items-subview card)
+    let pillsRow = document.getElementById('inv-linen-subcat-row');
+    if (!pillsRow && active) {
+      // Inject pills row and banner above the items table card
+      const itemsSubview = document.getElementById('inv-subview-items');
+      if (itemsSubview) {
+        // Banner
+        const banner = document.createElement('div');
+        banner.id = 'inv-linen-banner';
+        banner.className = 'alert alert-warning d-none mb-2 py-2 px-3 small';
+        banner.setAttribute('role', 'alert');
+        banner.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>' +
+          '<span id="inv-linen-banner-text"></span>' +
+          '<span class="ms-2 text-muted">(คลาดเคลื่อนเกินเกณฑ์ &gt;5% หรือ &gt;2 ผืน)</span>';
+        itemsSubview.insertAdjacentElement('afterbegin', banner);
+
+        // Subcat pills
+        const pills = document.createElement('div');
+        pills.id = 'inv-linen-subcat-row';
+        pills.className = 'mb-2 overflow-auto d-none';
+        pills.innerHTML = `<div class="d-flex gap-2 flex-nowrap pb-1" id="inv-subcat-pills" style="min-width:max-content;">
+          <button class="btn btn-stock-primary rounded-pill btn-sm" data-subcat="all">ทั้งหมด</button>
+          <button class="btn btn-outline-secondary rounded-pill btn-sm" data-subcat="sheet">ผ้าปูที่นอน</button>
+          <button class="btn btn-outline-secondary rounded-pill btn-sm" data-subcat="blanket">ผ้าห่ม</button>
+          <button class="btn btn-outline-secondary rounded-pill btn-sm" data-subcat="towel">ผ้าขนหนู</button>
+          <button class="btn btn-outline-secondary rounded-pill btn-sm" data-subcat="gown">เสื้อกาวน์</button>
+          <button class="btn btn-outline-secondary rounded-pill btn-sm" data-subcat="wipe">ผ้าเช็ดเครื่องมือ</button>
+        </div>`;
+        banner.after(pills);
+        pills.addEventListener('click', (ev) => {
+          const btn = ev.target.closest('[data-subcat]');
+          if (!btn) return;
+          _activeSubcat = btn.dataset.subcat;
+          pills.querySelectorAll('[data-subcat]').forEach((b) => {
+            b.classList.toggle('btn-stock-primary', b === btn);
+            b.classList.toggle('btn-outline-secondary', b !== btn);
+          });
+          _renderLinenAudit(_linens);
+        });
+
+        pillsRow = pills;
+      }
+    }
+    if (pillsRow) pillsRow.classList.toggle('d-none', !active);
+    const banner = document.getElementById('inv-linen-banner');
+    if (banner && !active) banner.classList.add('d-none');
+
+    // Swap thead columns
+    const thead = document.querySelector('#inv-subview-items table thead tr');
+    if (thead) {
+      if (active) {
+        thead.innerHTML = `
+          <th scope="col">ชื่อผ้า</th>
+          <th scope="col" class="d-none d-md-table-cell">หมวดย่อย</th>
+          <th scope="col" class="d-none d-md-table-cell">ตู้</th>
+          <th scope="col" class="text-end">คงเหลือ</th>
+          <th scope="col" class="d-none d-md-table-cell">นับล่าสุด</th>
+          <th scope="col" class="d-none d-md-table-cell text-end">จำนวนนับ</th>
+          <th scope="col" class="text-end">ต่างจากระบบ</th>
+          <th scope="col" style="width:44px;"></th>
+        `;
+      } else {
+        thead.innerHTML = `
+          <th scope="col" class="d-none d-sm-table-cell">SKU</th>
+          <th scope="col">ชื่อ</th>
+          <th scope="col" class="d-none d-md-table-cell">หมวด</th>
+          <th scope="col" class="d-none d-md-table-cell">หน่วย</th>
+          <th scope="col" class="text-end">คงเหลือรวม</th>
+          <th scope="col" class="d-none d-sm-table-cell text-end">เกณฑ์</th>
+          <th scope="col" class="d-none d-sm-table-cell">สถานะ</th>
+          <th scope="col" class="text-end" style="width:44px;"></th>
+        `;
+      }
+    }
+  }
+
+  /** Load v_linen_audit rows and render the linen table. */
+  async function _loadLinenAudit() {
+    const tbody = document.getElementById('inv-tbody');
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">
+        <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลดข้อมูลผ้า…
+      </td></tr>`;
+    }
+
+    if (!window.AppLinens) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">
+        โมดูล AppLinens ไม่พร้อม — ตรวจสอบ shared/linens.js
+      </td></tr>`;
+      return;
+    }
+
+    const { data, error } = await window.AppLinens.fetchLinenAudit();
+    if (error) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">
+        โหลดข้อมูลผ้าไม่สำเร็จ — กรุณาลองใหม่
+      </td></tr>`;
+      _toast('error', 'โหลดข้อมูลผ้าไม่สำเร็จ');
+      return;
+    }
+    _linens = data || [];
+    _renderLinenAudit(_linens);
+  }
+
+  /** Render v_linen_audit rows into the items tbody, applying sub-category filter. */
+  function _renderLinenAudit(rows) {
+    const tbody  = document.getElementById('inv-tbody');
+    const banner = document.getElementById('inv-linen-banner');
+    const bannerText = document.getElementById('inv-linen-banner-text');
+    if (!tbody) return;
+
+    // Discrepancy banner
+    const discrepancyCount = rows.filter((r) => r.is_discrepancy).length;
+    if (banner && bannerText) {
+      if (discrepancyCount > 0) {
+        bannerText.textContent = `ผ้าที่มีความคลาดเคลื่อน: ${discrepancyCount} รายการ`;
+        banner.classList.remove('d-none');
+      } else {
+        banner.classList.add('d-none');
+      }
+    }
+
+    // Apply sub-category filter (client-side per spec §7.1)
+    let filtered = rows;
+    if (_activeSubcat !== 'all') {
+      filtered = rows.filter((r) => r.linen_subcategory === _activeSubcat);
+    }
+
+    if (filtered.length === 0) {
+      const subcatLabel = window.AppLinens
+        ? window.AppLinens.subcategoryLabel(_activeSubcat)
+        : _activeSubcat;
+      tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">
+        ${_esc(_activeSubcat !== 'all'
+          ? `ไม่พบผ้าหมวด ${subcatLabel} ในระบบ`
+          : 'ยังไม่มีสินค้าหมวดผ้าในระบบ — เพิ่มสินค้าใน รับเข้า')}
+      </td></tr>`;
+      return;
+    }
+
+    const L = window.AppLinens;
+    tbody.innerHTML = filtered.map((row) => {
+      const lastDate    = L ? L.formatDate(row.counted_at) : (row.counted_at ? row.counted_at.slice(0, 10) : 'ยังไม่เคยนับ');
+      const subcatLabel = L ? _esc(L.subcategoryLabel(row.linen_subcategory)) : _esc(row.linen_subcategory || '—');
+      const badge       = L ? L.discrepancyBadgeHtml(row) : _esc(String(row.delta ?? '—'));
+      const qty         = row.current_qty ?? 0;
+      const mobileSubrow = `<div class="text-muted small d-md-none">
+        ตู้ ${_esc(row.location_name || '—')} • นับ: ${row.counted_qty ?? '—'} ผืน • ${_esc(lastDate)}
+      </div>`;
+      return `<tr>
+        <td>${_esc(row.item_name)}${mobileSubrow}</td>
+        <td class="d-none d-md-table-cell">${subcatLabel}</td>
+        <td class="d-none d-md-table-cell small text-muted">${_esc(row.location_name || '—')}</td>
+        <td class="text-end">${qty}</td>
+        <td class="d-none d-md-table-cell small text-muted">${_esc(lastDate)}</td>
+        <td class="d-none d-md-table-cell text-end">${row.counted_qty ?? '—'}</td>
+        <td class="text-end">${badge}</td>
+        <td></td>
+      </tr>`;
+    }).join('');
   }
 
   // =========================================================================
@@ -1060,6 +1265,39 @@
         }).join('');
     }
 
+    // Phase 6: LINEN receive modal pre-fill (design §3.4)
+    // When a LINEN item is selected, pre-fill reason = laundry_in/laundry_out based on movement type.
+    function _onReceiveItemLinenPreFill(itemSelectEl) {
+      if (!itemSelectEl || !itemSelectEl.value) return;
+      // Check items cache for category
+      const cached = _items.find((x) => x.id === itemSelectEl.value);
+      const isLinen = cached
+        ? (_categories.find((c) => c.id === cached.category_id) || {}).code === 'LINEN'
+        : false;
+
+      const noteEl     = $('rf-note');
+      const moveTypeEl = $('rf-move-type');
+      const hintId     = 'rf-linen-reason-hint';
+      let hintEl = modalEl.querySelector('#' + hintId);
+
+      if (isLinen && noteEl && moveTypeEl) {
+        const t = moveTypeEl.value;
+        if (t === 'adjustment_gain') noteEl.value = 'laundry_in';
+        else if (t === 'adjustment_loss' || t === 'receive') noteEl.value = 'laundry_out';
+
+        if (!hintEl) {
+          hintEl = document.createElement('div');
+          hintEl.id = hintId;
+          hintEl.className = 'form-text text-info small mt-1';
+          hintEl.innerHTML = '<i class="bi bi-info-circle me-1"></i>กรณีรับผ้าคืนจากซักรีด — แก้ไขได้';
+          noteEl.after(hintEl);
+        }
+        hintEl.classList.remove('d-none');
+      } else {
+        if (hintEl) hintEl.classList.add('d-none');
+      }
+    }
+
     // When item changes, detect tracks_lots and show/hide lot section
     async function _onItemChange(itemId) {
       if (!itemId) {
@@ -1080,7 +1318,18 @@
       if (_currentItemTracksLots) await _ensureLotsScripts();
     }
 
-    $('rf-item').addEventListener('change', (ev) => _onItemChange(ev.target.value));
+    $('rf-item').addEventListener('change', (ev) => {
+      _onItemChange(ev.target.value);
+      // Phase 6: LINEN pre-fill reason field in receive modal
+      _onReceiveItemLinenPreFill(ev.target);
+    });
+
+    // Phase 6: listen for movement-type change to update reason pre-fill
+    const rfMoveType = $('rf-move-type');
+    if (rfMoveType) rfMoveType.addEventListener('change', () => {
+      _onReceiveItemLinenPreFill($('rf-item'));
+    });
+
     if (prefillItem) {
       _showLotSection(!!prefillItem.tracks_lots);
       _currentItemTracksLots = !!prefillItem.tracks_lots;

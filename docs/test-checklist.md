@@ -1517,3 +1517,132 @@ Tick each row as you verify. Re-run after every material change.
 | Partial / soft-pass | TBD | — |
 | Blocked | TBD | — |
 | Pending | TBD | T126-T151 |
+
+---
+
+# Phase 6 Linens & Laundry (T152-T171)
+
+> Covers decisions Q6-A through Q6-F locked in `docs/superpowers/specs/2026-05-19-phase6-decisions-locked.md`
+
+## Q6-D — Category + Sub-category enum (linen_subcategory)
+
+- [ ] **T152** `LINEN` category seeded in `stock_categories`.
+  - SQL: `SELECT code, name, sort_order FROM stock_categories WHERE code = 'LINEN';`
+  - Expected: 1 row — code='LINEN', name='ผ้า', sort_order=60
+
+- [ ] **T153** `linen_subcategory` enum type exists with exactly 5 values.
+  - SQL: `SELECT enumlabel FROM pg_enum WHERE enumtypid = 'linen_subcategory'::regtype ORDER BY enumsortorder;`
+  - Expected: sheet, blanket, towel, gown, wipe
+
+- [ ] **T154** `stock_items.linen_subcategory` column exists + constraint enforced.
+  - SQL (valid LINEN item): `INSERT INTO stock_items(name, sku, category_id, linen_subcategory) SELECT 'ทดสอบ', 'TEST-LIN-001', id, 'towel' FROM stock_categories WHERE code='LINEN' RETURNING id;` — Expected: 1 row
+  - SQL (LINEN without subcategory): same INSERT without `linen_subcategory` — Expected: check constraint error `chk_linen_subcategory`
+  - SQL (non-LINEN with subcategory): `INSERT INTO stock_items(name, sku, category_id, linen_subcategory) SELECT 'ทดสอบ', 'TEST-GEN-002', id, 'towel' FROM stock_categories WHERE code='GENERAL' RETURNING id;` — Expected: check constraint error `chk_linen_subcategory`
+  - Cleanup: `DELETE FROM stock_items WHERE sku IN ('TEST-LIN-001');`
+
+- [ ] **T155** 5 seed LINEN items present in `stock_items`.
+  - SQL: `SELECT sku, name, linen_subcategory FROM stock_items si JOIN stock_categories sc ON sc.id=si.category_id WHERE sc.code='LINEN' ORDER BY sku;`
+  - Expected: 5 rows, one per enum value (sheet/blanket/towel/gown/wipe), no nulls in `linen_subcategory`
+
+## Q6-D / UI — Inventory tab LINEN filter
+
+- [ ] **T156** Inventory tab — selecting category "ผ้า" shows subcategory pills + discrepancy-aware columns.
+  - Steps: admin.html → Inventory tab → Category dropdown → select "ผ้า"
+  - Expected: 5 subcategory pills (ทั้งหมด / ผ้าปู / ผ้าห่ม / ผ้าขนหนู / เสื้อคลุม / ผ้าเช็ด) appear above the table; thead gains "นับล่าสุด" and "ผลต่าง" columns
+
+- [ ] **T157** Subcategory pill filter narrows rows.
+  - Steps: with LINEN category active, click "ผ้าขนหนู" pill
+  - Expected: only towel-subcategory items shown; pill background goes active (btn-primary); other items hidden
+
+## Q6-C — Discrepancy threshold + view
+
+- [ ] **T158** `v_linen_audit` view returns correct `is_discrepancy` flag.
+  - SQL: `SELECT * FROM v_linen_audit LIMIT 10;`
+  - Expected: columns `location_id, item_id, location_code, item_name, linen_subcategory, counted_qty, stock_qty, delta, abs_delta, threshold, is_discrepancy` present; `is_discrepancy = (abs_delta >= threshold)` logic correct
+  - Threshold formula: `GREATEST(CEIL(stock_qty * (pct/100.0)), min_floor)` where pct and min_floor read from settings
+
+- [ ] **T159** Settings seed rows present.
+  - SQL: `SELECT key, value FROM settings WHERE key IN ('LINEN_DISCREPANCY_PCT','LINEN_DISCREPANCY_MIN','LINEN_AUDIT_THRESHOLD_PCT','LINEN_AUDIT_MIN_PIECES','LINEN_AUDIT_CRON_HOUR') ORDER BY key;`
+  - Expected: 5 rows with values 5, 2, 5, 2, 6 respectively (may vary if admin changed them)
+
+## Q6-A — Daily cron audit
+
+- [ ] **T160** `linen_daily_audit` cron job scheduled.
+  - SQL: `SELECT jobname, schedule, command FROM cron.job WHERE jobname = 'linen_daily_audit';`
+  - Expected: 1 row — schedule='0 23 * * *', command contains 'run_linen_audit()'
+
+- [ ] **T161** `run_linen_audit()` SECURITY DEFINER function exists and reads NOTIFY_* from settings.
+  - SQL: `SELECT proname, prosecdef FROM pg_proc WHERE proname = 'run_linen_audit';`
+  - Expected: 1 row — prosecdef=true
+  - Manual trigger (non-destructive): `SELECT run_linen_audit();` — Expected: runs without error (returns void); if no discrepancies exist, no Telegram message sent
+
+## linen_counts table + RLS
+
+- [ ] **T162** `linen_counts` table and indexes exist.
+  - SQL: `SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name='linen_counts' ORDER BY ordinal_position;`
+  - Expected: id (uuid), location_id (uuid NOT NULL), item_id (uuid NOT NULL), counted_qty (integer NOT NULL), counted_at (timestamptz), counted_by (text), photo_url (text), note (text), created_at (timestamptz)
+
+- [ ] **T163** RLS on `linen_counts` — Employee can INSERT own row, cannot read another user's row.
+  - Steps: in Supabase SQL Editor use `SET app.user_role = 'Employee'; SET app.username = 'teststaff';` then attempt INSERT with `counted_by = 'teststaff'` — Expected: success
+  - Attempt INSERT with `counted_by = 'other_user'` — Expected: RLS violation
+
+## Q6-F — sm_insert_staff RLS policy
+
+- [ ] **T164** `sm_insert_staff` policy allows `adjustment_gain` with `reason='laundry_in'` only.
+  - SQL: `SELECT policyname, qual, with_check FROM pg_policies WHERE tablename='stock_movements' AND policyname='sm_insert_staff';`
+  - Expected: `with_check` contains both `adjustment_gain` and `laundry_in`; does NOT allow bare `adjustment_gain` without `reason='laundry_in'`
+
+- [ ] **T165** Staff cannot insert `adjustment_gain` with `reason='restock'` (generic gain blocked).
+  - Steps: authenticate as Employee JWT; attempt `POST /rest/v1/stock_movements` with `movement_type=adjustment_gain, reason=restock`
+  - Expected: 403 / RLS policy violation
+
+- [ ] **T166** Staff CAN insert `adjustment_gain` with `reason='laundry_in'` (receive-from-laundry allowed).
+  - Steps: authenticate as Employee JWT; attempt `POST /rest/v1/stock_movements` with `movement_type=adjustment_gain, reason=laundry_in, item_id=<valid LINEN item>`
+  - Expected: 201 Created
+
+## Q6-B — Photo policy in staff-scan linen flows
+
+- [ ] **T167** Staff scan → cabinet with LINEN items → linen cabinet overlay appears.
+  - Steps: staff-scan.html → scan or manually enter a location code for a cabinet that has LINEN stock items; Expected: linen cabinet overlay shows with list of linen items + 3 action buttons per row (นับใหม่ / ส่งซัก / รับคืน)
+
+- [ ] **T168** "ส่งซัก" flow — photo is REQUIRED (Skip button absent).
+  - Steps: in linen cabinet overlay click "ส่งซัก" for any item
+  - Expected: PhotoCaptureModal opens without Skip button; attempting to proceed without photo is blocked
+
+- [ ] **T169** "รับคืน" flow — photo is REQUIRED (Skip button absent).
+  - Steps: in linen cabinet overlay click "รับคืน" for any item
+  - Expected: PhotoCaptureModal opens without Skip button; attempting to proceed without photo is blocked
+
+- [ ] **T170** "นับใหม่" flow — photo is ADVISORY (Skip button visible).
+  - Steps: in linen cabinet overlay click "นับใหม่" for any item
+  - Expected: PhotoCaptureModal opens WITH Skip button visible; user can skip photo and still proceed to qty step
+
+## Dashboard panel
+
+- [ ] **T171** "นับผ้าวันนี้" panel visible on Admin dashboard.
+  - Steps: admin.html → Dashboard tab
+  - Expected: panel with id `dash-panel-linens` visible; shows count of discrepancies, items counted today, and items never counted; links to Inventory tab with LINEN category pre-selected (or instruction to select ผ้า filter)
+
+## Service worker cache (Phase 6)
+
+- [ ] **T172** CACHE_VERSION bumped to `thegood-stock-v0.7.0` and `shared/linens.js` cached.
+  - Steps: DevTools → Application → Cache Storage → thegood-stock-v0.7.0
+  ```javascript
+  const keys = await caches.keys();
+  console.log(keys); // ['thegood-stock-v0.7.0']
+  const c = await caches.open('thegood-stock-v0.7.0');
+  const reqs = await c.keys();
+  console.log(reqs.map(r => r.url));
+  // Expected: includes shared/linens.js, shared/photo-capture.js
+  ```
+
+---
+
+## Phase 6 Summary
+
+| Status | Count | Tests |
+|---|---|---|
+| Fully verified | TBD | — |
+| Partial / soft-pass | TBD | — |
+| Blocked | TBD | — |
+| Pending | TBD | T152-T172 |
