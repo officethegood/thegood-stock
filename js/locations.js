@@ -44,7 +44,7 @@
             <code class="me-2 small">${escapeHtml(l.code)}</code>
             <span class="${isInactive ? 'text-muted text-decoration-line-through' : ''}">${escapeHtml(l.name)}</span>
             <span class="ms-auto">
-              <button class="btn btn-sm btn-link text-stock-accent" data-act="print" data-id="${l.id}" aria-label="พิมพ์ QR ${escapeHtml(l.code)}" title="พิมพ์ QR Sticker" style="min-width:44px;min-height:44px;">🖨️</button>
+              <button class="btn btn-sm btn-link text-stock-accent" data-act="print" data-id="${l.id}" aria-label="บันทึก QR ${escapeHtml(l.code)}" title="บันทึก QR เป็น PNG" style="min-width:44px;min-height:44px;">🖨️</button>
               <button class="btn btn-sm btn-link" data-act="edit" data-id="${l.id}"><i class="bi bi-pencil"></i></button>
               <button class="btn btn-sm btn-link text-danger" data-act="del" data-id="${l.id}"><i class="bi bi-trash"></i></button>
             </span>
@@ -69,7 +69,7 @@
               entityType: 'location',
             });
           } else {
-            alert('โมดูลพิมพ์ QR ยังไม่โหลด — รีเฟรชหน้าใหม่');
+            alert('โมดูล QR ยังไม่โหลด — รีเฟรชหน้าใหม่');
           }
         };
       }

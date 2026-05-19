@@ -317,7 +317,7 @@
                           data-serial="${_esc(t.serial)}"
                           data-tank-size="${_esc(t.tank_size)}"
                           data-loc-code="${_esc(t.locations?.code || '')}"
-                          aria-label="พิมพ์ QR ${_esc(t.serial)}" title="พิมพ์ QR Sticker"
+                          aria-label="บันทึก QR ${_esc(t.serial)}" title="บันทึก QR เป็น PNG"
                           style="min-width:44px;min-height:44px;">🖨️</button>
                 </td>
               </tr>
@@ -348,7 +348,7 @@
             entityType: 'tank',
           });
         } else {
-          alert('โมดูลพิมพ์ QR ยังไม่โหลด — รีเฟรชหน้าใหม่');
+          alert('โมดูล QR ยังไม่โหลด — รีเฟรชหน้าใหม่');
         }
       });
     });

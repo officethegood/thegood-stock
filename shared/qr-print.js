@@ -453,24 +453,10 @@
       return;
     }
 
-    var mode = await _resolvePrintMode();
-
-    if (mode === 'png') {
-      downloadPNG(code, { label: label, subtitle: sub });
-      return;
-    }
-
-    // Page-size class maps to @page rule in styles.css
-    var sizePageClass = size === '50mm' ? 'qr-page-single50'
-                      : size === '76mm' ? 'qr-page-single76'
-                      :                   'qr-page-single38';
-
-    var container = document.createElement('div');
-    container.setAttribute('data-qr-size', size);
-    container.classList.add(sizePageClass);
-    container.appendChild(_buildSticker(code, label, sub, ''));
-
-    _printContainer(container);
+    // Phase 0.6 Wave 2 PM decision: always download PNG, skip print dialog.
+    // User feedback: print dialog UX awkward (defaults to PDF/no-printer paths).
+    // Solution: deliver PNG file, user prints themselves with their preferred tool.
+    downloadPNG(code, { label: label, subtitle: sub });
   }
 
   /**
@@ -493,13 +479,12 @@
       return;
     }
 
-    var mode = await _resolvePrintMode();
+    // Phase 0.6 Wave 2 PM decision: always download PNG, skip print dialog.
+    downloadBulkPNG(rows, opts);
+    return;
 
-    if (mode === 'png') {
-      downloadBulkPNG(rows, opts);
-      return;
-    }
-
+    // === Legacy print-dialog path retained for reference / future toggle ===
+    /* eslint-disable */
     var container = document.createElement('div');
     container.classList.add('qr-page-bulk');
 

@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.9.1';  // Phase 0.6 Wave 2 — bottom-nav staff pages + FC topbar admin + brand wordmark + scan/print CTA icons
+const CACHE_VERSION = 'thegood-stock-v0.9.2';  // Phase 0.6 — QR action: print → PNG download (skip print dialog); labels บันทึก QR/PNG; ถุงยา → กระเป๋ายา
 const STATIC_ASSETS = [
   './',
   './login.html',

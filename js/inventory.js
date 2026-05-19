@@ -218,7 +218,7 @@
         <div id="inv-bulk-bar" class="d-none alert alert-info d-flex align-items-center gap-2 mb-2 py-2">
           <span id="inv-bulk-count" class="fw-bold">0</span> รายการที่เลือก
           <button type="button" class="btn btn-sm btn-stock-primary ms-2" id="inv-btn-bulk-print">
-            <i class="bi bi-printer me-1"></i>พิมพ์ที่เลือก
+            <i class="bi bi-printer me-1"></i>บันทึก PNG ที่เลือก
           </button>
           <button type="button" class="btn btn-sm btn-outline-secondary" id="inv-btn-bulk-desel">
             ยกเลิกทั้งหมด
@@ -300,7 +300,7 @@
       if (window.QRPrint) {
         window.QRPrint.bulk(rows, {});
       } else {
-        _toast('error', 'โมดูลพิมพ์ QR ยังไม่โหลด — รีเฟรชหน้าใหม่');
+        _toast('error', 'โมดูล QR ยังไม่โหลด — รีเฟรชหน้าใหม่');
       }
     });
     document.getElementById('inv-btn-bulk-desel').addEventListener('click', () => {
@@ -544,7 +544,7 @@
           <td class="text-end">
             <button type="button" class="btn btn-sm btn-link p-1" data-act="print-single"
                     data-id="${_esc(it.id)}"
-                    aria-label="พิมพ์ QR ${_esc(it.sku)}" title="พิมพ์ QR Sticker"
+                    aria-label="บันทึก QR ${_esc(it.sku)}" title="บันทึก QR เป็น PNG"
                     style="min-width:44px;min-height:44px;">
               <i class="bi bi-qr-code"></i>
             </button>
@@ -587,7 +587,7 @@
               entityType: 'item',
             });
           } else if (!window.QRPrint) {
-            _toast('error', 'โมดูลพิมพ์ QR ยังไม่โหลด — รีเฟรชหน้าใหม่');
+            _toast('error', 'โมดูล QR ยังไม่โหลด — รีเฟรชหน้าใหม่');
           }
           return;
         }

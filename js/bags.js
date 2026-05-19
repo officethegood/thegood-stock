@@ -244,7 +244,7 @@
             entityType: 'bag',
           });
         } else {
-          alert('โมดูลพิมพ์ QR ยังไม่โหลด — รีเฟรชหน้าใหม่');
+          alert('โมดูล QR ยังไม่โหลด — รีเฟรชหน้าใหม่');
         }
       });
     });
@@ -282,7 +282,7 @@
               <button class="btn btn-sm btn-link text-stock-accent bag-print-btn"
                       data-bag-code="${_esc(bag.bag_code)}"
                       data-bag-name="${_esc(bag.bag_name || bag.template_name || '')}"
-                      aria-label="พิมพ์ QR ${_esc(bag.bag_code)}" title="พิมพ์ QR Sticker"
+                      aria-label="บันทึก QR ${_esc(bag.bag_code)}" title="บันทึก QR เป็น PNG"
                       style="min-width:44px;min-height:44px;">🖨️</button>
               <span class="text-primary small">ดูรายละเอียด →</span>
             </div>
