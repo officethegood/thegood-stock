@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.14.7';  // IA — Ambulances tab merged into Settings as sub-nav (ระบบ / รถพยาบาล); top-level tab removed (was 9, now 8 tabs); sub-tab choice persisted in localStorage
+const CACHE_VERSION = 'thegood-stock-v0.15.0';  // Sub-project B+C — admin Inventory drawer "อยู่ที่ไหน" breakdown per location (qty/path/lot list) + click row → transfer pre-filled; SKU edit unlocked with confirm modal + 23505 duplicate handling
 const STATIC_ASSETS = [
   './',
   './login.html',
