@@ -204,6 +204,48 @@
         </div>
       </div>
 
+      <!-- K. Phase 0.7+ — Laundry quick-action buttons (admin) -->
+      ${window.Laundry ? `
+      <div class="row g-3 mt-1">
+        <div class="col-12">
+          <div class="card">
+            <div class="card-body py-3">
+              <p class="mb-2 fw-semibold"><i class="bi bi-basket2"></i> ผ้าและของซัก</p>
+              <div class="d-flex flex-wrap gap-2">
+                <button class="btn btn-outline-secondary btn-sm" onclick="Laundry.openModal('fill_vehicle')">
+                  <i class="bi bi-truck"></i> เติมรถ
+                </button>
+                <button class="btn btn-outline-secondary btn-sm" onclick="Laundry.openModal('mark_dirty')">
+                  <i class="bi bi-droplet-half"></i> ใช้/เปื้อน +N
+                </button>
+                <button class="btn btn-outline-secondary btn-sm" onclick="Laundry.openModal('send_wash')">
+                  <i class="bi bi-send"></i> ส่งซัก
+                </button>
+                <button class="btn btn-outline-secondary btn-sm" onclick="Laundry.openModal('receive_back')">
+                  <i class="bi bi-box-arrow-in-down"></i> รับคืน
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>` : ''}
+
+      <!-- J. Phase 0.7+ — Linen state summary from v_linen_state_summary -->
+      <div class="row g-3 mt-1" id="dash-linen-state-row">
+        <div class="col-12">
+          <div class="card" id="dash-panel-linen-state" aria-busy="true">
+            <div class="card-header">
+              <span><i class="bi bi-basket"></i> สถานะผ้า</span>
+            </div>
+            <div id="dash-linen-state-body" class="card-body">
+              <div class="text-center text-muted py-3">
+                <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด…
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- F. Legacy Phase 0 status block, collapsed by default (ops continuity per task brief option) -->
       <div class="card mt-3 border-stock-accent">
         <div class="card-body py-2">
@@ -1180,6 +1222,96 @@
   }
 
   // =========================================================================
+  // J. Phase 0.7+ — Linen state summary widget (v_linen_state_summary)
+  //
+  // Spec: docs/superpowers/specs/2026-05-19-phase0.7-location-hierarchy-design.md §D11
+  //
+  // Queries v_linen_state_summary (only is_linen=true rows).
+  // Shows one progress-stack bar per SKU: green=clean, blue=vehicle, amber=dirty, grey=external.
+  // Graceful fallback: if view missing (migration not yet applied) → shows empty state message.
+  // Empty state: no rows with qty_total > 0 → hides entire panel row.
+  // =========================================================================
+  async function _loadPanelLinenState() {
+    const body     = document.getElementById('dash-linen-state-body');
+    const panelRow = document.getElementById('dash-linen-state-row');
+    const card     = document.getElementById('dash-panel-linen-state');
+    if (!body) return;
+
+    try {
+      const sb = getSupabaseClient();
+      const { data: rows, error } = await sb
+        .from('v_linen_state_summary')
+        .select('*')
+        .gt('qty_total', 0);
+
+      card?.setAttribute('aria-busy', 'false');
+
+      if (error) {
+        // View may not exist yet (migration pending) — show soft empty state
+        body.innerHTML = `
+          <div class="text-center text-muted py-3 small">
+            <i class="bi bi-basket me-1"></i>ยังไม่มีข้อมูลผ้า
+          </div>`;
+        return;
+      }
+
+      if (!rows || rows.length === 0) {
+        // No linen items configured → hide entire panel row
+        if (panelRow) panelRow.classList.add('d-none');
+        return;
+      }
+
+      const cardsHtml = rows.map((r) => {
+        const total    = r.qty_total || 0;
+        const clean    = r.qty_clean    || 0;
+        const vehicle  = r.qty_vehicle  || 0;
+        const dirty    = r.qty_dirty    || 0;
+        const external = r.qty_external || 0;
+
+        // Guard against division by zero
+        const pct = (n) => total > 0 ? Math.round((n / total) * 100) : 0;
+        const pClean    = pct(clean);
+        const pVehicle  = pct(vehicle);
+        const pDirty    = pct(dirty);
+        // External fills remainder to avoid rounding gaps
+        const pExternal = Math.max(0, 100 - pClean - pVehicle - pDirty);
+
+        return `
+          <div class="fc-card mb-2 p-3" style="border:1px solid var(--fc-paper-sub);border-radius:8px;">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <strong>${_esc(r.name)}</strong>
+              <span class="fc-mono small text-muted">${_esc(r.sku)}</span>
+            </div>
+            <div class="small text-muted mb-2">รวม ${total} ผืน</div>
+            <div style="height:24px; display:flex; border-radius:6px; overflow:hidden;">
+              ${pClean    > 0 ? `<div title="พร้อมใช้ ${clean}"    style="background:#10b981;width:${pClean}%;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;overflow:hidden;">${clean > 0 ? clean : ''}</div>` : ''}
+              ${pVehicle  > 0 ? `<div title="ในรถ ${vehicle}"       style="background:#3b82f6;width:${pVehicle}%;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;overflow:hidden;">${vehicle > 0 ? vehicle : ''}</div>` : ''}
+              ${pDirty    > 0 ? `<div title="รอซัก ${dirty}"        style="background:#f59e0b;width:${pDirty}%;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;overflow:hidden;">${dirty > 0 ? dirty : ''}</div>` : ''}
+              ${pExternal > 0 ? `<div title="กำลังซัก ${external}" style="background:#9ca3af;width:${pExternal}%;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;overflow:hidden;">${external > 0 ? external : ''}</div>` : ''}
+              ${total === 0   ? `<div style="background:var(--fc-paper-sub);width:100%;"></div>` : ''}
+            </div>
+            <div class="d-flex gap-3 small mt-2 flex-wrap">
+              <span style="color:#10b981;">&#9679; พร้อมใช้ ${clean}</span>
+              <span style="color:#3b82f6;">&#9679; ในรถ ${vehicle}</span>
+              <span style="color:#f59e0b;">&#9679; รอซัก ${dirty}</span>
+              <span style="color:#9ca3af;">&#9679; กำลังซัก ${external}</span>
+            </div>
+          </div>`;
+      }).join('');
+
+      body.innerHTML = cardsHtml;
+
+    } catch (e) {
+      const body2 = document.getElementById('dash-linen-state-body');
+      if (body2) body2.innerHTML = `
+        <div class="text-center text-muted py-3 small">
+          <i class="bi bi-basket me-1"></i>ยังไม่มีข้อมูลผ้า
+        </div>`;
+      console.warn('[dashboard] _loadPanelLinenState error', e);
+    }
+  }
+
+  // =========================================================================
   // F. Legacy Phase 0 system-status block (collapsed by default)
   //
   // This preserves the Phase 0 dashboard's purpose (ops sanity check: auth, DB,
@@ -1226,10 +1358,11 @@
       _refreshTimer = null;
       _loadPanelStock();
       _loadPanelLow();
-      _loadPanelExpiry();   // Phase 2: also refresh expiry timeline on stock changes
-      _loadPanelLoans();    // Phase 3: also refresh borrow/return counts
-      _loadPanelBags();     // Phase 4: also refresh ALS Bags status
-      _loadPanelOxygen();   // Phase 5: also refresh oxygen status counts
+      _loadPanelExpiry();      // Phase 2: also refresh expiry timeline on stock changes
+      _loadPanelLoans();       // Phase 3: also refresh borrow/return counts
+      _loadPanelBags();        // Phase 4: also refresh ALS Bags status
+      _loadPanelOxygen();      // Phase 5: also refresh oxygen status counts
+      _loadPanelLinenState();  // Phase 0.7+: linen state summary
     }, 300);
   }
 
@@ -1248,15 +1381,16 @@
       _categories = r.error ? [] : (r.data || []);
     } catch { _categories = []; }
 
-    // Parallel first load — eight independent panels + legacy status
+    // Parallel first load — nine independent panels + legacy status
     await Promise.all([
       _loadPanelStock(),
       _loadPanelLow(),
-      _loadPanelExpiry(),   // Phase 2 — expiry timeline
-      _loadPanelLoans(),    // Phase 3 — borrow/return counts
-      _loadPanelBags(),     // Phase 4 — ALS Bags status (S-4.6)
-      _loadPanelOxygen(),   // Phase 5 — oxygen tank status
-      _loadPanelLinens(),   // Phase 6 — linen "นับผ้าวันนี้" summary (S-6.16)
+      _loadPanelExpiry(),      // Phase 2 — expiry timeline
+      _loadPanelLoans(),       // Phase 3 — borrow/return counts
+      _loadPanelBags(),        // Phase 4 — ALS Bags status (S-4.6)
+      _loadPanelOxygen(),      // Phase 5 — oxygen tank status
+      _loadPanelLinens(),      // Phase 6 — linen "นับผ้าวันนี้" summary (S-6.16)
+      _loadPanelLinenState(),  // Phase 0.7+ — linen state summary (D11)
       _loadLegacyStatus(),
     ]);
 
@@ -1297,7 +1431,7 @@
   window.AppDashboardTab = {
     init,
     teardown,
-    reloadPanels: () => { _loadPanelStock(); _loadPanelLow(); _loadPanelExpiry(); _loadPanelLoans(); _loadPanelBags(); _loadPanelOxygen(); },
+    reloadPanels: () => { _loadPanelStock(); _loadPanelLow(); _loadPanelExpiry(); _loadPanelLoans(); _loadPanelBags(); _loadPanelOxygen(); _loadPanelLinenState(); },
   };
 
   // admin-shell.js expects window.initDashboardTab — shim (matches Phase 0 contract)

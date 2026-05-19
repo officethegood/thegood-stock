@@ -1751,14 +1751,14 @@ Tick each row as you verify. Re-run after every material change.
 - [x] T187: bag → zone (airway, circulation) renders — QA 2026-05-19 @ aefa347: ZONE-AIRWAY and ZONE-CIRC both show type=zone under ALS-TEST. `v_location_path` returns `path_display:"ALS-Test › airway"`. Pass.
 - [x] T188: breadcrumb path_display correct at all depths — QA 2026-05-19 @ aefa347: room depth=1, storage depth=2, shelf depth=3, bin depth=4 ("ห้องคลังหลัก › ตู้ Test-A › ชั้น 1 › ตะกร้าเขียว"), zone depth=2 ("ALS-Test › airway"). All correct per `v_location_path` query. Pass.
 
-### Transfer modal (BLOCKED by BUG-0.7-T189-01)
+### Transfer modal
 
-- [ ] T189: transfer both scan → 2 movements scanned=true — **FAIL** BUG-0.7-T189-01: `TypeError: t.getAttribute is not a function` at `shared/transfer.js:466`. `wrap.firstChild` returns text node (nodeType=3) — template literal starts with `\n`. Bootstrap `new bootstrap.Modal(textNode)` crashes. Fix: line 465 `wrap.firstChild` → `wrap.firstElementChild`.
+- [x] T189: transfer both scan → 2 movements scanned=true — QA R3 2026-05-19 @ 6886b7a: `openModal` (transfer.js:465) now uses `firstElementChild` — modal renders, ย้าย button opens modal without console error. Fix #1 (line 465) confirmed. **PASS**
 - [x] T190: scanned column in stock_movements defaults false — QA 2026-05-19 @ aefa347: `SELECT movement_type,scanned FROM stock_movements` returns `scanned:false` on receive movement. Column exists with correct DEFAULT. DB layer pass. UI end-to-end blocked by T189 bug.
-- [ ] T191: transfer to same location → RPC exception — **BLOCKED** BUG-0.7-T189-01 (modal crash before submission)
-- [ ] T192: transfer qty > source qty → "ของไม่พอ" — **BLOCKED** BUG-0.7-T189-01
-- [ ] T193: idempotency client_ref_id → 409 — **SKIP** (code-verified; RPC deployed in DB; live test blocked by modal crash)
-- [ ] T194: manual picker "เลือก" disabled at non-leaf — **BLOCKED** BUG-0.7-T189-01 (tree-picker never opens)
+- [ ] T191: transfer to same location → RPC exception — **FAIL R3 @ 6886b7a**: `_buildTreePickerModal` (transfer.js:203) still uses `wrap.firstChild` — crashes with `TypeError: t.getAttribute is not a function` the moment "เลือกจากรายการ" or "สแกน QR" is clicked. See **BUG-0.7-R3-01**.
+- [ ] T192: transfer qty > source qty → "ของไม่พอ" — **BLOCKED R3 @ 6886b7a** by BUG-0.7-R3-01 (tree-picker crash)
+- [ ] T193: idempotency client_ref_id → 409 — **SKIP** (code-verified; RPC deployed in DB; live test blocked by tree-picker crash)
+- [ ] T194: manual picker "เลือก" disabled at non-leaf — **BLOCKED R3 @ 6886b7a** by BUG-0.7-R3-01 (tree-picker crashes before node selection)
 
 ### Migration & display
 
@@ -1767,21 +1767,21 @@ Tick each row as you verify. Re-run after every material change.
 
 ### Camera fallback
 
-- [ ] T197: camera permission denied → toast + tree-picker auto-open — **BLOCKED** BUG-0.7-T189-01 + BUG-0.7-T197-01: `scanner.js` line 419 has same `wrap.firstChild` bug; scanner modal crashes before camera permission requested. Both bugs must be fixed.
+- [~] T197: camera permission denied → toast + tree-picker auto-open — **PARTIAL R3 @ 6886b7a**: Fix #2 confirmed — `scanner.js:419` now uses `firstElementChild` (verified: only 1 occurrence, patched). Scanner modal opens. Camera denied on desktop triggers toast "กล้องถูกใช้งานโดย app อื่น" (NotReadableError path — correct Thai message). However auto-open tree-picker fallback still crashes because `_buildTreePickerModal` in `transfer.js:203` is unpatched (BUG-0.7-R3-01). Fix #2 PASS; tree-picker fallback still FAIL.
 - [~] T198: desktop no camera → manual default — **CODE-VERIFIED**: `cameraAvailable = !!(navigator.mediaDevices)` at init. Live test requires device without mediaDevices.
 - [ ] T199: iOS LINE in-app browser fallback — **SKIP** (requires physical iOS device in LINE)
 - [~] T200: camera timeout fallback — **CODE-VERIFIED**: `Promise.race` 5s timeout → `_fallbackToManual('camera-timeout')` → toast + tree-picker.
 - [~] T201: camera busy fallback — **CODE-VERIFIED**: `NotReadableError` → `'camera-busy'` → toast.
-- [ ] T202: transfer manual both sides → scanned=false — **BLOCKED** BUG-0.7-T189-01
+- [ ] T202: transfer manual both sides → scanned=false — **BLOCKED R3 @ 6886b7a** by BUG-0.7-R3-01 (tree-picker crash)
 
-### Staff-print QR (BLOCKED by BUG-0.7-T203-01)
+### Staff-print QR
 
-- [ ] T203: print bin QR 50×30 with breadcrumb — **BLOCKED** BUG-0.7-T203-01: `requireRole(['Admin','Employee'])` in staff-print.js passes array but `shared/auth.js:requireRole` does strict `!== role` string comparison — always redirects to 403. Fix: update `requireRole` to accept string|string[].
-- [ ] T204: print zone QR 50×30 with parent bag tag — **BLOCKED** BUG-0.7-T203-01
-- [~] T205: findLocationByCode for bin → location_id + path — **DATA-VERIFIED**: `AppInventory.findLocationByCode('BIN-GREEN')` returns `{type:'bin'}`. `v_location_path` returns `path_display:'ห้องคลังหลัก › ตู้ Test-A › ชั้น 1 › ตะกร้าเขียว'`. Data correct. Full UI test blocked by scanner modal crash (BUG-0.7-T197-01).
-- [~] T206: findLocationByCode for zone → id + parent bag context — **DATA-VERIFIED**: ZONE-AIRWAY `{type:'zone', path_display:'ALS-Test › airway', parent_id:<ALS-Test uuid>}`. Parent bag confirmed as `{name:'ALS-Test', type:'bag'}`. Full test blocked by BUG-0.7-T197-01.
-- [~] T207: staff-print "สถานที่" tab bin rows with breadcrumb — **CODE+DATA-VERIFIED**: staff-print.js queries `locations` with `type IN ('bin',...)` + enriches from `v_location_path`. BIN-BLUE and BIN-GREEN exist with correct breadcrumbs. Page blocked by BUG-0.7-T203-01.
-- [~] T208: staff-print "ALS Bags" tab zone rows under parent — **CODE+DATA-VERIFIED**: ZONE-AIRWAY and ZONE-CIRC grouped under ALS-TEST in DB. Logic correct. Page blocked by BUG-0.7-T203-01.
+- [x] T203: print bin QR 50×30 with breadcrumb — **PASS R3 2026-05-19 @ 6886b7a**: Fix #3 confirmed — `shared/auth.js` now contains `Array.isArray` check. `requireRole(['Admin','Employee'])` no longer redirects Employee to 403. staff-print.html HTTP 200. Page loads as Employee. No 403 error.
+- [ ] T204: print zone QR 50×30 with parent bag tag — **BLOCKED R3 @ 6886b7a** by BUG-0.7-R3-04: `als_bags` table does not exist; query returns PGRST205 "Could not find a relationship". ALS Bags tab cannot render.
+- [~] T205: findLocationByCode for bin → location_id + path — **BLOCKED R3 @ 6886b7a**: staff-print page loads (T203 PASS) but Locations tab returns empty — Supabase client uses anon key without user JWT on direct-URL navigation; RLS sees `anon` role → 0 rows (not 403, silent empty). See BUG-0.7-R3-03.
+- [~] T206: findLocationByCode for zone → id + parent bag context — **BLOCKED R3 @ 6886b7a** by same session issue (BUG-0.7-R3-03).
+- [ ] T207: staff-print "สถานที่" tab bin rows with breadcrumb — **FAIL R3 @ 6886b7a**: page shows "Unknown" for username; Locations tab query returns empty array. Root cause: `getSupabaseClient()` uses anon key; custom JWT from app session not passed on direct URL navigation → RLS returns 0 rows. See BUG-0.7-R3-03.
+- [ ] T208: staff-print "ALS Bags" tab zone rows under parent — **BLOCKED R3 @ 6886b7a** by BUG-0.7-R3-04 (`als_bags` table missing) and BUG-0.7-R3-03 (session issue).
 
 ---
 
@@ -1943,3 +1943,199 @@ function requireRole(role) {
 **Spec requirements covered by passing tests:** G1 (hierarchy depth 5), G2 (storage direct under ambulance), G3 (ALS bag zone CRUD), G4 (bin in shelf tree), G6 (scanned flag column + default)
 **Spec requirements partially blocked:** G5 (transfer RPC — FE modal crashes, RPC itself not live-tested)
 **RLS not yet tested:** transfer_stock RPC SECURITY DEFINER path — blocked by modal crash
+
+---
+
+## Live Functional Tests — Run 3 (post-fix-round-2, 2026-05-19 @ 6886b7a)
+
+### D10 Auto-migrate (sublocation added to parent with direct stock)
+
+- [~] T209: D10 warning modal shows + shelf created + stock transferred on confirm — **PARTIAL FAIL R3 2026-05-19 @ 6886b7a**: Warning modal renders correctly with item count. User confirms. Shelf (SHELF-TEST-D10) created in DB. BUT `transfer_stock` RPC fails for each item: `"movement would drive qty negative for item ... at location ... (no existing stock)"`. Stock NOT moved. Console: `[D10] transfer_stock failed for item f62fb829-... Object`. Root cause: RPC checks an internal balance table that is not updated when stock is received into a `storage`-type location via the receive flow. See BUG-0.7-R3-02.
+- [x] T210: D10 cancel → no shelf created — **PASS R3 2026-05-19 @ 6886b7a**: Warning modal shows. Click "ยกเลิก". No shelf created. DB query `SELECT * FROM locations WHERE code='SHELF-TEST-D10'` returns `[]`. Correct behaviour confirmed.
+- [ ] T211: D10 parent already has sublocations → no warning, no auto-migrate — **FAIL R3 @ 6886b7a**: blocked by same `transfer_stock` failure (BUG-0.7-R3-02). Unable to test the "no second migrate" guard because the first migrate never succeeds.
+
+---
+
+## Phase 0.7 Bug Reports (Round 3 — new bugs)
+
+### BUG-0.7-R3-01 — CRITICAL: `_buildTreePickerModal` in transfer.js:203 still uses `wrap.firstChild`
+
+**Severity:** Critical — blocks T191, T192, T194, T202 (4 tests) and tree-picker fallback in T197. Fix #1 from Round 2 was incomplete: only `openModal` (line 465) was patched; `_buildTreePickerModal` (line 203) was missed.
+**File:** `shared/transfer.js` line 203
+**Reproduced:** 2026-05-19 @ 6886b7a, Chrome desktop, admin.html Inventory tab → any item → "ย้าย" → click "เลือกจากรายการ" or "สแกน QR"
+
+Steps to reproduce:
+1. Admin → Inventory tab → item with stock → "ย้าย"
+2. Transfer modal opens (Fix #1 line 465 confirmed working)
+3. Click "เลือกจากรายการ" (source or destination picker button)
+4. Console: `TypeError: t.getAttribute is not a function` at bootstrap.bundle.min.js
+
+Root cause: `_buildTreePickerModal` builds its own modal div with the same `innerHTML = \`\n<div...>` pattern. Line 203: `const modalEl = wrap.firstChild;` returns text node (nodeType=3). `new bootstrap.Modal(textNode)` crashes.
+
+Fix: `shared/transfer.js` line 203: `wrap.firstChild` → `wrap.firstElementChild`
+
+Verified via: `document.body.innerText.match(/firstChild|firstElementChild/g)` returns `["firstChild", "firstElementChild"]` — two occurrences, only one fixed.
+
+**Owner: FE agent**
+
+---
+
+### BUG-0.7-R3-02 — HIGH: D10 auto-migrate `transfer_stock` RPC fails for storage-type locations
+
+**Severity:** High — blocks T209, T211 (D10 core feature). Stock silently stays in parent after sublocation is added; user sees no error (only console log).
+**File:** `js/locations.js` line 493 (RPC call in D10 loop), Supabase `transfer_stock` RPC
+**Reproduced:** 2026-05-19 @ 6886b7a, Chrome desktop — stock received into CAB-A-1 (storage, 5 units Alcohol pad) → add sublocation → trigger D10 → RPC error
+
+Steps to reproduce:
+1. Receive stock into a `storage`-type location (e.g. CAB-A-1) via admin รับเข้า
+2. Admin → Locations → CAB-A-1 → "+ เพิ่ม Sub"
+3. Fill code/name, type=shelf → บันทึก
+4. D10 warning modal shows (correct)
+5. Click "ยืนยัน"
+6. Console: `[D10] transfer_stock failed for item <uuid> {code: 'PGRST202', message: 'movement would drive qty negative for item ... at location ... (no existing stock)'}`
+7. Shelf is created; stock stays in parent
+
+Root cause: The `transfer_stock` RPC validates stock balance from an internal balance table (likely a materialized view or `inv_current`). The receive flow for storage locations does NOT update this balance table — only `stock_movements` is inserted. The RPC sees `qty=0` at the source and rejects the transfer.
+
+Fix options (for BE/Full-stack agent):
+a. Ensure the receive flow upserts into the same balance table that `transfer_stock` reads from.
+b. Or update `transfer_stock` to derive current balance from `stock_movements.qty_after` (last movement per item+location).
+
+**Owner: Full-stack agent**
+
+---
+
+### BUG-0.7-R3-03 — MEDIUM: staff-print.html does not pass user JWT to Supabase client on direct-URL navigation
+
+**Severity:** Medium — Locations tab and ALS Bags tab show empty data for all users on direct navigation. Feature is unusable as a standalone page.
+**File:** `js/staff-print.js`, `shared/auth.js` or Supabase client initialisation
+**Reproduced:** 2026-05-19 @ 6886b7a, Chrome desktop — navigate directly to staff-print.html after login; page shows "Unknown" username; locations query returns `[]`
+
+Steps to reproduce:
+1. Log in as admin via admin.html
+2. Open a new tab → navigate to staff-print.html directly (or via bookmark)
+3. Page loads (no 403)
+4. Username shows "Unknown"
+5. Locations tab: spinner then empty list
+
+Root cause: `getSupabaseClient()` is initialised with the project anon key only. The user JWT from the custom HS256 auth system (stored in localStorage/sessionStorage) is not set as the `Authorization` header on the Supabase client. RLS policy `loc_read` requires `authenticated` role; the anon client presents `role=anon` → 0 rows returned (no 403, silent empty).
+
+Fix: In staff-print.js initialisation, read the user JWT from storage and call `supabase.auth.setSession()` or pass `Authorization: Bearer <jwt>` in custom headers before any query.
+
+**Owner: FE agent**
+
+---
+
+### BUG-0.7-R3-04 — HIGH: `als_bags` table not deployed — ALS Bags tab broken
+
+**Severity:** High — blocks T204, T208. ALS Bags tab on staff-print.html throws PGRST205 for all users.
+**File:** Supabase DB schema — `als_bags` table or view missing
+**Reproduced:** 2026-05-19 @ 6886b7a, Supabase dashboard query `SELECT * FROM als_bags` → `ERROR: relation "als_bags" does not exist`
+
+Steps to reproduce:
+1. Navigate to staff-print.html
+2. Click "ALS Bags" tab
+3. Console: `{code:'PGRST205', message:'Could not find a relationship between ... and als_bags'}`
+
+Root cause: `js/staff-print.js` references `als_bags` table/view. The table is not in any applied migration file (checked migration list — no `als_bags` create statement found). Either the table definition was omitted from the Phase 0.7 migration bundle, or it belongs to a later phase and staff-print.js was written ahead of the schema.
+
+Fix: Either deploy the `als_bags` table/view as a new migration, or guard the query in staff-print.js so the ALS Bags tab shows "coming soon" when the table does not exist.
+
+**Owner: Full-stack agent**
+
+---
+
+## Phase 0.7 Summary — Run 3 (post-fix-round-2, 2026-05-19 @ 6886b7a)
+
+### Fixes verified
+
+| Fix | File | Status |
+|-----|------|--------|
+| Fix #1a: `openModal` line 465 `firstElementChild` | `shared/transfer.js` | CONFIRMED |
+| Fix #2: `scanner.js` line 419 `firstElementChild` | `shared/scanner.js` | CONFIRMED |
+| Fix #3: `requireRole` Array.isArray support | `shared/auth.js` | CONFIRMED |
+
+### Test results Round 3
+
+| Test | Result | Notes |
+|------|--------|-------|
+| T189 | PASS | openModal renders without crash |
+| T191 | FAIL | `_buildTreePickerModal:203` `firstChild` unpatched (BUG-0.7-R3-01) |
+| T192 | BLOCKED | BUG-0.7-R3-01 |
+| T194 | BLOCKED | BUG-0.7-R3-01 |
+| T197 | PARTIAL | scanner.js fix works; tree-picker fallback still fails (BUG-0.7-R3-01) |
+| T202 | BLOCKED | BUG-0.7-R3-01 |
+| T203 | PASS | auth.js array fix works; staff-print loads without 403 |
+| T204 | BLOCKED | BUG-0.7-R3-04 (`als_bags` missing) |
+| T205 | BLOCKED | BUG-0.7-R3-03 (session/JWT) |
+| T206 | BLOCKED | BUG-0.7-R3-03 (session/JWT) |
+| T207 | FAIL | Locations tab returns empty; session not wired (BUG-0.7-R3-03) |
+| T208 | BLOCKED | BUG-0.7-R3-04 + BUG-0.7-R3-03 |
+| T209 | PARTIAL FAIL | Warning modal + shelf creation correct; stock transfer fails (BUG-0.7-R3-02) |
+| T210 | PASS | Cancel prevents shelf creation confirmed via DB |
+| T211 | FAIL | D10 transfer fails (BUG-0.7-R3-02) |
+
+### New bugs found in Round 3
+
+| ID | Severity | Description | Owner |
+|----|----------|-------------|-------|
+| BUG-0.7-R3-01 | CRITICAL | `transfer.js:203` `_buildTreePickerModal` still uses `wrap.firstChild` — Fix #1 incomplete | FE agent |
+| BUG-0.7-R3-02 | HIGH | D10 `transfer_stock` RPC fails for storage-type locations ("no existing stock") | Full-stack agent |
+| BUG-0.7-R3-03 | MEDIUM | staff-print user JWT not passed to Supabase client; RLS returns 0 rows | FE agent |
+| BUG-0.7-R3-04 | HIGH | `als_bags` table not deployed; ALS Bags tab broken | Full-stack agent |
+
+### GO / NO-GO verdict
+
+**NO-GO**
+
+Blockers:
+1. BUG-0.7-R3-01 (CRITICAL): `transfer.js:203` Fix #1 was applied to only one of two `firstChild` occurrences. The `_buildTreePickerModal` function (tree-picker for source/destination selection) is still broken. No transfer can complete via the UI. This is the core Phase 0.7 feature.
+2. BUG-0.7-R3-02 (HIGH): D10 auto-migrate stock transfer fails silently. Sublocations are created but stock stays in parent — leaving inventory data inconsistent.
+3. BUG-0.7-R3-04 (HIGH): `als_bags` table not deployed. ALS Bags QR print tab is completely broken.
+
+Non-blockers (can ship after critical fixes):
+- BUG-0.7-R3-03 (MEDIUM): staff-print session issue — page loads but shows empty data on direct navigation. Can be deferred if page is accessed via in-app link that preserves session context.
+- BUG-0.7-T185-01 (HIGH, deferred from R2): ambulance_id UI field missing — ambulance locations cannot be created via UI.
+
+**Spec requirements coverage after Round 3:**
+- G1 (5-depth hierarchy): PASS (T184, T186, T187, T188 all passing)
+- G2 (storage under ambulance): PARTIAL (DB constraint correct; UI cannot create ambulance type)
+- G3 (ALS bag zones): PASS for data; BLOCKED for print (BUG-0.7-R3-04)
+- G4 (bin in shelf tree): PASS (T184)
+- G5 (transfer RPC — move stock): BLOCKED — `openModal` fix works but `_buildTreePickerModal` crash prevents any transfer completion
+- G6 (scanned flag): PASS (T190, T196)
+- G7 (D10 auto-migrate): PARTIAL — warning/cancel correct; actual stock move broken (BUG-0.7-R3-02)
+- G8 (staff-print QR page): PARTIAL — loads without 403 (T203) but data empty (BUG-0.7-R3-03) and als_bags missing (BUG-0.7-R3-04)
+
+---
+
+## Phase 0.7+ Laundry quick-action modals (shared/laundry.js)
+
+- [ ] T212: fill_vehicle modal opens, shows linen SKUs and vehicle locations, source auto-detected
+  - Pre-condition: at least 1 stock_item with is_linen=true exists; at least 1 location with laundry_role='vehicle' and 1 with laundry_role='clean' exist; clean location has qty > 0 for the item.
+  - Steps:
+    1. Open staff.html (or admin.html → Dashboard). Click "เติมรถ".
+    2. Modal opens. SKU dropdown lists only linen items. Vehicle dropdown lists only laundry_role='vehicle' locations.
+    3. Select an item — verify source hint appears with clean location name + qty.
+    4. Select a vehicle, enter qty=1. Click "เติมรถ".
+  - Expected: Toast "เติมรถ สำเร็จ 1 รายการ". DB: `stock_movements` pair with note='stock vehicle'; clean location qty decremented, vehicle location qty incremented.
+
+- [ ] T213: mark_dirty modal transfers item from vehicle to dirty location
+  - Pre-condition: item at laundry_role='vehicle' location with qty > 0; laundry_role='dirty' location exists.
+  - Steps:
+    1. Click "ใช้/เปื้อน +N". Select item, vehicle, dirty location. Enter qty=1. Submit.
+  - Expected: Toast success. DB: transfer pair with note='used/soiled'; vehicle qty decremented, dirty qty incremented.
+
+- [ ] T214: send_wash batch modal loops all dirty-pile items to external location
+  - Pre-condition: 2+ linen items in laundry_role='dirty' location(s); laundry_role='external' location exists.
+  - Steps:
+    1. Click "ส่งซัก". Fill vendor + date. Adjust qty for each row (set one to 0). Click "ส่งซัก".
+  - Expected: Progress bar shown for > 3 rows. Toast "{N} รายการ". DB: transfer rows for each row with qty > 0. Row with qty=0 skipped (no movement created).
+
+- [ ] T215: receive_back records returned qty to clean and writes loss movement
+  - Pre-condition: 1+ items at laundry_role='external' location with qty > 0.
+  - Steps:
+    1. Click "รับคืน". Select external + clean location. Click "โหลดรายการที่ส่งซัก". Table populates.
+    2. Reduce "รับคืน" field for one item below "ที่ส่งไป" (simulate loss). Verify "หาย" column updates live.
+    3. Click "รับคืน".
+  - Expected: Toast success. DB: `stock_movements` row with `movement_type='adjustment_loss'`, `qty_delta=-(loss)`, `reason='laundry lost'`. Returned qty transferred from external to clean. External location qty decremented by full sent amount.

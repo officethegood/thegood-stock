@@ -65,7 +65,7 @@
     const sb = getSupabaseClient();
     const { data, error } = await sb
       .from('locations')
-      .select('id,code,name,type,parent_id,ambulance_id,qr_payload,active,note,storage_style')
+      .select('id,code,name,type,parent_id,ambulance_id,qr_payload,active,note,storage_style,laundry_role')
       .order('type')
       .order('code');
     if (error) throw error;
@@ -165,6 +165,13 @@
         ? `<span class="text-muted small ms-2" style="font-size:10px;">(${_storageStyleLabel(l.storage_style)})</span>`
         : '';
 
+      const laundryMeta = _laundryRoleMeta(l.laundry_role);
+      const laundryBadge = laundryMeta
+        ? `<span class="fc-badge fc-badge-neutral ms-1" style="font-size:10px;padding:2px 7px;background:var(--fc-paper-sub);">
+            <i class="bi ${laundryMeta.icon}" style="font-size:10px;margin-right:2px;"></i>${laundryMeta.label}
+           </span>`
+        : '';
+
       const breadcrumb = depth > 0
         ? `<span class="text-muted ms-2" style="font-size:10px;font-family:var(--fc-font-mono);">${escapeHtml(pathFor(l.id))}</span>`
         : '';
@@ -194,6 +201,7 @@
           ${nameHtml}
           ${badge}
           ${storageHint}
+          ${laundryBadge}
           ${breadcrumb}
           <span class="ms-auto d-flex align-items-center gap-1">
             ${addChildBtn}
@@ -217,6 +225,16 @@
          : s === 'mesh'    ? 'ตะแกรง'
          : s === 'drawer'  ? 'ลิ้นชัก'
          : s;
+  }
+
+  /** Returns { icon, label } for a laundry_role value, or null if not set. */
+  function _laundryRoleMeta(role) {
+    if (!role) return null;
+    return role === 'clean'    ? { icon: 'bi-basket',   label: 'พร้อมใช้'    }
+         : role === 'vehicle'  ? { icon: 'bi-truck',    label: 'ในรถ'        }
+         : role === 'dirty'    ? { icon: 'bi-bucket',   label: 'รอซัก'       }
+         : role === 'external' ? { icon: 'bi-building', label: 'กำลังซัก'   }
+         : null;
   }
 
   function _toggleExpand(id) {
@@ -604,6 +622,19 @@
                   </select>
                 </div>
 
+                <!-- Laundry role (Phase 0.7+) -->
+                <div class="mb-3">
+                  <label class="form-label small fw-medium">บทบาทใน laundry flow (ถ้ามี)</label>
+                  <select id="loc-laundry-role" class="form-select" style="min-height:44px;">
+                    <option value="">— ไม่เกี่ยวข้องกับ laundry —</option>
+                    <option value="clean">คลังผ้าสะอาด (พร้อมใช้)</option>
+                    <option value="vehicle">ตู้ผ้าในรถ (ในรถ)</option>
+                    <option value="dirty">ถังผ้าเปื้อน (รอซัก)</option>
+                    <option value="external">ส่งซักภายนอก (กำลังซัก)</option>
+                  </select>
+                  <div class="form-text small">เลือกเพื่อให้ระบบรวมเข้า dashboard ผ้า + quick actions</div>
+                </div>
+
                 <!-- QR payload -->
                 <div class="mb-3">
                   <label class="form-label fw-medium">QR Payload</label>
@@ -646,6 +677,7 @@
     const typeHint     = document.getElementById('type-rule-hint');
     const storageRow   = document.getElementById('storage-style-row');
     const fStorageStyle = document.getElementById('f-storage-style');
+    const fLaundryRole  = document.getElementById('loc-laundry-role');
 
     /** Populate parent dropdown based on current type selection. */
     function refreshParents() {
@@ -722,6 +754,7 @@
       document.getElementById('f-note').value  = row.note || '';
       document.getElementById('f-active').checked = !!row.active;
       if (row.storage_style) fStorageStyle.value = row.storage_style;
+      if (row.laundry_role)  fLaundryRole.value  = row.laundry_role;
     }
 
     // Submit
@@ -772,6 +805,7 @@
         storage_style: (chosenType === 'storage' || chosenType === 'cabinet')
                          ? (fStorageStyle.value || null)
                          : null,
+        laundry_role:  fLaundryRole.value || null,
       };
 
       const sb = getSupabaseClient();

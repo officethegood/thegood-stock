@@ -17,6 +17,34 @@
   document.getElementById('btn-view-loc').onclick = renderLocations;
   document.getElementById('btn-view-amb').onclick = renderAmbulances;
 
+  // Phase 0.7+ — Laundry quick-action buttons
+  if (window.Laundry) {
+    const laundryCard = document.createElement('div');
+    laundryCard.className = 'card mb-3';
+    laundryCard.innerHTML = `
+      <div class="card-body">
+        <p class="mb-2"><strong>ผ้าและของซัก</strong></p>
+        <div class="d-flex flex-wrap gap-2">
+          <button class="fc-btn fc-btn-secondary" onclick="Laundry.openModal('fill_vehicle')">
+            <i class="bi bi-truck"></i> เติมรถ
+          </button>
+          <button class="fc-btn fc-btn-secondary" onclick="Laundry.openModal('mark_dirty')">
+            <i class="bi bi-droplet-half"></i> ใช้/เปื้อน +N
+          </button>
+          <button class="fc-btn fc-btn-secondary" onclick="Laundry.openModal('send_wash')">
+            <i class="bi bi-send"></i> ส่งซัก
+          </button>
+          <button class="fc-btn fc-btn-secondary" onclick="Laundry.openModal('receive_back')">
+            <i class="bi bi-box-arrow-in-down"></i> รับคืน
+          </button>
+        </div>
+      </div>`;
+    const detail = document.getElementById('staff-detail');
+    if (detail && detail.parentNode) {
+      detail.parentNode.insertBefore(laundryCard, detail);
+    }
+  }
+
   // Phase 5 — add ถังออกซิเจน scan link (Q-Phase5-6: separate page)
   const oxyLinkTarget = document.getElementById('staff-oxygen-link-wrap');
   if (!oxyLinkTarget) {

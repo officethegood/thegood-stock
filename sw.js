@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.12.2';  // Phase 0.7 — round 3 fixes: tree-picker firstElementChild (R3-01), latent firstChild bugs in 3 modals (defensive), staff-print ensureLoggedIn (R3-03), SIL trigger xmax fix (R3-02 — backend migration applied separately)
+const CACHE_VERSION = 'thegood-stock-v0.13.0';  // Phase 0.7+Laundry — location.laundry_role + v_linen_state_summary dashboard + 4 quick actions (เติมรถ/ใช้เปื้อน/ส่งซัก/รับคืน+loss)
 const STATIC_ASSETS = [
   './',
   './login.html',
@@ -28,6 +28,7 @@ const STATIC_ASSETS = [
   './shared/scanner.js',
   './shared/locations.js',
   './shared/transfer.js',
+  './shared/laundry.js',
   './js/login.js',
   './js/admin-shell.js',
   './js/dashboard.js',
