@@ -958,7 +958,7 @@
       if (counts.complete === 0 && totalIssues === 0 && counts.no_template === 0) {
         body.innerHTML = `
           <div class="text-center text-muted py-3 small">
-            <i class="bi bi-check-circle-fill text-success me-1"></i>ยังไม่มีถุงยาในระบบ
+            <i class="bi bi-check-circle-fill text-success me-1"></i>ยังไม่มีกระเป๋ายาในระบบ
           </div>`;
         card?.setAttribute('aria-busy', 'false');
         return;
@@ -984,7 +984,7 @@
         <div class="row g-0 p-2">${badgesHtml}</div>
         ${totalIssues === 0 ? `
           <div class="px-3 pb-2 text-center">
-            <small class="text-success"><i class="bi bi-check-circle-fill me-1"></i>ถุงทั้งหมดสมบูรณ์</small>
+            <small class="text-success"><i class="bi bi-check-circle-fill me-1"></i>กระเป๋าทั้งหมดสมบูรณ์</small>
           </div>` : ''}`;
 
       // Wire badge tap → switch to bags tab with filter
@@ -1000,7 +1000,7 @@
 
       card?.setAttribute('aria-busy', 'false');
     } catch (e) {
-      body.innerHTML = `<div class="text-danger small p-3">โหลดข้อมูลถุงยาไม่สำเร็จ</div>`;
+      body.innerHTML = `<div class="text-danger small p-3">โหลดข้อมูลกระเป๋ายาไม่สำเร็จ</div>`;
       console.error('[dashboard] _loadPanelBags error', e);
     }
   }

@@ -77,7 +77,7 @@
                 </div>
 
                 <hr>
-                <h6>รายการของในถุง</h6>
+                <h6>รายการของในกระเป๋า</h6>
 
                 <div id="tpl-items-table">
                   <table class="table table-sm table-bordered align-middle" id="tpl-items-tbl">

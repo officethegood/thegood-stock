@@ -107,7 +107,7 @@
         </div>
         <div class="col">
           <input type="search" class="form-control form-control-sm" id="bags-search"
-                 placeholder="🔍 ค้นรหัส / ชื่อถุง">
+                 placeholder="🔍 ค้นรหัส / ชื่อกระเป๋า">
         </div>
         <div class="col-auto">
           <button class="btn btn-sm btn-outline-secondary" id="bags-refresh-btn">
@@ -119,7 +119,7 @@
       <!-- Action buttons -->
       <div class="d-flex gap-2 mb-3 flex-wrap">
         <button class="btn btn-sm btn-stock-primary" id="bags-btn-add">
-          <i class="bi bi-plus-lg me-1"></i>เพิ่มถุงยา
+          <i class="bi bi-plus-lg me-1"></i>เพิ่มกระเป๋ายา
         </button>
         <button class="btn btn-sm btn-outline-secondary" id="bags-btn-templates">
           <i class="bi bi-clipboard-list me-1"></i>จัดการเทมเพลต
@@ -171,7 +171,7 @@
 
     const { data, error } = await window.AppBags.listBagStatus({ activeOnly: true });
     if (error) {
-      _toast('error', 'โหลดข้อมูลถุงยาไม่สำเร็จ');
+      _toast('error', 'โหลดข้อมูลกระเป๋ายาไม่สำเร็จ');
       return;
     }
     _bags = data || [];
@@ -207,7 +207,7 @@
       area.innerHTML = `
         <div class="text-center text-muted py-5">
           <i class="bi bi-bag-x" style="font-size:2.5rem;"></i>
-          <p class="mt-2">${_filterLevel || _filterSearch ? 'ไม่มีถุงตามเงื่อนไขที่เลือก' : 'ยังไม่มีถุงยา — เพิ่มถุงแรกได้เลย'}</p>
+          <p class="mt-2">${_filterLevel || _filterSearch ? 'ไม่มีกระเป๋าตามเงื่อนไขที่เลือก' : 'ยังไม่มีกระเป๋ายา — เพิ่มกระเป๋าแรกได้เลย'}</p>
           ${(_filterLevel || _filterSearch) ? `<button class="btn btn-sm btn-link" id="bags-clear-filter">ล้างตัวกรอง</button>` : ''}
         </div>`;
       area.querySelector('#bags-clear-filter')?.addEventListener('click', () => {
@@ -259,7 +259,7 @@
     return `
       <div class="col-12 col-md-6 col-lg-4">
         <div class="card bag-card h-100" data-bag-id="${_esc(bag.location_id)}" tabindex="0"
-             role="button" aria-label="ถุง ${_esc(bag.bag_code)}">
+             role="button" aria-label="กระเป๋า ${_esc(bag.bag_code)}">
           <div class="card-body">
             <div class="d-flex justify-content-between align-items-start mb-1">
               <span class="fw-bold">${_esc(bag.bag_code)}</span>
@@ -313,7 +313,7 @@
       <p class="text-muted">${_esc(bag.bag_name || '')}</p>
       ${bag.template_name
         ? `<p class="small">เทมเพลต: <strong>${_esc(bag.template_name)}</strong> (${_esc(bag.template_code || '')})</p>`
-        : `<div class="alert alert-warning small">ถุงนี้ยังไม่มีเทมเพลต — กำหนดเทมเพลตก่อนเริ่มตรวจสอบ</div>`}
+        : `<div class="alert alert-warning small">กระเป๋านี้ยังไม่มีเทมเพลต — กำหนดเทมเพลตก่อนเริ่มตรวจสอบ</div>`}
 
       ${bag.completion_pct !== null ? `
       <div class="mb-3">
@@ -386,7 +386,7 @@
     }).join('');
 
     el.innerHTML = `
-      <h6>รายการของในถุง</h6>
+      <h6>รายการของในกระเป๋า</h6>
       <div class="table-responsive">
         <table class="table table-sm table-bordered align-middle">
           <thead class="table-light">
@@ -427,7 +427,7 @@
     el.innerHTML = `
       <details>
         <summary class="fw-semibold small text-muted" style="cursor:pointer;">
-          ล็อตยาในถุงนี้ (${lotRows.length} ล็อต)
+          ล็อตยาในกระเป๋านี้ (${lotRows.length} ล็อต)
         </summary>
         <div class="table-responsive mt-2">
           <table class="table table-sm table-bordered align-middle">
@@ -449,7 +449,7 @@
     _restockPhoto  = null;
 
     if (!bag.bag_template_id) {
-      _toast('warning', 'ถุงนี้ยังไม่มีเทมเพลต — ไม่สามารถเริ่มเติมของได้');
+      _toast('warning', 'กระเป๋านี้ยังไม่มีเทมเพลต — ไม่สามารถเริ่มเติมของได้');
       return;
     }
 
@@ -460,7 +460,7 @@
 
     const noDeficit = _shoppingList.every((r) => r.deficit === 0 && r.mandatory);
     if (_shoppingList.length === 0 || noDeficit) {
-      _toast('info', 'ถุงนี้สมบูรณ์แล้ว — ไม่จำเป็นต้องเติมของ');
+      _toast('info', 'กระเป๋านี้สมบูรณ์แล้ว — ไม่จำเป็นต้องเติมของ');
     }
 
     _renderRestockStep1();
@@ -652,7 +652,7 @@
           <span class="text-muted">③ยืนยัน</span>
         </div>
       </div>
-      <h5>ถ่ายรูปถุงหลังเติมของ (ไม่บังคับ)</h5>
+      <h5>ถ่ายรูปกระเป๋าหลังเติมของ (ไม่บังคับ)</h5>
       <p class="text-muted small">ถ่ายรูปเป็นหลักฐานการเติมของ หรือกด "ข้าม" เพื่อดำเนินการต่อ</p>
 
       <div class="d-flex gap-2 mt-3">
@@ -677,13 +677,13 @@
       }
       window.PhotoCaptureModal.open({
         folder:    'thegood-stock/bag-restock/' + _restockBag.bag_code + '/' + _restockRefId,
-        label:     'ถ่ายรูปถุงหลังเติมของ',
+        label:     'ถ่ายรูปกระเป๋าหลังเติมของ',
         optional:  true,
         entityId:  _restockRefId,
         onUploaded: (url) => {
           _restockPhoto = url;
           const prev = document.getElementById('restock-photo-preview');
-          if (prev) prev.innerHTML = `<img src="${_esc(url)}" class="img-thumbnail" style="max-width:200px;" alt="รูปถุง">`;
+          if (prev) prev.innerHTML = `<img src="${_esc(url)}" class="img-thumbnail" style="max-width:200px;" alt="รูปกระเป๋า">`;
           _toast('success', 'อัปโหลดรูปสำเร็จ');
           _renderRestockStep3();
         },
@@ -726,8 +726,8 @@
         </div>
       </div>
       <h5>สรุปการเติมของ</h5>
-      <p class="text-muted small">ถุง: <strong>${_esc(_restockBag.bag_code)}</strong> — ${_esc(_restockBag.bag_name || '')}</p>
-      ${_restockPhoto ? `<img src="${_esc(_restockPhoto)}" class="img-thumbnail mb-2" style="max-width:160px;" alt="รูปถุง">` : '<p class="text-muted small">ไม่มีรูปถ่าย</p>'}
+      <p class="text-muted small">กระเป๋า: <strong>${_esc(_restockBag.bag_code)}</strong> — ${_esc(_restockBag.bag_name || '')}</p>
+      ${_restockPhoto ? `<img src="${_esc(_restockPhoto)}" class="img-thumbnail mb-2" style="max-width:160px;" alt="รูปกระเป๋า">` : '<p class="text-muted small">ไม่มีรูปถ่าย</p>'}
 
       <h6>รายการที่จะเติม (${toRestock.length} รายการ)</h6>
       <ul class="list-group list-group-flush mb-3">
@@ -866,7 +866,7 @@
     if (window.AppLocationsTab?.openCreateModal) {
       window.AppLocationsTab.openCreateModal({ preset_type: 'bag' });
     } else {
-      _toast('info', 'ไปที่แท็บ Locations เพื่อเพิ่มถุงยาใหม่ (type=bag)');
+      _toast('info', 'ไปที่แท็บ Locations เพื่อเพิ่มกระเป๋ายาใหม่ (type=bag)');
     }
   }
 

@@ -1085,7 +1085,7 @@
     overlay.innerHTML = `
       <div class="text-center py-5">
         <span class="spinner-border text-stock-accent mb-3"></span>
-        <p>กำลังโหลดข้อมูลถุง…</p>
+        <p>กำลังโหลดข้อมูลกระเป๋า…</p>
       </div>`;
 
     // Load bag status
@@ -1094,7 +1094,7 @@
 
     if (!bag) {
       overlay.innerHTML = `
-        <div class="alert alert-warning m-3">ไม่พบข้อมูลถุง ${escapeHtml(location.code)}</div>
+        <div class="alert alert-warning m-3">ไม่พบข้อมูลกระเป๋า ${escapeHtml(location.code)}</div>
         <div class="px-3">
           <button class="btn btn-outline-secondary w-100" id="bag-cl-back-btn">
             <i class="bi bi-arrow-left me-1"></i> สแกนใหม่
@@ -1132,24 +1132,24 @@
       </div>` : ''}
 
       ${!bag.bag_template_id ? `
-        <div class="alert alert-warning small">ถุงนี้ยังไม่มีเทมเพลต — ไม่สามารถตรวจสอบได้</div>` : ''}
+        <div class="alert alert-warning small">กระเป๋านี้ยังไม่มีเทมเพลต — ไม่สามารถตรวจสอบได้</div>` : ''}
 
       ${['low_stock','expiring','expired'].includes(bag.alert_level) ? `
         <div class="alert alert-warning small">
-          <i class="bi bi-info-circle me-1"></i>ถุงนี้ยังไม่สมบูรณ์ — แจ้ง Admin เพื่อเติมของ
+          <i class="bi bi-info-circle me-1"></i>กระเป๋านี้ยังไม่สมบูรณ์ — แจ้ง Admin เพื่อเติมของ
         </div>` : ''}
 
       ${bag.alert_level === 'expired' ? `
         <div class="alert alert-danger small">
-          <i class="bi bi-exclamation-triangle-fill me-1"></i>มียาหมดอายุในถุงนี้ — แจ้ง Admin ทันที
+          <i class="bi bi-exclamation-triangle-fill me-1"></i>มียาหมดอายุในกระเป๋านี้ — แจ้ง Admin ทันที
         </div>` : ''}
 
       ${bag.alert_level === 'complete' ? `
         <div class="alert alert-success small">
-          <i class="bi bi-check-circle-fill me-1"></i>ถุงนี้สมบูรณ์พร้อมใช้งาน
+          <i class="bi bi-check-circle-fill me-1"></i>กระเป๋านี้สมบูรณ์พร้อมใช้งาน
         </div>` : ''}
 
-      <h6>ตรวจสอบของในถุง</h6>
+      <h6>ตรวจสอบของในกระเป๋า</h6>
       <div id="bag-cl-composition">
         ${bag.bag_template_id
           ? '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>กำลังโหลดรายการ…</div>'
