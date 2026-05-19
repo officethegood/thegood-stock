@@ -622,6 +622,15 @@
                   </select>
                 </div>
 
+                <!-- ambulance picker — shown only when type=ambulance (BUG-T185-01 fix) -->
+                <div class="mb-3 d-none" id="ambulance-row">
+                  <label class="form-label fw-medium">รถพยาบาล <span class="text-danger">*</span></label>
+                  <select id="f-ambulance" class="form-select" style="min-height:44px">
+                    <option value="">-- เลือกรถพยาบาล --</option>
+                  </select>
+                  <div class="form-text small">เลือกจากรายการรถที่ตั้งไว้ในแท็บ "รถพยาบาล" — ถ้ายังไม่มี ให้ admin เพิ่มที่นั่นก่อน</div>
+                </div>
+
                 <!-- Laundry role (Phase 0.7+) -->
                 <div class="mb-3">
                   <label class="form-label small fw-medium">บทบาทใน laundry flow (ถ้ามี)</label>
@@ -678,6 +687,53 @@
     const storageRow   = document.getElementById('storage-style-row');
     const fStorageStyle = document.getElementById('f-storage-style');
     const fLaundryRole  = document.getElementById('loc-laundry-role');
+    const ambulanceRow  = document.getElementById('ambulance-row');
+    const fAmbulance    = document.getElementById('f-ambulance');
+
+    /** Fetch and populate the ambulances dropdown (cached on first call). */
+    let _ambListPromise = null;
+    async function _populateAmbulancesOnce() {
+      if (_ambListPromise) return _ambListPromise;
+      _ambListPromise = (async () => {
+        try {
+          const { data, error } = await getSupabaseClient()
+            .from('ambulances').select('id,plate,callsign,active').order('plate');
+          if (error) throw error;
+          // Clear existing (keep first placeholder)
+          fAmbulance.innerHTML = '<option value="">-- เลือกรถพยาบาล --</option>';
+          (data || []).forEach((a) => {
+            const opt = document.createElement('option');
+            opt.value = a.id;
+            const label = a.callsign ? `${a.plate} · ${a.callsign}` : a.plate;
+            opt.textContent = a.active === false ? `${label} (ปิดใช้งาน)` : label;
+            if (a.active === false) opt.disabled = true;
+            fAmbulance.appendChild(opt);
+          });
+          if ((data || []).length === 0) {
+            const opt = document.createElement('option');
+            opt.value = ''; opt.disabled = true;
+            opt.textContent = '— ยังไม่มีรถพยาบาลในระบบ — ';
+            fAmbulance.appendChild(opt);
+          }
+        } catch (e) {
+          console.warn('Failed to load ambulances', e);
+        }
+      })();
+      return _ambListPromise;
+    }
+
+    /** Show/hide ambulance picker row. Lazily fetches on first display. */
+    function refreshAmbulancePicker() {
+      const show = fType.value === 'ambulance';
+      ambulanceRow.classList.toggle('d-none', !show);
+      if (show) {
+        fAmbulance.required = true;
+        _populateAmbulancesOnce();
+      } else {
+        fAmbulance.required = false;
+        fAmbulance.value = '';
+      }
+    }
 
     /** Populate parent dropdown based on current type selection. */
     function refreshParents() {
@@ -729,10 +785,12 @@
     fType.addEventListener('change', () => {
       refreshParents();
       refreshStorageStyle();
+      refreshAmbulancePicker();
     });
 
     refreshParents();
     refreshStorageStyle();
+    refreshAmbulancePicker();
 
     // Populate generate-code button
     document.getElementById('btn-gen-code').onclick = async () => {
@@ -747,6 +805,7 @@
       fType.value = displayType;
       refreshParents();
       refreshStorageStyle();
+      refreshAmbulancePicker();
       if (row.parent_id) fParent.value = row.parent_id;
       document.getElementById('f-code').value  = row.code;
       document.getElementById('f-name').value  = row.name;
@@ -755,6 +814,10 @@
       document.getElementById('f-active').checked = !!row.active;
       if (row.storage_style) fStorageStyle.value = row.storage_style;
       if (row.laundry_role)  fLaundryRole.value  = row.laundry_role;
+      // Pre-select the linked ambulance (wait for the async populate to finish first)
+      if (row.type === 'ambulance' && row.ambulance_id) {
+        _populateAmbulancesOnce().then(() => { fAmbulance.value = row.ambulance_id; });
+      }
     }
 
     // Submit
@@ -789,6 +852,12 @@
         return;
       }
 
+      // ambulance_id required when type=ambulance (chk_ambulance_link CHECK)
+      if (chosenType === 'ambulance' && !fAmbulance.value) {
+        showToast('error', 'กรุณาเลือกรถพยาบาลจากรายการ');
+        return;
+      }
+
       // When editing a legacy cabinet row, preserve 'cabinet' type in DB to avoid
       // enum issues until migration has run — but this is purely cosmetic on the FE
       // (cabinet is displayed as storage). We send whatever type is in the DB for edits.
@@ -806,6 +875,9 @@
                          ? (fStorageStyle.value || null)
                          : null,
         laundry_role:  fLaundryRole.value || null,
+        // BUG-T185-01 fix: write ambulance_id when (and only when) type=ambulance.
+        // chk_ambulance_link CHECK enforces NULL for non-ambulance rows.
+        ambulance_id:  chosenType === 'ambulance' ? (fAmbulance.value || null) : null,
       };
 
       const sb = getSupabaseClient();
