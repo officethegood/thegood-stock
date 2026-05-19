@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.13.1';  // Phase 0.7+Laundry — staff.html bootstrap.bundle + laundry.js category_id='LINEN' fix (no is_linen column in Phase 6 schema)
+const CACHE_VERSION = 'thegood-stock-v0.13.2';  // UX nav — bidirectional admin↔staff buttons (Admin sees both, Employee sees only staff)
 const STATIC_ASSETS = [
   './',
   './login.html',

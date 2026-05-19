@@ -18,12 +18,20 @@
     <span class="fc-brand-mark" id="brand-mark"></span>
     <span class="fc-display" style="font-size:18px;letter-spacing:0.01em">thegood</span><span class="fc-mono" style="color:var(--fc-vital);font-weight:600">/stock</span>
   </span>
-  <div style="display:flex;align-items:center;gap:var(--fc-s4)">
+  <div style="display:flex;align-items:center;gap:var(--fc-s3)">
     <span style="font-family:var(--fc-font-mono);font-size:12px;opacity:0.7"><span id="user-name">…</span></span>
+    <a href="./admin.html" id="link-admin" class="fc-btn fc-btn-ghost d-none" style="padding:6px 12px;min-height:36px;color:var(--fc-paper);border-color:rgba(248,245,239,0.25);text-decoration:none;font-size:13px" title="กลับหน้า admin">
+      <i class="bi bi-gear me-1"></i>Admin
+    </a>
     <button class="fc-btn fc-btn-ghost" id="btn-logout" style="padding:6px 12px;min-height:36px;color:var(--fc-paper);border-color:rgba(248,245,239,0.25)">ออก</button>
   </div>
 </nav>
-<script>document.addEventListener('DOMContentLoaded',()=>{var m=document.getElementById('brand-mark');if(m&&window.Icons)m.innerHTML=window.Icons.cross('');m&&(m.style.cssText='display:inline-flex;width:28px;height:28px;border-radius:6px;background:var(--fc-vital);align-items:center;justify-content:center;color:#fff;padding:4px');});</script>
+<script>document.addEventListener('DOMContentLoaded',()=>{var m=document.getElementById('brand-mark');if(m&&window.Icons)m.innerHTML=window.Icons.cross('');m&&(m.style.cssText='display:inline-flex;width:28px;height:28px;border-radius:6px;background:var(--fc-vital);align-items:center;justify-content:center;color:#fff;padding:4px');
+  // Show Admin link only if user is Admin
+  if (typeof window.getUserRole === 'function' && window.getUserRole() === 'Admin') {
+    var a = document.getElementById('link-admin'); if (a) a.classList.remove('d-none');
+  }
+});</script>
 
 <div class="container mt-4">
   <h4 id="staff-greeting">สวัสดี <span id="user-name-2"></span></h4>
