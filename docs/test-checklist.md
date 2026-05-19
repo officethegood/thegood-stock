@@ -1646,3 +1646,61 @@ Tick each row as you verify. Re-run after every material change.
 | Partial / soft-pass | TBD | — |
 | Blocked | TBD | — |
 | Pending | TBD | T152-T172 |
+
+---
+
+## Phase 0.5 QR Print (T173-T182)
+
+> **Pre-flight:** Phase 0 live + `vendor/qrcode.min.js` present + `shared/qr-print.js` loaded.  
+> CACHE_VERSION must be `thegood-stock-v0.8.0` (bumped from v0.7.0).
+
+- [ ] **T173** Location print button wires QRPrint.single correctly.
+  - Steps: admin.html -> Locations tab -> any location row -> click printer icon
+  - Expected: print dialog opens (desktop) OR PNG download modal appears (iOS); QR encodes bare location code (e.g. `ROOM-A`); code + name appear as labels below QR.
+
+- [ ] **T174** Inventory item single-print button.
+  - Steps: admin.html -> Inventory tab -> รายการสินค้า subview -> any item row -> click QR icon (bi-qr-code)
+  - Expected: `QRPrint.single(item.sku, { size:'38mm', label:item.sku, subtitle:item.name, entityType:'item' })` called; print dialog or PNG fallback launches.
+
+- [ ] **T175** Inventory bulk-select and bulk-print.
+  - Steps: admin.html -> Inventory tab -> select 3 items via row checkboxes -> bulk-bar appears showing "3 รายการที่เลือก" -> click "พิมพ์ที่เลือก"
+  - Expected: `QRPrint.bulk(rows, {})` called with exactly those 3 rows; each row has `{ code: sku, label: sku, subtitle: name }`.
+
+- [ ] **T176** Select-all checkbox selects all visible rows.
+  - Steps: admin.html -> Inventory tab -> click header checkbox -> all rows checked -> bulk-bar shows count = total items loaded
+  - Expected: all row checkboxes become checked; deselect button clears all and hides bar.
+
+- [ ] **T177** staff-print.html loads and lists items + print buttons.
+  - Steps: staff.html -> "พิมพ์ QR Sticker" button -> staff-print.html opens; items tab loads list
+  - Expected: items list renders with code + name + single-print button per row; select-all + bulk-print bar functional.
+
+- [ ] **T178** staff-print.html bulk print triggers QRPrint.bulk.
+  - Steps: staff-print.html -> select 2+ items -> "พิมพ์ที่เลือก" button in bulk-bar
+  - Expected: `QRPrint.bulk` called with correct rows array; print or PNG fallback.
+
+- [ ] **T179** QR payload is bare code (spec Q-QR-1).
+  - Steps: print any sticker; scan printed QR with a QR reader app
+  - Expected: scanned value equals the entity code exactly (e.g. `ROOM-A`, `SUP-GAUZE-001`) with no prefix, no URL, no JSON wrapping.
+
+- [ ] **T180** @page size A4 and @media print sticker grid renders correctly.
+  - Steps: desktop browser -> admin.html -> Inventory -> select 6+ items -> bulk print -> print preview
+  - Expected: print preview shows A4 page; stickers arranged in 6-column dashed-border grid; no app chrome visible (navbar, modals hidden per `body * { visibility: hidden }`).
+
+- [ ] **T181** iOS Safari -> PNG download fallback.
+  - Steps: open staff-print.html on iPhone/iPad Safari (or iOS simulator) -> click single-print on any item
+  - Expected: modal appears with "พิมพ์ (Print)" and "ดาวน์โหลด PNG" buttons; tapping "ดาวน์โหลด PNG" downloads `qr-{sku}.png`; opening the file in Photos shows a scannable QR with code + subtitle text below; QR encodes bare SKU.
+
+- [ ] **T182** PNG download on desktop (non-iOS) via "ดาวน์โหลด PNG" in choice modal.
+  - Steps: set `localStorage.qr_print_mode_pref = 'png'` in DevTools console -> reload -> click any print button
+  - Expected: `QRPrint.downloadPNG` triggered directly (no modal); file `qr-{code}.png` downloads; image is 1024x1024 px; QR is scannable; label + subtitle text visible; clearing `localStorage.qr_print_mode_pref` and retrying goes straight to print dialog (desktop default).
+
+---
+
+## Phase 0.5 Summary
+
+| Status | Count | Tests |
+|---|---|---|
+| Fully verified | TBD | — |
+| Partial / soft-pass | TBD | — |
+| Blocked | TBD | — |
+| Pending | TBD | T173-T182 |

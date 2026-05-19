@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.7.0';  // Phase 6 — Linens & Laundry
+const CACHE_VERSION = 'thegood-stock-v0.8.0';  // Phase 0.5 — QR Print + PNG fallback
 const STATIC_ASSETS = [
   './',
   './login.html',
@@ -44,6 +44,10 @@ const STATIC_ASSETS = [
   './js/oxygen.js',
   './js/staff-oxygen.js',
   './staff-oxygen.html',
+  './vendor/qrcode.min.js',
+  './shared/qr-print.js',
+  './staff-print.html',
+  './js/staff-print.js',
 ];
 
 self.addEventListener('install', (e) => {

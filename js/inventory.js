@@ -59,6 +59,9 @@
   let _linens          = [];      // v_linen_audit rows (LINEN mode)
   let _activeSubcat    = 'all';   // linen sub-category filter (client-side)
 
+  // Phase 0.5 — QR print selection
+  let _invSelected     = new Set();  // Set of item IDs selected for bulk print
+
   // =========================================================================
   // Helpers
   // =========================================================================
@@ -83,6 +86,21 @@
     if (err.code === '42501') return 'ไม่มีสิทธิ์ทำรายการนี้';
     if (err.code === 'BAD_QTY') return 'จำนวนต้องเป็นเลขจำนวนเต็มบวก';
     return err.message || fallback || 'เกิดข้อผิดพลาด';
+  }
+
+  /** Phase 0.5: update visibility + count of the inventory bulk-print bar. */
+  function _updateInvBulkBar() {
+    const bar   = document.getElementById('inv-bulk-bar');
+    const cnt   = document.getElementById('inv-bulk-count');
+    const chkAll = document.getElementById('inv-chk-all');
+    if (!bar || !cnt) return;
+    const n = _invSelected.size;
+    cnt.textContent = String(n);
+    bar.classList.toggle('d-none', n === 0);
+    if (chkAll) {
+      chkAll.indeterminate = n > 0 && n < _items.length;
+      chkAll.checked       = n > 0 && n === _items.length;
+    }
   }
 
   /** Load helper categories (cached for the tab's lifetime). */
@@ -196,12 +214,27 @@
           </div>
         </div>
 
+        <!-- Phase 0.5: bulk-print bar (hidden until at least 1 row selected) -->
+        <div id="inv-bulk-bar" class="d-none alert alert-info d-flex align-items-center gap-2 mb-2 py-2">
+          <span id="inv-bulk-count" class="fw-bold">0</span> รายการที่เลือก
+          <button type="button" class="btn btn-sm btn-stock-primary ms-2" id="inv-btn-bulk-print">
+            <i class="bi bi-printer me-1"></i>พิมพ์ที่เลือก
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="inv-btn-bulk-desel">
+            ยกเลิกทั้งหมด
+          </button>
+        </div>
+
         <div class="card">
           <div class="card-body p-0">
             <div class="table-responsive">
               <table class="table table-striped table-hover align-middle mb-0">
                 <thead class="position-sticky top-0 bg-white" style="z-index:1;">
                   <tr>
+                    <th scope="col" style="width:36px;">
+                      <input type="checkbox" class="form-check-input" id="inv-chk-all"
+                             aria-label="เลือกทั้งหมด" title="เลือกทั้งหมด">
+                    </th>
                     <th scope="col" class="d-none d-sm-table-cell">SKU</th>
                     <th scope="col">ชื่อ</th>
                     <th scope="col" class="d-none d-md-table-cell">หมวด</th>
@@ -213,7 +246,7 @@
                   </tr>
                 </thead>
                 <tbody id="inv-tbody">
-                  <tr><td colspan="8" class="text-center text-muted py-4">
+                  <tr><td colspan="9" class="text-center text-muted py-4">
                     <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด…
                   </td></tr>
                 </tbody>
@@ -257,6 +290,24 @@
 
     document.getElementById('inv-btn-add').onclick     = () => openItemModal(null);
     document.getElementById('inv-btn-receive').onclick = () => openReceiveModal(null);
+
+    // Phase 0.5: bulk-print bar wiring
+    document.getElementById('inv-btn-bulk-print').addEventListener('click', () => {
+      const rows = _items
+        .filter((it) => _invSelected.has(it.id))
+        .map((it) => ({ code: it.sku, label: it.sku, subtitle: it.name }));
+      if (!rows.length) return;
+      if (window.QRPrint) {
+        window.QRPrint.bulk(rows, {});
+      } else {
+        _toast('error', 'โมดูลพิมพ์ QR ยังไม่โหลด — รีเฟรชหน้าใหม่');
+      }
+    });
+    document.getElementById('inv-btn-bulk-desel').addEventListener('click', () => {
+      _invSelected.clear();
+      _updateInvBulkBar();
+      _renderRows();
+    });
 
     // Phase 2: sub-view segment tab switching (Q-D5)
     document.getElementById('inv-subview-tabs').addEventListener('click', (ev) => {
@@ -457,7 +508,8 @@
       const msg = noFilter
         ? 'ยังไม่มีสินค้าในระบบ — กด ➕ เพิ่มสินค้า เพื่อเริ่ม'
         : '— ไม่มีรายการตรงเงื่อนไข —';
-      tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">${_esc(msg)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-4">${_esc(msg)}</td></tr>`;
+      _updateInvBulkBar();
       return;
     }
 
@@ -471,8 +523,14 @@
       const statusBadge = it.active
         ? '<span class="badge bg-success-subtle text-success">ใช้งาน</span>'
         : '<span class="badge bg-secondary">ปิด</span>';
+      const checked = _invSelected.has(it.id) ? 'checked' : '';
       return `
         <tr data-id="${_esc(it.id)}" role="button" tabindex="0" style="cursor:pointer;">
+          <td>
+            <input type="checkbox" class="form-check-input inv-row-chk" data-id="${_esc(it.id)}"
+                   aria-label="เลือก ${_esc(it.sku)}" ${checked}
+                   style="min-width:20px;min-height:20px;">
+          </td>
           <td class="d-none d-sm-table-cell"><code class="small">${_esc(it.sku)}</code></td>
           <td>
             <div>${_esc(it.name)}</div>
@@ -484,6 +542,12 @@
           <td class="d-none d-sm-table-cell text-end small">${threshold || '—'}</td>
           <td class="d-none d-sm-table-cell">${statusBadge}</td>
           <td class="text-end">
+            <button type="button" class="btn btn-sm btn-link p-1" data-act="print-single"
+                    data-id="${_esc(it.id)}"
+                    aria-label="พิมพ์ QR ${_esc(it.sku)}" title="พิมพ์ QR Sticker"
+                    style="min-width:44px;min-height:44px;">
+              <i class="bi bi-qr-code"></i>
+            </button>
             <button type="button" class="btn btn-sm btn-link p-1" data-act="menu"
                     aria-label="เมนู" style="min-width:44px;min-height:44px;">
               <i class="bi bi-three-dots-vertical"></i>
@@ -493,10 +557,50 @@
       `;
     }).join('');
 
+    // Phase 0.5: select-all header checkbox
+    const chkAll = document.getElementById('inv-chk-all');
+    if (chkAll) {
+      chkAll.indeterminate = _invSelected.size > 0 && _invSelected.size < _items.length;
+      chkAll.checked       = _invSelected.size > 0 && _invSelected.size === _items.length;
+      chkAll.onchange = () => {
+        if (chkAll.checked) { _items.forEach((it) => _invSelected.add(it.id)); }
+        else                { _invSelected.clear(); }
+        _updateInvBulkBar();
+        _renderRows();
+      };
+    }
+
     // Row click → detail drawer (design §2.4). The 3-dots column dispatches row-action menu.
     tbody.querySelectorAll('tr[data-id]').forEach((tr) => {
       const id = tr.dataset.id;
       tr.addEventListener('click', (ev) => {
+        // Phase 0.5: print-single button
+        const printBtn = ev.target.closest('[data-act="print-single"]');
+        if (printBtn) {
+          ev.stopPropagation();
+          const item = _items.find((x) => x.id === printBtn.dataset.id);
+          if (item && window.QRPrint) {
+            window.QRPrint.single(item.sku, {
+              size:       '38mm',
+              label:      item.sku,
+              subtitle:   item.name,
+              entityType: 'item',
+            });
+          } else if (!window.QRPrint) {
+            _toast('error', 'โมดูลพิมพ์ QR ยังไม่โหลด — รีเฟรชหน้าใหม่');
+          }
+          return;
+        }
+        // Phase 0.5: row checkbox toggle (stop row-level click from opening drawer)
+        const chkBox = ev.target.closest('.inv-row-chk');
+        if (chkBox) {
+          ev.stopPropagation();
+          const cid = chkBox.dataset.id;
+          if (chkBox.checked) _invSelected.add(cid);
+          else                _invSelected.delete(cid);
+          _updateInvBulkBar();
+          return;
+        }
         const actBtn = ev.target.closest('[data-act="menu"]');
         if (actBtn) {
           ev.stopPropagation();
@@ -512,6 +616,8 @@
         }
       });
     });
+
+    _updateInvBulkBar();
   }
 
   // -------------------------------------------------------------------------
@@ -526,7 +632,7 @@
 
     const tbody = document.getElementById('inv-tbody');
     if (tbody && !_items.length) {
-      tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">
+      tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-4">
         <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด…
       </td></tr>`;
     }
@@ -538,13 +644,15 @@
     });
     if (r.error) {
       _items = [];
-      if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">
+      if (tbody) tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger py-4">
         ${_esc(_friendly(r.error, 'โหลดสินค้าไม่สำเร็จ'))}
       </td></tr>`;
       _toast('error', _friendly(r.error, 'โหลดสินค้าไม่สำเร็จ'));
       return;
     }
     _items = r.data || [];
+    // Phase 0.5: clear selection on each full reload so stale selections don't linger
+    _invSelected.clear();
     _renderRows();
   }
 
@@ -634,7 +742,12 @@
           <th scope="col" style="width:44px;"></th>
         `;
       } else {
+        // Phase 0.5: restore checkbox column when leaving linen mode
         thead.innerHTML = `
+          <th scope="col" style="width:36px;">
+            <input type="checkbox" class="form-check-input" id="inv-chk-all"
+                   aria-label="เลือกทั้งหมด" title="เลือกทั้งหมด">
+          </th>
           <th scope="col" class="d-none d-sm-table-cell">SKU</th>
           <th scope="col">ชื่อ</th>
           <th scope="col" class="d-none d-md-table-cell">หมวด</th>

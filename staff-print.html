@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1e3a5f">
+<title>พิมพ์ QR — Thegood Stock</title>
+
+<!-- Phase 0.5 — QR Print page. Employee + Admin access.
+     Spec: docs/superpowers/specs/2026-05-19-phase0.5-qr-print-design.md
+     Mirror of staff-oxygen.html shell. -->
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./shared/styles.css">
+
+<style>
+  body { background-color: #f5f7fa; }
+  .print-wrap { max-width: 600px; margin: 0 auto; padding: 0 12px 40px; }
+
+  /* Segmented sub-tab control — mirrors Phase 2 / Phase 5 pattern */
+  .print-tabs-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .print-tabs-scroll::-webkit-scrollbar { display: none; }
+
+  /* Entity list items — min 44px tap target */
+  .print-list-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 48px;
+    padding: 10px 12px;
+    border-bottom: 1px solid #f0f2f5;
+    cursor: default;
+  }
+  .print-list-item:last-child { border-bottom: none; }
+  .print-list-item .item-check {
+    width: 20px; height: 20px;
+    min-width: 20px; min-height: 20px;
+    cursor: pointer;
+  }
+  .print-list-item .item-code {
+    font-family: monospace;
+    font-size: 0.82rem;
+    color: #0f766e;
+    white-space: nowrap;
+  }
+  .print-list-item .item-name {
+    flex: 1;
+    font-size: 0.95rem;
+    color: #333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .print-list-item .btn-print-single {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 10px;
+    flex-shrink: 0;
+  }
+
+  /* Bulk print bar */
+  .bulk-print-bar {
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    border-top: 1px solid #dee2e6;
+    padding: 10px 12px;
+    display: none;
+    gap: 10px;
+    align-items: center;
+    z-index: 10;
+  }
+  .bulk-print-bar.visible { display: flex; }
+
+  /* Size selector */
+  .size-seg-wrap { display: flex; gap: 4px; flex-wrap: wrap; }
+  .size-seg-wrap .btn { min-height: 36px; font-size: 0.82rem; }
+
+  @media (max-width: 575.98px) {
+    .print-wrap { padding: 0 6px 56px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Navbar — mirrors staff-oxygen.html -->
+<nav class="navbar bg-modern-primary navbar-dark px-3" role="navigation">
+  <a href="./staff.html" class="navbar-brand mb-0 d-flex align-items-center" aria-label="ย้อนกลับ">
+    <i class="bi bi-arrow-left me-2"></i><span>Thegood Stock</span>
+  </a>
+  <div>
+    <span class="text-white-50 me-2 d-none d-sm-inline">
+      <i class="bi bi-person-circle"></i> <span id="user-name">…</span>
+    </span>
+    <button class="btn btn-sm btn-outline-light" id="btn-logout" type="button">ออก</button>
+  </div>
+</nav>
+
+<main class="print-wrap pt-3" role="main">
+  <h5 class="mb-1">
+    <i class="bi bi-printer me-1 text-stock-accent"></i>พิมพ์ QR Sticker
+  </h5>
+  <p class="text-muted small mb-3">เลือกรายการแล้วกดพิมพ์ — แสดงเฉพาะรหัสและชื่อ</p>
+
+  <!-- Size selector -->
+  <div class="card mb-3">
+    <div class="card-body py-2 px-3">
+      <div class="d-flex align-items-center gap-3 flex-wrap">
+        <span class="small text-muted">ขนาด sticker:</span>
+        <div class="size-seg-wrap" id="size-seg" role="group" aria-label="ขนาด sticker">
+          <button type="button" class="btn btn-stock-primary btn-sm" data-size="a4">A4 Grid</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-size="38mm">38 mm</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-size="50mm">50 mm</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-size="76mm">76 mm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4-segment sub-tab nav — mirrors Phase 2 + Phase 5 segmented pattern -->
+  <div class="print-tabs-scroll mb-3">
+    <ul class="nav nav-pills flex-nowrap" id="print-subtabs" role="tablist" style="white-space:nowrap;">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" type="button" role="tab"
+                data-tab="items" aria-selected="true" style="min-height:44px;">
+          สินค้า
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" type="button" role="tab"
+                data-tab="locations" aria-selected="false" style="min-height:44px;">
+          สถานที่
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" type="button" role="tab"
+                data-tab="bags" aria-selected="false" style="min-height:44px;">
+          ALS Bags
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" type="button" role="tab"
+                data-tab="tanks" aria-selected="false" style="min-height:44px;">
+          ถังออกซิเจน
+        </button>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Search input -->
+  <div class="mb-3">
+    <input type="search" id="print-search" class="form-control"
+           placeholder="ค้นหารหัส / ชื่อ" autocomplete="off"
+           style="min-height:44px;">
+  </div>
+
+  <!-- List container -->
+  <div class="card mb-2">
+    <div class="card-body p-0" id="print-list-container">
+      <div class="text-center text-muted py-4">
+        <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด…
+      </div>
+    </div>
+  </div>
+
+  <!-- Bulk print bar (sticky, shows when ≥1 selected) -->
+  <div class="bulk-print-bar" id="bulk-bar">
+    <button type="button" class="btn btn-stock-primary" id="btn-bulk-print"
+            style="min-height:44px;">
+      <i class="bi bi-printer"></i> พิมพ์ที่เลือก (<span id="bulk-count">0</span>)
+    </button>
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-deselect-all"
+            style="min-height:44px;">
+      ยกเลิกทั้งหมด
+    </button>
+  </div>
+</main>
+
+<!-- Scripts — same load order as staff-oxygen.html -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./shared/config.js"></script>
+<script src="./shared/supabase-client.js"></script>
+<script src="./shared/auth.js"></script>
+<script src="./shared/auth-jwt.js"></script>
+<script src="./shared/ui.js"></script>
+<script src="./shared/settings.js"></script>
+<script src="./vendor/qrcode.min.js"></script>
+<script src="./shared/qr-print.js"></script>
+<script src="./js/staff-print.js"></script>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () =>
+      navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('SW failed', e))
+    );
+  }
+</script>
+
+</body>
+</html>

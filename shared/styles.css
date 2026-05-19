@@ -725,6 +725,51 @@ input[type="time"] { font-variant-numeric: tabular-nums; }
     }
 
 /* =============================================
+   Thegood Stock — QR Print layout (Phase 0.5)
+   ============================================= */
+@media print {
+  body * { visibility: hidden; }
+  .qr-print-area, .qr-print-area * { visibility: visible; }
+  .qr-print-area { position: absolute; left: 0; top: 0; width: 100%; }
+  .qr-sticker-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 32mm);
+    grid-auto-rows: 32mm;
+    gap: 0;
+    page-break-after: always;
+  }
+  .qr-sticker-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2mm;
+    box-sizing: border-box;
+    border: 0.2mm dashed #ccc;
+  }
+  .qr-sticker-cell .code {
+    font-family: monospace;
+    font-size: 7pt;
+    margin-top: 1mm;
+  }
+  .qr-sticker-cell .subtitle {
+    font-family: 'Sarabun', sans-serif;
+    font-size: 6pt;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .qr-sticker-single {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4mm;
+  }
+  @page { size: A4; margin: 5mm; }
+}
+
+/* =============================================
    Thegood Stock — Teal accent override
    ============================================= */
 :root {

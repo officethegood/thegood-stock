@@ -44,6 +44,7 @@
             <code class="me-2 small">${escapeHtml(l.code)}</code>
             <span class="${isInactive ? 'text-muted text-decoration-line-through' : ''}">${escapeHtml(l.name)}</span>
             <span class="ms-auto">
+              <button class="btn btn-sm btn-link text-stock-accent" data-act="print" data-id="${l.id}" aria-label="พิมพ์ QR ${escapeHtml(l.code)}" title="พิมพ์ QR Sticker" style="min-width:44px;min-height:44px;">🖨️</button>
               <button class="btn btn-sm btn-link" data-act="edit" data-id="${l.id}"><i class="bi bi-pencil"></i></button>
               <button class="btn btn-sm btn-link text-danger" data-act="del" data-id="${l.id}"><i class="bi bi-trash"></i></button>
             </span>
@@ -56,6 +57,22 @@
 
     root.querySelectorAll('[data-act]').forEach((btn) => {
       const id = btn.dataset.id;
+      if (btn.dataset.act === 'print') {
+        btn.onclick = () => {
+          const loc = _all.find((x) => x.id === id);
+          if (!loc) return;
+          if (window.QRPrint) {
+            window.QRPrint.single(loc.code, {
+              size:       '38mm',
+              label:      loc.code,
+              subtitle:   loc.name,
+              entityType: 'location',
+            });
+          } else {
+            alert('โมดูลพิมพ์ QR ยังไม่โหลด — รีเฟรชหน้าใหม่');
+          }
+        };
+      }
       if (btn.dataset.act === 'edit') btn.onclick = () => openModal(id);
       if (btn.dataset.act === 'del')  btn.onclick = () => handleDelete(id);
     });
