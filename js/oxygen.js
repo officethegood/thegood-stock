@@ -294,6 +294,7 @@
               <th>สถานที่</th>
               <th>เติมล่าสุด</th>
               <th>ตรวจสอบ</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -311,6 +312,14 @@
                   ${_esc(_fmtDate(t.next_inspection_due))}
                   ${_inspectionWarning(t.next_inspection_due)}
                 </td>
+                <td>
+                  <button class="btn btn-sm btn-link text-stock-accent oxy-print-btn"
+                          data-serial="${_esc(t.serial)}"
+                          data-tank-size="${_esc(t.tank_size)}"
+                          data-loc-code="${_esc(t.locations?.code || '')}"
+                          aria-label="พิมพ์ QR ${_esc(t.serial)}" title="พิมพ์ QR Sticker"
+                          style="min-width:44px;min-height:44px;">🖨️</button>
+                </td>
               </tr>
             `).join('')}
           </tbody>
@@ -322,6 +331,26 @@
     // Wire row clicks → detail drawer
     wrap.querySelectorAll('.oxy-tank-row').forEach((row) => {
       row.addEventListener('click', () => _openDetailDrawer(row.dataset.tankId));
+    });
+
+    // Row-level print buttons — stop propagation so the row click does not fire.
+    wrap.querySelectorAll('.oxy-print-btn').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const serial  = btn.dataset.serial;
+        const size    = btn.dataset.tankSize;
+        const locCode = btn.dataset.locCode;
+        if (window.QRPrint) {
+          window.QRPrint.single(serial, {
+            size:       '38mm',
+            label:      serial,
+            subtitle:   size + (locCode ? ' • ' + locCode : ''),
+            entityType: 'tank',
+          });
+        } else {
+          alert('โมดูลพิมพ์ QR ยังไม่โหลด — รีเฟรชหน้าใหม่');
+        }
+      });
     });
   }
 

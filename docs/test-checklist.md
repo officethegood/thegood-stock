@@ -1694,6 +1694,19 @@ Tick each row as you verify. Re-run after every material change.
   - Steps: set `localStorage.qr_print_mode_pref = 'png'` in DevTools console -> reload -> click any print button
   - Expected: `QRPrint.downloadPNG` triggered directly (no modal); file `qr-{code}.png` downloads; image is 1024x1024 px; QR is scannable; label + subtitle text visible; clearing `localStorage.qr_print_mode_pref` and retrying goes straight to print dialog (desktop default).
 
+- [ ] **T183** Cross-page shared module load coverage — Open DevTools console
+  on every staff-* page and admin.html; verify required globals are defined.
+  Steps:
+  1. staff.html → no extra modules required
+  2. staff-scan.html → window.AppLoans, AppLots, AppBags, AppLinens, AppInventory, PhotoCaptureModal ALL defined
+  3. staff-oxygen.html → window.AppOxygen, PhotoCaptureModal defined
+  4. staff-print.html → window.QRPrint defined; window.QRCode defined
+  5. admin.html → all of the above + window.AppLoans, AppBags, AppOxygen, AppLinens, AppInventory, AppLots, QRPrint, QRCode defined
+  Expected: zero undefined globals on each page; otherwise the corresponding
+  shared module is missing from the page's <script> tags.
+  This regression catches the agent-driven cross-phase script tag gap pattern
+  that broke staff-scan.html (Phase 2/3/4 modes) and admin.html (QR print).
+
 ---
 
 ## Phase 0.5 Summary
@@ -1703,4 +1716,4 @@ Tick each row as you verify. Re-run after every material change.
 | Fully verified | TBD | — |
 | Partial / soft-pass | TBD | — |
 | Blocked | TBD | — |
-| Pending | TBD | T173-T182 |
+| Pending | TBD | T173-T183 |

@@ -229,6 +229,25 @@
         if (bag) _showDetailView(bag);
       });
     });
+
+    // Row-level print buttons — stop propagation so the card click does not fire.
+    area.querySelectorAll('.bag-print-btn').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const code = btn.dataset.bagCode;
+        const name = btn.dataset.bagName;
+        if (window.QRPrint) {
+          window.QRPrint.single(code, {
+            size:       '38mm',
+            label:      code,
+            subtitle:   name,
+            entityType: 'bag',
+          });
+        } else {
+          alert('โมดูลพิมพ์ QR ยังไม่โหลด — รีเฟรชหน้าใหม่');
+        }
+      });
+    });
   }
 
   function _renderBagCard(bag) {
@@ -259,7 +278,12 @@
               <small class="text-muted">${pct}% สมบูรณ์${bag.mandatory_deficit_count > 0 ? ` — ขาด ${bag.mandatory_deficit_count} รายการบังคับ` : ''}</small>
             ` : ''}
             ${bag.nearest_expiry ? `<p class="small text-muted mt-1 mb-0">หมดอายุใกล้สุด: ${expiry}</p>` : ''}
-            <div class="text-end mt-2">
+            <div class="d-flex justify-content-between align-items-center mt-2">
+              <button class="btn btn-sm btn-link text-stock-accent bag-print-btn"
+                      data-bag-code="${_esc(bag.bag_code)}"
+                      data-bag-name="${_esc(bag.bag_name || bag.template_name || '')}"
+                      aria-label="พิมพ์ QR ${_esc(bag.bag_code)}" title="พิมพ์ QR Sticker"
+                      style="min-width:44px;min-height:44px;">🖨️</button>
               <span class="text-primary small">ดูรายละเอียด →</span>
             </div>
           </div>

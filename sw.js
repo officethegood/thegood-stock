@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.8.1';  // Phase 0.5 — QR Print + PNG fallback; v0.8.1 fixes vendored qrcode lib
+const CACHE_VERSION = 'thegood-stock-v0.8.2';  // Phase 0.5.1 — row-level print buttons (bags + oxygen); tighten oxygen trigger search_path
 const STATIC_ASSETS = [
   './',
   './login.html',
