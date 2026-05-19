@@ -876,10 +876,11 @@
   let _adminView = (typeof localStorage !== 'undefined' && localStorage.getItem('admin_loc_view')) || 'tree';
 
   function _adminViewToggleHtml(active) {
+    // Two-button segmented control. Bigger + bordered so it's discoverable.
     return `
-      <div role="tablist" aria-label="view mode" style="display:inline-flex;border:1px solid rgba(12,25,41,0.15);border-radius:6px;overflow:hidden;margin-right:var(--fc-s2,8px)">
-        <button id="btn-loc-view-tree"  class="fc-btn fc-btn-${active==='tree'?'primary':'ghost'}"  style="border-radius:0;border:none;padding:6px 12px;min-height:36px;font-size:13px"><i class="bi bi-diagram-3 me-1"></i>Tree</button>
-        <button id="btn-loc-view-graph" class="fc-btn fc-btn-${active==='graph'?'primary':'ghost'}" style="border-radius:0;border:none;padding:6px 12px;min-height:36px;font-size:13px"><i class="bi bi-diagram-2 me-1"></i>Graph</button>
+      <div role="tablist" aria-label="view mode" style="display:inline-flex;border:1.5px solid var(--fc-vital,#00B8A9);border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,184,169,0.15)">
+        <button id="btn-loc-view-tree"  class="fc-btn fc-btn-${active==='tree'?'primary':'ghost'}"  style="border-radius:0;border:none;padding:8px 16px;min-height:40px;font-size:13px;font-weight:600;letter-spacing:0.02em"><i class="bi bi-diagram-3 me-1"></i>Tree</button>
+        <button id="btn-loc-view-graph" class="fc-btn fc-btn-${active==='graph'?'primary':'ghost'}" style="border-radius:0;border:none;padding:8px 16px;min-height:40px;font-size:13px;font-weight:600;letter-spacing:0.02em"><i class="bi bi-diagram-2 me-1"></i>Graph</button>
       </div>`;
   }
 

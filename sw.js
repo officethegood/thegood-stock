@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.14.4';  // Staff locations table view — sort by full path, indent rows by depth (└ prefix), add Parent + Path columns + type badges + storage_style/laundry_role meta — fixes ตาลาย flat-table UX
+const CACHE_VERSION = 'thegood-stock-v0.14.5';  // Admin Locations Tree↔Graph toggle made more visible — teal border + bigger padding + bold
 const STATIC_ASSETS = [
   './',
   './login.html',
