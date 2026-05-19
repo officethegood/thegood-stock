@@ -923,6 +923,9 @@
             <i class="bi bi-plus-circle"></i> ปรับยอด+
           </button>
         ` : ''}
+        <button type="button" class="btn btn-outline-primary" id="drawer-transfer">
+          <i class="bi bi-arrows-move"></i> ย้าย
+        </button>
         <button type="button" class="btn btn-outline-secondary" id="drawer-edit">
           <i class="bi bi-pencil"></i> แก้ไข
         </button>
@@ -939,6 +942,18 @@
     document.getElementById('drawer-loss').onclick = () => { close(); openAdjustModal('loss', item); };
     if (_isAdmin()) {
       document.getElementById('drawer-gain').onclick = () => { close(); openAdjustModal('gain', item); };
+    }
+    // Phase 0.7: Transfer button — calls Transfer.openModal if module is loaded
+    const transferBtn = document.getElementById('drawer-transfer');
+    if (transferBtn) {
+      transferBtn.onclick = () => {
+        close();
+        if (window.Transfer && typeof window.Transfer.openModal === 'function') {
+          window.Transfer.openModal({ itemId: item.id });
+        } else {
+          _toast('error', 'โมดูล Transfer ยังไม่พร้อม — กรุณารีเฟรชหน้า');
+        }
+      };
     }
     const deact = document.getElementById('drawer-deactivate');
     if (deact) deact.onclick = async () => {

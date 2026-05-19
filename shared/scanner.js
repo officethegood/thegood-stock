@@ -334,6 +334,256 @@
   }
 
   // =========================================================================
+  // Phase 0.7 — Camera availability flag (§5.2.2)
+  // =========================================================================
+
+  // Detect on module init: if mediaDevices is unavailable (desktop without camera, certain
+  // in-app browsers) expose cameraAvailable=false so callers can hide the scan button.
+  const cameraAvailable = !!(navigator.mediaDevices);
+
+  // =========================================================================
+  // Phase 0.7 — openForLocation: scan QR and resolve to a location row
+  // =========================================================================
+
+  /**
+   * Open a full-screen scan modal expecting a `location:<uuid>` payload.
+   * On success resolves with { id, code, name, type, path_display, scanned: true }.
+   * On any camera failure → auto-opens tree-picker (§5.2.1), resolves with scanned:false.
+   * Rejects only if the user explicitly cancels (tree-picker cancel).
+   *
+   * @returns {Promise<{id:string,code:string,name:string,type:string,path_display:string,scanned:boolean}>}
+   */
+  function openForLocation() {
+    return new Promise((resolve, reject) => {
+      // §5.2.2: if no mediaDevices at all, skip straight to manual
+      if (!cameraAvailable) {
+        _fallbackToManual('device-not-supported', resolve, reject);
+        return;
+      }
+
+      // §5.2.1: iOS LINE/FB in-app browser heuristic
+      const ua = navigator.userAgent || '';
+      const isInApp = /Line\/|FBAN|FBAV|Instagram|MicroMessenger/i.test(ua);
+      if (isInApp) {
+        _fallbackToManual('device-not-supported', resolve, reject);
+        return;
+      }
+
+      _openScannerModal(resolve, reject);
+    });
+  }
+
+  /**
+   * Build and show a minimal scan modal.  Attaches AppScanner.startScanning internally.
+   */
+  function _openScannerModal(resolve, reject) {
+    const old = document.getElementById('scanner-loc-modal');
+    if (old) try { old.remove(); } catch { /* ignore */ }
+
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      <div class="modal fade" id="scanner-loc-modal" tabindex="-1"
+           aria-labelledby="scanner-loc-title">
+        <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+          <div class="modal-content bg-dark text-white">
+            <div class="modal-header border-0 pb-0">
+              <h5 class="modal-title" id="scanner-loc-title">สแกน QR ตำแหน่ง</h5>
+              <button type="button" class="btn-close btn-close-white"
+                      data-bs-dismiss="modal" aria-label="ปิด"></button>
+            </div>
+            <div class="modal-body p-2">
+              <div style="position:relative;width:100%;aspect-ratio:3/4;max-height:55vh;
+                          background:#000;border-radius:12px;overflow:hidden;">
+                <video id="scanner-loc-video" playsinline muted
+                       style="width:100%;height:100%;object-fit:cover;display:block;"
+                       aria-label="กล้องสแกน QR ตำแหน่ง"></video>
+                <div style="position:absolute;top:15%;left:15%;right:15%;bottom:15%;
+                            border:2px solid #00B8A9;border-radius:10px;pointer-events:none;
+                            box-shadow:0 0 0 9999px rgba(0,0,0,0.20);"></div>
+                <div id="scanner-loc-hint"
+                     style="position:absolute;left:0;right:0;bottom:14px;text-align:center;
+                            color:#fff;font-size:0.95rem;text-shadow:0 1px 4px rgba(0,0,0,0.7);">
+                  สแกน QR ของตำแหน่งที่ต้องการ
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+              <button type="button" class="btn btn-outline-light flex-grow-1"
+                      id="scanner-loc-manual" style="min-height:44px;">
+                <i class="bi bi-list-ul me-1"></i> เลือกจากรายการแทน
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    const modalEl = wrap.firstChild;
+    document.body.appendChild(modalEl);
+    const bsModal = new bootstrap.Modal(modalEl, { backdrop: 'static' });
+
+    const videoEl   = modalEl.querySelector('#scanner-loc-video');
+    const manualBtn = modalEl.querySelector('#scanner-loc-manual');
+
+    let _resolved = false;
+
+    async function _startCam() {
+      // Wrap startScanning in a 5-second getUserMedia timeout (§5.2.1).
+      // We do a preflight getUserMedia with a race so we can catch NotAllowed/NotFound/timeout
+      // before AppScanner.startScanning tries to open the stream internally.
+      let preflightStream = null;
+      try {
+        preflightStream = await Promise.race([
+          navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+        ]);
+      } catch (err) {
+        const reason = _mapCameraError(err);
+        bsModal.hide();
+        _fallbackToManual(reason, resolve, reject);
+        return;
+      }
+      // Preflight succeeded — release its tracks; startScanning will open its own stream.
+      preflightStream.getTracks().forEach((t) => t.stop());
+
+      try {
+        await startScanning({
+          videoElement: videoEl,
+          formats: ['qr_code'],
+          onScan: async (text) => {
+            if (_resolved) return;
+            const locId = _parseLocationQR(text);
+            if (!locId) {
+              // Not a location QR — keep scanning
+              return;
+            }
+            _resolved = true;
+            await stopScanning();
+            bsModal.hide();
+            try {
+              const loc = await _resolveLocationId(locId);
+              if (!loc) throw new Error('ไม่พบตำแหน่งนี้ในระบบ');
+              resolve({ ...loc, scanned: true });
+            } catch (e) {
+              reject(e);
+            }
+          },
+          onError: (msg) => {
+            if (_resolved) return;
+            stopScanning().catch(() => {});
+            bsModal.hide();
+            _fallbackToManual('unknown-error', resolve, reject);
+          },
+        });
+      } catch (err) {
+        const reason = _mapCameraError(err);
+        bsModal.hide();
+        _fallbackToManual(reason, resolve, reject);
+      }
+    }
+
+    manualBtn.addEventListener('click', () => {
+      _resolved = true;
+      stopScanning().catch(() => {});
+      bsModal.hide();
+      _openManualFallback(resolve, reject);
+    });
+
+    modalEl.addEventListener('hidden.bs.modal', () => {
+      if (!_resolved) {
+        stopScanning().catch(() => {});
+        reject(new Error('cancelled'));
+      }
+      try { modalEl.remove(); } catch { /* ignore */ }
+    });
+
+    bsModal.show();
+    // Start cam after modal transition (user gesture satisfied by show())
+    modalEl.addEventListener('shown.bs.modal', () => {
+      _startCam();
+    }, { once: true });
+  }
+
+  /**
+   * Parse a QR payload in "location:<uuid>" format.
+   * Returns the UUID string or null.
+   * Also accepts the older "LOC:<code>" prefix by returning null (caller should re-query by code).
+   */
+  function _parseLocationQR(text) {
+    if (typeof text !== 'string') return null;
+    const t = text.trim();
+    // Phase 0.7 format: "location:<uuid>"
+    const m = t.match(/^location:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+    if (m) return m[1];
+    return null;
+  }
+
+  /**
+   * Lookup a location from DB by UUID, returning the full path row.
+   */
+  async function _resolveLocationId(uuid) {
+    if (typeof getSupabaseClient !== 'function' && typeof window.getSupabaseClient !== 'function') return null;
+    const sb = (typeof getSupabaseClient === 'function' ? getSupabaseClient : window.getSupabaseClient)();
+    // Join v_location_path with locations for code
+    const pathR = await sb.from('v_location_path')
+      .select('id,name,type,path_display')
+      .eq('id', uuid)
+      .single();
+    if (pathR.error || !pathR.data) return null;
+    const codeR = await sb.from('locations').select('code').eq('id', uuid).single();
+    return { ...pathR.data, code: codeR.data?.code ?? '' };
+  }
+
+  /**
+   * Map a getUserMedia/Promise.race error to a fallback reason string (§5.2.1).
+   */
+  function _mapCameraError(err) {
+    const name = err?.name || '';
+    const msg  = err?.message || '';
+    if (name === 'NotAllowedError')   return 'permission-denied';
+    if (name === 'NotFoundError')     return 'no-camera';
+    if (name === 'NotReadableError')  return 'camera-busy';
+    if (msg   === 'timeout')          return 'camera-timeout';
+    if (!navigator.mediaDevices)      return 'device-not-supported';
+    return 'unknown-error';
+  }
+
+  /**
+   * Show a Thai toast for the camera failure reason, then open tree-picker (§5.2.1).
+   * No dead-end: resolve/reject are passed through to the picker.
+   */
+  function _fallbackToManual(reason, resolve, reject) {
+    const messages = {
+      'device-not-supported': 'อุปกรณ์นี้ไม่รองรับกล้อง',
+      'permission-denied':    'ไม่ได้รับอนุญาตใช้กล้อง — ตั้งค่าใน browser หรือเลือกตำแหน่งด้วยมือ',
+      'no-camera':            'ไม่พบกล้องในอุปกรณ์นี้',
+      'camera-busy':          'กล้องถูกใช้งานโดย app อื่น',
+      'camera-timeout':       'กล้องไม่ตอบสนอง — ลองใหม่หรือเลือกด้วยมือ',
+      'unknown-error':        'เปิดกล้องไม่สำเร็จ — กรุณาเลือกตำแหน่งด้วยมือ',
+    };
+    const msg = messages[reason] || messages['unknown-error'];
+    // Show toast — use window.showToast if available, otherwise console
+    if (typeof window.showToast === 'function') {
+      window.showToast('warning', msg);
+    } else {
+      console.warn('[AppScanner] camera fallback:', msg);
+    }
+    // Auto-open tree-picker immediately (no dead-end)
+    _openManualFallback(resolve, reject);
+  }
+
+  /**
+   * Delegate to Transfer._openLocationTreePicker if available, otherwise reject.
+   */
+  function _openManualFallback(resolve, reject) {
+    if (window.Transfer && typeof window.Transfer._openLocationTreePicker === 'function') {
+      window.Transfer._openLocationTreePicker({})
+        .then(resolve)
+        .catch(reject);
+    } else {
+      reject(new Error('tree-picker not available'));
+    }
+  }
+
+  // =========================================================================
   // Public API
   // =========================================================================
 
@@ -344,6 +594,9 @@
     startScanning,
     stopScanning,
     parseScanResult,
+    // Phase 0.7 additions
+    openForLocation,
+    cameraAvailable,
     // NOTE: deliberately NO capturePhoto / uploadImage — Phase 1 Q3 (PM Pex 2026-05-18).
   };
 

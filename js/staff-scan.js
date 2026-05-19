@@ -698,6 +698,59 @@
       state.ctx.pendingLoc = '';
     }
     setState('ITEM_SCANNED', { item: data });
+    // Phase 0.7: Show transfer option panel after item is scanned
+    _showTransferOption(data);
+  }
+
+  /**
+   * Phase 0.7 — After an item is scanned, show a small panel offering "ย้าย" as an
+   * alternative to the standard "เบิก" flow.  The panel is injected below the scan stage
+   * and removed when the user chooses an action or resets.
+   */
+  function _showTransferOption(item) {
+    const old = document.getElementById('scan-transfer-option');
+    if (old) old.remove();
+    if (!item) return;
+
+    // Only show if Transfer module is loaded
+    if (!window.Transfer || typeof window.Transfer.openModal !== 'function') return;
+
+    const panel = document.createElement('div');
+    panel.id = 'scan-transfer-option';
+    panel.className = 'mt-2 p-2 bg-white rounded shadow-sm small';
+    panel.style.borderLeft = '4px solid var(--stock-accent, #0d9488)';
+    panel.innerHTML = `
+      <div class="fw-semibold mb-1">
+        <i class="bi bi-arrows-move me-1"></i>
+        ต้องการย้ายสินค้า <em>${escapeHtml(item.name)}</em> ไปตำแหน่งอื่นหรือไม่?
+      </div>
+      <div class="d-flex gap-2">
+        <button type="button" class="btn btn-sm btn-outline-primary flex-fill"
+                id="scan-transfer-go" style="min-height:40px;">ย้าย (Transfer)</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary flex-fill"
+                id="scan-transfer-skip" style="min-height:40px;">ข้าม — เบิกปกติ</button>
+      </div>`;
+
+    const stage = document.getElementById('scan-stage');
+    if (stage && stage.parentNode) {
+      stage.parentNode.insertBefore(panel, stage.nextSibling);
+    }
+
+    panel.querySelector('#scan-transfer-go').addEventListener('click', () => {
+      panel.remove();
+      // Stop scanner while Transfer modal is open
+      if (state.scanning) {
+        window.AppScanner.stopScanning().catch(() => {});
+        state.scanning = false;
+      }
+      window.Transfer.openModal({ itemId: item.id });
+      // Listen once for transfer done to reset scan flow
+      window.addEventListener('transfer:done', () => resetFlow(), { once: true });
+    });
+
+    panel.querySelector('#scan-transfer-skip').addEventListener('click', () => {
+      panel.remove();
+    });
   }
 
   async function handleLocationScan(value) {
@@ -959,6 +1012,10 @@
   // =========================================================================
 
   function resetFlow() {
+    // Phase 0.7: Remove transfer option panel if present
+    const xferPanel = document.getElementById('scan-transfer-option');
+    if (xferPanel) try { xferPanel.remove(); } catch { /* ignore */ }
+
     // Wipe context entirely — including clientRefId so the NEXT submission gets
     // a fresh idempotency key.
     state.ctx = {

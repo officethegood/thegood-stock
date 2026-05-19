@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.11.0';  // Phase 0.6 Wave 4b — universal QR size picker modal (50x50 vs 50x30); works PC/iOS/Android; localStorage remember
+const CACHE_VERSION = 'thegood-stock-v0.12.0';  // Phase 0.7 — location hierarchy refactor (storage/bin/zone) + transfer modal with scan/manual + camera fallback + bin/zone QR in staff-print
 const STATIC_ASSETS = [
   './',
   './login.html',
@@ -26,6 +26,8 @@ const STATIC_ASSETS = [
   './shared/bags.js',
   './shared/linens.js',
   './shared/scanner.js',
+  './shared/locations.js',
+  './shared/transfer.js',
   './js/login.js',
   './js/admin-shell.js',
   './js/dashboard.js',
