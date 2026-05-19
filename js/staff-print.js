@@ -14,7 +14,14 @@
   // Module state
   // -------------------------------------------------------------------------
   let _activeTab    = 'items';    // 'items' | 'locations' | 'bags' | 'tanks'
-  let _activeSize   = 'a4';       // 'a4' | '38mm' | '50mm' | '76mm'
+  let _activeSize   = '50x50';    // '50x50' | '50x30' | 'a4-50x50' | 'a4-50x30'
+
+  // Map _activeSize → (singleSize, isBulkA4) for QRPrint API
+  function _resolveSize() {
+    if (_activeSize === 'a4-50x30') return { single: '50x30', bulkA4: true };
+    if (_activeSize === 'a4-50x50') return { single: '50x50', bulkA4: true };
+    return { single: _activeSize, bulkA4: false };
+  }
   let _allRows      = [];         // full fetched list for current tab
   let _filtered     = [];         // after search filter
   let _selected     = new Set();  // selected codes (strings)

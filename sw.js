@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.10.0';  // Phase 0.6 Wave 4 — QR sticker redesign: 50x50 (square) + 50x30 (landscape) with FC vital-teal stripe, brand wordmark, mono code, scan hint footer; A4 bulk uses same layouts as cell renderer
+const CACHE_VERSION = 'thegood-stock-v0.10.1';  // Hotfix: add _resolveSize() in staff-print.js (was undefined → ReferenceError on print click)
 const STATIC_ASSETS = [
   './',
   './login.html',
