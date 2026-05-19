@@ -53,7 +53,7 @@
     if (status === 'overdue') return '<span class="badge bg-danger">เลยกำหนด</span>';
     if (status === 'returned') return '<span class="badge bg-secondary text-white">คืนแล้ว</span>';
     // active
-    return '<span class="badge bg-stock-accent-subtle text-stock-accent-dark">กำลังยืม</span>';
+    return '<span class="fc-badge fc-badge-vital">กำลังยืม</span>';
   }
 
   function _daysOverdueBadge(dueAt) {

@@ -240,8 +240,8 @@
                     <th scope="col" class="d-none d-md-table-cell">หมวด</th>
                     <th scope="col" class="d-none d-md-table-cell">หน่วย</th>
                     <th scope="col" class="text-end">คงเหลือรวม</th>
-                    <th scope="col" class="d-none d-sm-table-cell text-end">เกณฑ์</th>
-                    <th scope="col" class="d-none d-sm-table-cell">สถานะ</th>
+                    <th scope="col" class="d-none d-sm-table-cell text-end" title="ระดับขั้นต่ำ — ถ้าคงเหลือถึงเกณฑ์นี้ ระบบจะแจ้ง Telegram">เกณฑ์เตือน</th>
+                    <th scope="col" class="d-none d-sm-table-cell" title="สถานะการใช้งานในระบบ (ใช้งาน / เลิกใช้)">การใช้งาน</th>
                     <th scope="col" class="text-end" style="width:44px;"></th>
                   </tr>
                 </thead>
@@ -481,9 +481,9 @@
                   <div>
                     <div class="fw-semibold">${_esc(it.name)}</div>
                     <div class="small text-muted"><code>${_esc(it.sku)}</code>
-                      ${it.tracks_lots ? ' · <span class="badge bg-info-subtle text-info">ล็อต</span>' : ''}</div>
+                      ${it.tracks_lots ? ' · <span class="fc-badge fc-badge-vital">ล็อต</span>' : ''}</div>
                   </div>
-                  <span class="badge bg-stock-accent-subtle text-stock-accent-dark">${it.total_qty || 0} ${_esc(it.unit || 'ชิ้น')}</span>
+                  <span class="fc-badge fc-badge-vital">${it.total_qty || 0} ${_esc(it.unit || 'ชิ้น')}</span>
                 </div>
               </li>`).join('')}
           </ul>
@@ -521,8 +521,8 @@
         ? `<span class="text-danger fw-bold" aria-label="ใกล้หมด">${total} <i class="bi bi-exclamation-triangle"></i></span>`
         : String(total);
       const statusBadge = it.active
-        ? '<span class="badge bg-success-subtle text-success">ใช้งาน</span>'
-        : '<span class="badge bg-secondary">ปิด</span>';
+        ? '<span class="fc-badge fc-badge-ok">ใช้งาน</span>'
+        : '<span class="fc-badge fc-badge-neutral">เลิกใช้</span>';
       const checked = _invSelected.has(it.id) ? 'checked' : '';
       return `
         <tr data-id="${_esc(it.id)}" role="button" tabindex="0" style="cursor:pointer;">
@@ -753,8 +753,8 @@
           <th scope="col" class="d-none d-md-table-cell">หมวด</th>
           <th scope="col" class="d-none d-md-table-cell">หน่วย</th>
           <th scope="col" class="text-end">คงเหลือรวม</th>
-          <th scope="col" class="d-none d-sm-table-cell text-end">เกณฑ์</th>
-          <th scope="col" class="d-none d-sm-table-cell">สถานะ</th>
+          <th scope="col" class="d-none d-sm-table-cell text-end" title="ระดับขั้นต่ำ — ถ้าคงเหลือถึงเกณฑ์นี้ ระบบจะแจ้ง Telegram">เกณฑ์เตือน</th>
+          <th scope="col" class="d-none d-sm-table-cell" title="สถานะการใช้งานในระบบ (ใช้งาน / เลิกใช้)">การใช้งาน</th>
           <th scope="col" class="text-end" style="width:44px;"></th>
         `;
       }
@@ -898,8 +898,8 @@
           <div class="col-6"><span class="text-muted">หน่วย:</span> ${_esc(item.unit || 'ชิ้น')}</div>
           <div class="col-6"><span class="text-muted">เกณฑ์เตือน:</span> ${item.reorder_threshold || 0}</div>
           <div class="col-6"><span class="text-muted">สถานะ:</span> ${item.active
-            ? '<span class="badge bg-success-subtle text-success">ใช้งาน</span>'
-            : '<span class="badge bg-secondary">ปิด</span>'}</div>
+            ? '<span class="fc-badge fc-badge-ok">ใช้งาน</span>'
+            : '<span class="fc-badge fc-badge-neutral">เลิกใช้</span>'}</div>
         </div>
         <h6 class="mt-3">คงเหลือต่อสถานที่</h6>
         <ul class="list-unstyled mb-2">${locRows}</ul>

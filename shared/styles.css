@@ -1232,3 +1232,200 @@ input[type="time"] { font-variant-numeric: tabular-nums; }
 /* Hide module-toggle (V.5 had multi-system nav; Stock is standalone) */
 .system-toggle { display: none !important; }
 }
+
+/* =============================================
+   FC Wave 3 — Table density + thead + modal polish
+   (Phase 0.6 — appended 2026-05-19)
+   ============================================= */
+
+/* Sleek thead — uppercase, tracked, lighter weight, small */
+.table thead th {
+  font-family: var(--fc-font-display);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--fc-ink-soft);
+  background: var(--fc-paper-sub) !important;
+  border-bottom: 1px solid var(--fc-hairline-strong);
+  padding: var(--fc-s3) var(--fc-s4);
+  vertical-align: middle;
+}
+
+/* Denser body rows */
+.table tbody td {
+  padding: var(--fc-s3) var(--fc-s4);
+  vertical-align: middle;
+  border-color: var(--fc-hairline);
+  font-size: 14px;
+}
+
+.table tbody tr {
+  transition: background 100ms;
+}
+.table tbody tr:hover {
+  background: var(--fc-vital-subtle) !important;
+}
+
+/* SKU + code cells use mono font for visual scanning */
+.table tbody td code,
+.table tbody td .text-stock-accent,
+.table tbody td .badge.bg-stock-accent-subtle {
+  font-family: var(--fc-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  font-size: 13px;
+}
+
+/* Modal — paper-elev + Mitr title */
+.modal-content {
+  border-radius: var(--fc-r3);
+  border: 1px solid var(--fc-hairline-strong);
+  box-shadow: var(--fc-elev-3);
+}
+.modal-header {
+  border-bottom: 1px solid var(--fc-hairline);
+  padding: var(--fc-s4) var(--fc-s5);
+}
+.modal-title {
+  font-family: var(--fc-font-display);
+  font-weight: 600;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+.modal-body {
+  padding: var(--fc-s5);
+  font-size: 14px;
+}
+.modal-footer {
+  border-top: 1px solid var(--fc-hairline);
+  padding: var(--fc-s3) var(--fc-s5);
+}
+
+/* Card title — Mitr */
+.card-title, .card-header h5, .card-header h6 {
+  font-family: var(--fc-font-display);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+/* Form labels — small caps tracked */
+.form-label {
+  font-family: var(--fc-font-display);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--fc-ink-soft);
+  margin-bottom: 4px;
+}
+
+/* Buttons — Mitr font + slightly tighter */
+.btn {
+  font-family: var(--fc-font-display);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* Filter / search inputs */
+.form-control, .form-select {
+  border: 1px solid var(--fc-hairline-strong);
+  border-radius: var(--fc-r2);
+  font-family: var(--fc-font-body);
+  font-size: 14px;
+  padding: 8px 12px;
+  min-height: 40px;
+  transition: border-color 150ms, box-shadow 150ms;
+}
+.form-control:focus, .form-select:focus {
+  border-color: var(--fc-vital);
+  box-shadow: 0 0 0 3px var(--fc-vital-subtle);
+}
+
+/* Search input with leading icon */
+.form-control[placeholder*="ค้น"] {
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23607080' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3e%3ccircle cx='11' cy='11' r='8'/%3e%3cline x1='21' y1='21' x2='16.65' y2='16.65'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: 12px center;
+  background-size: 16px;
+  padding-left: 38px;
+}
+
+/* Toast */
+.toast {
+  font-family: var(--fc-font-body);
+  border-radius: var(--fc-r2);
+  border: 1px solid var(--fc-hairline-strong);
+  box-shadow: var(--fc-elev-2);
+}
+
+/* Topbar in admin — refined */
+.fc-topbar {
+  background: var(--fc-ink);
+  color: var(--fc-paper);
+  padding: var(--fc-s3) var(--fc-s5);
+  border-bottom: 2px solid var(--fc-vital);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+/* Tab list scrollable container */
+.fc-tab-list {
+  background: var(--fc-paper);
+  border-bottom: 1px solid var(--fc-hairline);
+  position: sticky;
+  top: 56px;
+  z-index: 90;
+  scrollbar-width: thin;
+  scrollbar-color: var(--fc-hairline-strong) transparent;
+}
+.fc-tab-list::-webkit-scrollbar { height: 4px; }
+.fc-tab-list::-webkit-scrollbar-thumb { background: var(--fc-hairline-strong); border-radius: 2px; }
+
+.fc-tab-list .nav-link.fc-tab {
+  border-radius: var(--fc-r2);
+  font-family: var(--fc-font-display);
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  color: var(--fc-ink-soft);
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  min-height: 40px;
+  transition: 150ms;
+  white-space: nowrap;
+}
+.fc-tab-list .nav-link.fc-tab:hover {
+  background: var(--fc-vital-subtle);
+  color: var(--fc-vital-deep);
+}
+.fc-tab-list .nav-link.fc-tab.active {
+  background: var(--fc-ink);
+  color: var(--fc-paper);
+}
+.fc-tab-list .nav-link.fc-tab i {
+  opacity: 0.7;
+  font-size: 14px;
+  margin-right: 4px;
+}
+
+/* SKU column / code text styling */
+td .text-stock-accent {
+  color: var(--fc-vital-deep) !important;
+}
+
+/* Reduce alert padding for better density */
+.alert {
+  padding: var(--fc-s3) var(--fc-s4);
+  border-radius: var(--fc-r2);
+  border: 1px solid currentColor;
+  border-color: transparent;
+  font-size: 14px;
+}
+
+/* Sticky tab list adjustment for mobile */
+@media (max-width: 768px) {
+  .fc-tab-list { top: 48px; }
+  .table tbody td { padding: var(--fc-s2) var(--fc-s3); font-size: 13px; }
+  .modal-body { padding: var(--fc-s4); }
+}
