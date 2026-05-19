@@ -872,11 +872,67 @@
   // =========================================================================
   // Tab initialisation (called by admin-shell.js once)
   // =========================================================================
+  // View mode persistence: 'tree' (CRUD, default) | 'graph' (read-only Mermaid)
+  let _adminView = (typeof localStorage !== 'undefined' && localStorage.getItem('admin_loc_view')) || 'tree';
+
+  function _adminViewToggleHtml(active) {
+    return `
+      <div role="tablist" aria-label="view mode" style="display:inline-flex;border:1px solid rgba(12,25,41,0.15);border-radius:6px;overflow:hidden;margin-right:var(--fc-s2,8px)">
+        <button id="btn-loc-view-tree"  class="fc-btn fc-btn-${active==='tree'?'primary':'ghost'}"  style="border-radius:0;border:none;padding:6px 12px;min-height:36px;font-size:13px"><i class="bi bi-diagram-3 me-1"></i>Tree</button>
+        <button id="btn-loc-view-graph" class="fc-btn fc-btn-${active==='graph'?'primary':'ghost'}" style="border-radius:0;border:none;padding:6px 12px;min-height:36px;font-size:13px"><i class="bi bi-diagram-2 me-1"></i>Graph</button>
+      </div>`;
+  }
+
+  async function _renderAdminGraph() {
+    const root = document.getElementById('tab-locations');
+    root.innerHTML = `
+      <div class="d-flex align-items-center mb-3 flex-wrap gap-2">
+        <h5 class="mb-0 me-auto fc-display"><i class="bi bi-geo-alt me-2"></i>สถานที่จัดเก็บ
+          <span class="fc-mono" style="font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--fc-ink-mute);margin-left:var(--fc-s2,8px)">${(_all||[]).length} nodes</span>
+        </h5>
+        ${_adminViewToggleHtml('graph')}
+        <button class="btn btn-stock-primary" id="btn-loc-new"><i class="bi bi-plus"></i> เพิ่มใหม่</button>
+      </div>
+      <div class="fc-card" id="loc-graph-host" style="min-height:200px"></div>`;
+
+    document.getElementById('btn-loc-new').onclick = () => openModal(null, null);
+    document.getElementById('btn-loc-view-tree').onclick = () => {
+      _adminView = 'tree'; try{localStorage.setItem('admin_loc_view','tree')}catch{};
+      window.initLocationsTab();
+    };
+    document.getElementById('btn-loc-view-graph').onclick = () => {};
+
+    const host = document.getElementById('loc-graph-host');
+    if (window.LocationsGraph) {
+      // onNodeClick → jump to edit modal for that location (admin-only behavior)
+      await window.LocationsGraph.render(host, _all || [], {
+        showLegend: true,
+        maxHeight: 'calc(100vh - 280px)',
+        onNodeClick: (loc) => { try { openModal(loc, null); } catch (_) {} },
+      });
+    } else {
+      host.innerHTML = `<div class="alert alert-warning small">Graph module ไม่ได้โหลด — ลอง switch ไป "Tree"</div>`;
+    }
+  }
+
   window.initLocationsTab = async function () {
+    if (_adminView === 'graph') {
+      // For graph view, ensure data is loaded first
+      try {
+        if (!_all || !_all.length) await load();
+      } catch (e) {
+        showToast('error', e.message || 'โหลดข้อมูลไม่สำเร็จ');
+      }
+      await _renderAdminGraph();
+      _subscribeRealtime();
+      return;
+    }
+
     const root = document.getElementById('tab-locations');
     root.innerHTML = `
       <div class="d-flex align-items-center mb-3 flex-wrap gap-2">
         <h5 class="mb-0 me-auto fc-display"><i class="bi bi-geo-alt me-2"></i>สถานที่จัดเก็บ</h5>
+        ${_adminViewToggleHtml('tree')}
         <button class="btn btn-sm btn-outline-secondary" id="btn-loc-expand-all" title="ขยายทั้งหมด">
           <i class="bi bi-arrows-expand"></i> ขยายทั้งหมด
         </button>
@@ -897,6 +953,11 @@
     `;
 
     document.getElementById('btn-loc-new').onclick = () => openModal(null, null);
+    document.getElementById('btn-loc-view-tree').onclick = () => {};
+    document.getElementById('btn-loc-view-graph').onclick = () => {
+      _adminView = 'graph'; try{localStorage.setItem('admin_loc_view','graph')}catch{};
+      window.initLocationsTab();
+    };
 
     document.getElementById('btn-loc-expand-all').onclick = () => {
       _all.forEach((l) => _expanded.add(l.id));

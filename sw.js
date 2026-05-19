@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.14.2';  // Staff locations — n8n-style Mermaid graph view (default) with toggle to ตาราง; FC-themed nodes per type (room/storage/shelf/bin/bag/zone/ambulance); badges shown for storage_style + laundry_role + ambulance plate
+const CACHE_VERSION = 'thegood-stock-v0.14.3';  // Graph view on BOTH admin + staff — extracted shared/locations-graph.js (LocationsGraph.render API). Admin Locations tab Tree↔Graph toggle. Click node in admin graph → open edit modal.
 const STATIC_ASSETS = [
   './',
   './login.html',
@@ -27,6 +27,7 @@ const STATIC_ASSETS = [
   './shared/linens.js',
   './shared/scanner.js',
   './shared/locations.js',
+  './shared/locations-graph.js',
   './shared/transfer.js',
   './shared/laundry.js',
   './js/login.js',
