@@ -538,8 +538,8 @@
           </td>
           <td class="d-none d-md-table-cell small">${_esc(_catName(it.category_id))}</td>
           <td class="d-none d-md-table-cell small">${_esc(it.unit || 'ชิ้น')}</td>
-          <td class="text-end">${totalCell}</td>
-          <td class="d-none d-sm-table-cell text-end small">${threshold || '—'}</td>
+          <td class="text-end"><span class="fc-mono">${totalCell}</span> <span class="text-muted small">${_esc(it.unit || 'ชิ้น')}</span></td>
+          <td class="d-none d-sm-table-cell text-end small">${threshold > 0 ? `<span class="text-muted">≤</span> <span class="fc-mono">${threshold}</span> ${_esc(it.unit || 'ชิ้น')}` : '<span class="text-muted">ไม่แจ้ง</span>'}</td>
           <td class="d-none d-sm-table-cell">${statusBadge}</td>
           <td class="text-end">
             <button type="button" class="btn btn-sm btn-link p-1" data-act="print-single"
@@ -896,7 +896,7 @@
         <div class="row g-2 small mb-3">
           <div class="col-6"><span class="text-muted">หมวด:</span> ${_esc(_catName(item.category_id))}</div>
           <div class="col-6"><span class="text-muted">หน่วย:</span> ${_esc(item.unit || 'ชิ้น')}</div>
-          <div class="col-6"><span class="text-muted">เกณฑ์เตือน:</span> ${item.reorder_threshold || 0}</div>
+          <div class="col-6"><span class="text-muted">เกณฑ์เตือน:</span> ${item.reorder_threshold > 0 ? `≤ ${item.reorder_threshold} ${_esc(item.unit || 'ชิ้น')}` : 'ไม่แจ้ง'}</div>
           <div class="col-6"><span class="text-muted">สถานะ:</span> ${item.active
             ? '<span class="fc-badge fc-badge-ok">ใช้งาน</span>'
             : '<span class="fc-badge fc-badge-neutral">เลิกใช้</span>'}</div>
@@ -1011,7 +1011,7 @@
               <input id="if-unit" class="form-control" value="ชิ้น">
             </div>
             <div class="col-6 col-sm-4 mb-2">
-              <label class="form-label" for="if-threshold">เกณฑ์เตือน</label>
+              <label class="form-label" for="if-threshold">เกณฑ์เตือน (ตั้ง 0 = ปิดแจ้งเตือน)</label>
               <input id="if-threshold" type="number" min="0" step="1" class="form-control" value="0"
                      inputmode="numeric">
               <small class="text-muted">แจ้งเตือน Telegram เมื่อคงเหลือรวม ≤ ค่านี้ (0 = ไม่แจ้ง)</small>

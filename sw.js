@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.9.3';  // Phase 0.6 Wave 3 — table density + thead/modal/form Mitr typography + fc-badge status; เกณฑ์ → เกณฑ์เตือน, สถานะ → การใช้งาน
+const CACHE_VERSION = 'thegood-stock-v0.9.4';  // Phase 0.6 — Inventory row: total + threshold show unit (ชิ้น/กล่อง/etc) + "≤ N" prefix; 'ไม่แจ้ง' when threshold=0
 const STATIC_ASSETS = [
   './',
   './login.html',
