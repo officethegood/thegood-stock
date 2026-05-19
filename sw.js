@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.10.1';  // Hotfix: add _resolveSize() in staff-print.js (was undefined → ReferenceError on print click)
+const CACHE_VERSION = 'thegood-stock-v0.11.0';  // Phase 0.6 Wave 4b — universal QR size picker modal (50x50 vs 50x30); works PC/iOS/Android; localStorage remember
 const STATIC_ASSETS = [
   './',
   './login.html',

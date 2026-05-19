@@ -239,6 +239,172 @@
   }
 
   // -------------------------------------------------------------------------
+  // Phase 0.6 Wave 4 — Universal size picker (vanilla, no Bootstrap dep)
+  // Returns Promise<'50x50'|'50x30'|null> — null means user cancelled.
+  // -------------------------------------------------------------------------
+  var SIZE_PREF_KEY = 'qr_size_pref';
+
+  function _showSizePicker(ctx) {
+    return new Promise(function (resolve) {
+      ctx = ctx || {};
+      var label   = ctx.label   || ctx.code || '';
+      var sub     = ctx.subtitle || '';
+      var mode    = ctx.mode    || 'single';   // 'single' | 'bulk'
+      var count   = ctx.count   || 0;
+      var hint    = ctx.hintSize === '50x30' ? '50x30' : '50x50';
+      var pref    = '';
+      try { pref = localStorage.getItem(SIZE_PREF_KEY) || ''; } catch (e) { /* no-op */ }
+
+      // If user previously saved a preference, use it directly without modal
+      if (pref === '50x50' || pref === '50x30') {
+        resolve(pref);
+        return;
+      }
+
+      var overlay = document.createElement('div');
+      overlay.className = 'qr-size-overlay';
+      overlay.setAttribute('role', 'dialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.setAttribute('aria-labelledby', 'qr-size-title');
+
+      var title  = (mode === 'bulk')
+        ? 'บันทึก QR หลายรายการ — เลือกขนาด'
+        : 'บันทึก QR Code — เลือกขนาด';
+      var ctxInfo = (mode === 'bulk')
+        ? '<div class="qr-size-ctx-mono">' + count + ' รายการ</div>'
+        : ('<div class="qr-size-ctx-code">' + _esc(label) + '</div>' +
+           (sub ? '<div class="qr-size-ctx-name">' + _esc(sub) + '</div>' : ''));
+
+      overlay.innerHTML =
+        '<div class="qr-size-card">' +
+          '<div class="qr-size-header">' +
+            '<div class="qr-size-title" id="qr-size-title">' + title + '</div>' +
+            '<button type="button" class="qr-size-close" aria-label="ปิด">✕</button>' +
+          '</div>' +
+          '<div class="qr-size-ctx">' + ctxInfo + '</div>' +
+          '<div class="qr-size-grid">' +
+            '<button type="button" class="qr-size-option' + (hint === '50x50' ? ' is-recommended' : '') + '" data-size="50x50">' +
+              '<div class="qr-size-thumb qr-thumb-square">' +
+                '<div class="qr-thumb-stripe"></div>' +
+                '<div class="qr-thumb-qr"></div>' +
+                '<div class="qr-thumb-line"></div><div class="qr-thumb-line short"></div>' +
+              '</div>' +
+              '<div class="qr-size-name">50 × 50 mm</div>' +
+              '<div class="qr-size-desc">สี่เหลี่ยมจัตุรัส — ใช้สำหรับ sticker ทั่วไป</div>' +
+              (hint === '50x50' ? '<div class="qr-size-rec">แนะนำ</div>' : '') +
+            '</button>' +
+            '<button type="button" class="qr-size-option' + (hint === '50x30' ? ' is-recommended' : '') + '" data-size="50x30">' +
+              '<div class="qr-size-thumb qr-thumb-landscape">' +
+                '<div class="qr-thumb-stripe vertical"></div>' +
+                '<div class="qr-thumb-qr-l"></div>' +
+                '<div class="qr-thumb-text">' +
+                  '<div class="qr-thumb-line"></div><div class="qr-thumb-line short"></div>' +
+                '</div>' +
+              '</div>' +
+              '<div class="qr-size-name">50 × 30 mm</div>' +
+              '<div class="qr-size-desc">แนวนอน — โชว์ชื่อสินค้าได้ชัดเจน</div>' +
+              (hint === '50x30' ? '<div class="qr-size-rec">แนะนำ</div>' : '') +
+            '</button>' +
+          '</div>' +
+          '<div class="qr-size-footer">' +
+            '<label class="qr-size-remember">' +
+              '<input type="checkbox" id="qr-size-remember-cb"> จำการเลือกครั้งนี้' +
+            '</label>' +
+            '<button type="button" class="qr-size-cancel">ยกเลิก</button>' +
+          '</div>' +
+        '</div>';
+
+      document.body.appendChild(overlay);
+      // Inject styles once
+      if (!document.getElementById('qr-size-picker-styles')) {
+        var st = document.createElement('style');
+        st.id = 'qr-size-picker-styles';
+        st.textContent = _SIZE_PICKER_CSS;
+        document.head.appendChild(st);
+      }
+
+      // Animate in
+      requestAnimationFrame(function () { overlay.classList.add('is-open'); });
+
+      function _close(value) {
+        overlay.classList.remove('is-open');
+        setTimeout(function () { overlay.remove(); }, 180);
+        resolve(value);
+      }
+
+      overlay.querySelectorAll('.qr-size-option').forEach(function (el) {
+        el.addEventListener('click', function () {
+          var size = el.dataset.size;
+          // Save pref if checkbox ticked
+          var cb = overlay.querySelector('#qr-size-remember-cb');
+          if (cb && cb.checked) {
+            try { localStorage.setItem(SIZE_PREF_KEY, size); } catch (e) { /* no-op */ }
+          }
+          _close(size);
+        });
+      });
+      overlay.querySelector('.qr-size-close').addEventListener('click', function () { _close(null); });
+      overlay.querySelector('.qr-size-cancel').addEventListener('click', function () { _close(null); });
+      overlay.addEventListener('click', function (ev) {
+        if (ev.target === overlay) _close(null);
+      });
+
+      // ESC to cancel
+      function onKey(ev) {
+        if (ev.key === 'Escape') {
+          document.removeEventListener('keydown', onKey);
+          _close(null);
+        }
+      }
+      document.addEventListener('keydown', onKey);
+    });
+  }
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  var _SIZE_PICKER_CSS =
+    '.qr-size-overlay{position:fixed;inset:0;background:rgba(12,25,41,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;opacity:0;transition:opacity 180ms;backdrop-filter:blur(2px)}' +
+    '.qr-size-overlay.is-open{opacity:1}' +
+    '.qr-size-card{background:#fff;border-radius:18px;max-width:560px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,0.25);overflow:hidden;transform:translateY(8px);transition:transform 180ms cubic-bezier(.2,.7,.2,1);font-family:"IBM Plex Sans Thai","Sarabun",system-ui,sans-serif}' +
+    '.qr-size-overlay.is-open .qr-size-card{transform:translateY(0)}' +
+    '.qr-size-header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid rgba(12,25,41,0.08)}' +
+    '.qr-size-title{font-family:"Mitr",system-ui,sans-serif;font-size:17px;font-weight:600;color:#0c1929}' +
+    '.qr-size-close{border:none;background:transparent;font-size:18px;color:rgba(12,25,41,0.45);cursor:pointer;width:36px;height:36px;border-radius:8px}' +
+    '.qr-size-close:hover{background:rgba(12,25,41,0.06);color:#0c1929}' +
+    '.qr-size-ctx{padding:14px 22px 0;display:flex;flex-direction:column;gap:2px}' +
+    '.qr-size-ctx-code{font-family:"JetBrains Mono",monospace;font-weight:600;font-size:15px;color:#007F75}' +
+    '.qr-size-ctx-name{font-size:13px;color:rgba(12,25,41,0.62)}' +
+    '.qr-size-ctx-mono{font-family:"JetBrains Mono",monospace;font-weight:600;font-size:15px;color:#007F75}' +
+    '.qr-size-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:18px 22px}' +
+    '.qr-size-option{position:relative;background:#fff;border:2px solid rgba(12,25,41,0.10);border-radius:12px;padding:16px 14px;cursor:pointer;text-align:left;transition:all 150ms;font-family:inherit;min-height:160px;display:flex;flex-direction:column;gap:8px}' +
+    '.qr-size-option:hover{border-color:#00B8A9;background:rgba(0,184,169,0.04);transform:translateY(-1px)}' +
+    '.qr-size-option.is-recommended{border-color:#00B8A9;background:rgba(0,184,169,0.06)}' +
+    '.qr-size-option:active{transform:scale(0.99)}' +
+    '.qr-size-thumb{width:100%;height:64px;background:#f8f5ef;border-radius:8px;position:relative;overflow:hidden;border:1px solid rgba(12,25,41,0.08)}' +
+    '.qr-thumb-square{aspect-ratio:1/1;height:auto;max-height:64px;margin:0 auto;max-width:64px}' +
+    '.qr-thumb-landscape{height:50px}' +
+    '.qr-thumb-stripe{position:absolute;left:0;right:0;top:0;height:3px;background:#00B8A9}' +
+    '.qr-thumb-stripe.vertical{position:absolute;left:0;top:0;bottom:0;width:3px;height:auto;right:auto}' +
+    '.qr-thumb-qr{position:absolute;left:50%;top:55%;transform:translate(-50%,-50%);width:32px;height:32px;background:#0c1929;border-radius:2px}' +
+    '.qr-thumb-qr-l{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:30px;height:30px;background:#0c1929;border-radius:2px}' +
+    '.qr-thumb-text{position:absolute;left:48px;top:50%;transform:translateY(-50%);right:6px;display:flex;flex-direction:column;gap:3px}' +
+    '.qr-thumb-line{height:3px;background:rgba(12,25,41,0.62);border-radius:1px;width:100%}' +
+    '.qr-thumb-line.short{width:60%;background:rgba(12,25,41,0.30)}' +
+    '.qr-size-name{font-family:"Mitr",sans-serif;font-weight:600;font-size:15px;color:#0c1929}' +
+    '.qr-size-desc{font-size:12px;color:rgba(12,25,41,0.62);line-height:1.4}' +
+    '.qr-size-rec{position:absolute;top:8px;right:8px;background:#00B8A9;color:#fff;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;letter-spacing:0.04em;font-family:"Mitr",sans-serif}' +
+    '.qr-size-footer{display:flex;align-items:center;justify-content:space-between;padding:14px 22px;border-top:1px solid rgba(12,25,41,0.08);background:#f8f5ef}' +
+    '.qr-size-remember{font-size:13px;color:rgba(12,25,41,0.62);display:flex;align-items:center;gap:8px;cursor:pointer}' +
+    '.qr-size-remember input{accent-color:#00B8A9;width:16px;height:16px}' +
+    '.qr-size-cancel{background:transparent;border:1px solid rgba(12,25,41,0.18);border-radius:8px;padding:8px 14px;font-family:"Mitr",sans-serif;font-weight:500;color:rgba(12,25,41,0.62);cursor:pointer;min-height:36px}' +
+    '.qr-size-cancel:hover{background:#fff;color:#0c1929}' +
+    '@media (max-width:500px){.qr-size-grid{grid-template-columns:1fr}.qr-size-option{min-height:auto}}' +
+    '';
+
+  // -------------------------------------------------------------------------
   // PNG generation helpers
   // -------------------------------------------------------------------------
 
@@ -590,22 +756,29 @@
    */
   async function single(code, opts) {
     opts = opts || {};
-    // Phase 0.6 Wave 4: size '50x50' (square) | '50x30' (landscape).
-    // Legacy values '38mm'/'50mm'/'76mm' mapped to '50x50' for compat.
-    var size = opts.size === '50x30' ? '50x30' : '50x50';
-    var label = opts.label || code;
-    var sub   = opts.subtitle || '';
+    var label      = opts.label || code;
+    var sub        = opts.subtitle || '';
     var entityType = (opts.entityType || '').toUpperCase();
+    var hintSize   = opts.size === '50x30' ? '50x30' : '50x50';  // caller hint (default highlight)
 
     try {
       await _waitForQRCode();
     } catch (e) {
-      alert('ไม่สามารถพิมพ์ QR ได้: ' + e.message);
+      alert('ไม่สามารถสร้าง QR ได้: ' + e.message);
       return;
     }
 
-    // PM decision (Wave 2): always download PNG, skip print dialog.
-    downloadPNG(code, { label: label, subtitle: sub, size: size, entityType: entityType });
+    // PM decision (Wave 4): universal size picker modal for all platforms.
+    var chosen = await _showSizePicker({
+      code: code,
+      label: label,
+      subtitle: sub,
+      entityType: entityType,
+      mode: 'single',
+      hintSize: hintSize,
+    });
+    if (!chosen) return;   // user cancelled
+    downloadPNG(code, { label: label, subtitle: sub, size: chosen, entityType: entityType });
   }
 
   /**
@@ -617,19 +790,27 @@
    */
   async function bulk(rows, opts) {
     if (!rows || !rows.length) {
-      alert('กรุณาเลือกรายการที่ต้องการพิมพ์');
+      alert('กรุณาเลือกรายการที่ต้องการสร้าง QR');
       return;
     }
+    opts = opts || {};
 
     try {
       await _waitForQRCode();
     } catch (e) {
-      alert('ไม่สามารถพิมพ์ QR ได้: ' + e.message);
+      alert('ไม่สามารถสร้าง QR ได้: ' + e.message);
       return;
     }
 
-    // Phase 0.6 Wave 2 PM decision: always download PNG, skip print dialog.
-    downloadBulkPNG(rows, opts);
+    // PM decision (Wave 4): universal size picker modal.
+    var hintSize = opts.size === '50x30' ? '50x30' : '50x50';
+    var chosen = await _showSizePicker({
+      mode: 'bulk',
+      count: rows.length,
+      hintSize: hintSize,
+    });
+    if (!chosen) return;
+    downloadBulkPNG(rows, { size: chosen });
     return;
 
     // === Legacy print-dialog path retained for reference / future toggle ===
