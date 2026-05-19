@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.14.6';  // Admin Locations form — when type=ambulance, show dropdown of existing ambulances (BUG-T185-01 fix); validate ambulance_id required + write to payload
+const CACHE_VERSION = 'thegood-stock-v0.14.7';  // IA — Ambulances tab merged into Settings as sub-nav (ระบบ / รถพยาบาล); top-level tab removed (was 9, now 8 tabs); sub-tab choice persisted in localStorage
 const STATIC_ASSETS = [
   './',
   './login.html',

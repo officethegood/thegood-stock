@@ -20,7 +20,7 @@
     dashboard:  () => window.initDashboardTab  && window.initDashboardTab(),
     locations:  () => window.initLocationsTab  && window.initLocationsTab(),
     inventory:  () => window.initInventoryTab  && window.initInventoryTab(),
-    ambulances: () => window.initAmbulancesTab && window.initAmbulancesTab(),
+    // ambulances: lives inside the Settings tab as a sub-section (sub-nav: "ระบบ" / "รถพยาบาล")
     settings:   () => window.initSettingsTab   && window.initSettingsTab(),
     sessions:   () => window.initSessionsTab   && window.initSessionsTab(),
     loans:      () => window.initLoansTab      && window.initLoansTab(),
