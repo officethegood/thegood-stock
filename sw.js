@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.8.2';  // Phase 0.5.1 — row-level print buttons (bags + oxygen); tighten oxygen trigger search_path
+const CACHE_VERSION = 'thegood-stock-v0.9.0';  // Phase 0.6 — Field Clinical visual refresh Wave 1 (FC tokens + Mitr/IBM Plex Sans Thai/JetBrains Mono + 24-icon SVG system)
 const STATIC_ASSETS = [
   './',
   './login.html',
@@ -46,6 +46,7 @@ const STATIC_ASSETS = [
   './staff-oxygen.html',
   './vendor/qrcode.min.js',
   './shared/qr-print.js',
+  './shared/icons.js',
   './staff-print.html',
   './js/staff-print.js',
 ];
