@@ -418,6 +418,146 @@ body .text-stock-accent       { color: var(--fc-vital) !important; }
   padding-bottom: 80px;
 }
 
+/* ---- Section divider (hairline + mono caption) ---- */
+.fc-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--fc-s4);
+  margin: var(--fc-s5) 0 var(--fc-s4);
+}
+.fc-divider::before,
+.fc-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--fc-vital);
+  opacity: 0.25;
+}
+.fc-divider-label {
+  font-family: var(--fc-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fc-ink-mute);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+/* Divider below tab list — full-bleed teal hairline */
+.fc-tab-rule {
+  height: 1px;
+  background: linear-gradient(90deg, var(--fc-vital) 0%, transparent 100%);
+  opacity: 0.35;
+  margin: 0;
+}
+
+/* ---- Empty state ---- */
+.fc-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--fc-s3);
+  padding: var(--fc-s7) var(--fc-s5);
+  color: var(--fc-ink-mute);
+  text-align: center;
+}
+.fc-empty-icon {
+  width: 40px;
+  height: 40px;
+  opacity: 0.35;
+}
+.fc-empty-label {
+  font-family: var(--fc-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ---- Page hero / lede (staff landing) ---- */
+.fc-page-hero {
+  background: var(--fc-ink);
+  color: var(--fc-paper);
+  padding: var(--fc-s5) var(--fc-s5) var(--fc-s6);
+  border-bottom: 2px solid var(--fc-vital);
+}
+.fc-page-hero-breadcrumb {
+  font-family: var(--fc-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--fc-vital);
+  margin-bottom: var(--fc-s3);
+}
+.fc-page-hero-title {
+  font-family: var(--fc-font-display);
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--fc-s2);
+  color: var(--fc-paper);
+}
+.fc-page-hero-lede {
+  font-family: var(--fc-font-body);
+  font-size: 14px;
+  color: rgba(248,245,239,0.6);
+  margin: 0;
+}
+@media (max-width: 375px) {
+  .fc-page-hero-title { font-size: 22px; }
+  .fc-page-hero { padding: var(--fc-s4) var(--fc-s4) var(--fc-s5); }
+}
+
+/* ---- Role chip in topbar (shared pattern) ---- */
+.fc-topbar-role {
+  font-family: var(--fc-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  margin-left: var(--fc-s4);
+}
+
+/* ---- Active state unification ---- */
+/* Admin tab active: teal hairline underline (strip old ink-fill) */
+.fc-tab.active {
+  background: transparent;
+  color: var(--fc-vital-deep);
+  border-bottom: 2px solid var(--fc-vital);
+  border-radius: 0;
+}
+/* Bottom nav active: teal hairline top accent */
+.fc-bottom-nav a.active {
+  color: var(--fc-vital-deep);
+  background: transparent;
+  border-top: 2px solid var(--fc-vital);
+  padding-top: calc(var(--fc-s3) - 2px); /* compensate border so height stays same */
+}
+
+/* ---- Secondary button variant ---- */
+.fc-btn-secondary {
+  background: transparent;
+  color: var(--fc-vital-deep);
+  border-color: var(--fc-vital);
+}
+.fc-btn-secondary:hover {
+  background: var(--fc-vital-subtle);
+  color: var(--fc-vital-deep);
+  border-color: var(--fc-vital);
+}
+
+/* ---- Page-load staggered reveal ---- */
+@keyframes fc-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fc-reveal {
+  animation: fc-rise 180ms cubic-bezier(.2,.7,.2,1) both;
+}
+.fc-reveal-1 { animation-delay:   0ms; }
+.fc-reveal-2 { animation-delay: 100ms; }
+.fc-reveal-3 { animation-delay: 180ms; }
+.fc-reveal-4 { animation-delay: 240ms; }
+
 /* End FC Design System tokens */
 
 /* =============================================

@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.13.2';  // UX nav — bidirectional admin↔staff buttons (Admin sees both, Employee sees only staff)
+const CACHE_VERSION = 'thegood-stock-v0.14.0';  // UI unification — Field Clinical theme on admin + staff: role chips, page hero, dividers, fc-empty state, unified active-state (teal hairline), staggered page-load reveal, fc-btn-secondary variant
 const STATIC_ASSETS = [
   './',
   './login.html',

@@ -2139,3 +2139,26 @@ Non-blockers (can ship after critical fixes):
     2. Reduce "รับคืน" field for one item below "ที่ส่งไป" (simulate loss). Verify "หาย" column updates live.
     3. Click "รับคืน".
   - Expected: Toast success. DB: `stock_movements` row with `movement_type='adjustment_loss'`, `qty_delta=-(loss)`, `reason='laundry lost'`. Returned qty transferred from external to clean. External location qty decremented by full sent amount.
+
+---
+
+# Design Polish — Field Clinical Theme Unification (T216–T217)
+
+> Covers changes introduced in `feat(ui): unified admin/staff FC theme — hero + divider + animations + active-state`
+> Files: `shared/styles.css`, `admin.html`, `staff.html`
+
+- [ ] T216: Topbar role chip visible on both admin and staff pages.
+  - Steps:
+    1. Log in as Admin → admin.html. Confirm topbar shows `thegood/stock` followed by monospaced uppercase chip `ADMIN CONSOLE`.
+    2. Navigate to staff.html. Confirm chip reads `STAFF VIEW`.
+    3. On iPhone SE (320px viewport) confirm chip does not overflow or wrap topbar height.
+  - Expected: identical font/size/opacity across both pages. No overflow on 320px.
+
+- [ ] T217: staff.html hero section renders and does not break bottom-nav padding.
+  - Steps:
+    1. Open staff.html as Employee.
+    2. Confirm dark hero band with breadcrumb `STAFF / HOME`, display-font greeting "สวัสดี …", and lede "เครื่องมือทำงานประจำวัน" appears below topbar.
+    3. Confirm CTA card uses `fc-card` with `fc-btn-secondary` for "ดูสถานที่" / "ดูรถพยาบาล" buttons (no Bootstrap `.btn-outline-stock-accent` in rendered HTML).
+    4. Click "ดูสถานที่จัดเก็บ" — `staff-detail` div contents are replaced (default `// no data` disappears).
+    5. On iPhone SE: bottom nav is not obscured by hero; content area has `fc-staff-content` padding-bottom.
+  - Expected: hero visible; CTA buttons 44px min-height; bottom nav unobstructed.
