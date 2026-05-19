@@ -981,7 +981,7 @@
       await window.LocationsGraph.render(host, _all || [], {
         showLegend: true,
         maxHeight: 'calc(100vh - 280px)',
-        onNodeClick: (loc) => { try { openModal(loc, null); } catch (_) {} },
+        onNodeClick: (loc) => { try { openModal(loc.id, null); } catch (_) {} },
       });
     } else {
       host.innerHTML = `<div class="alert alert-warning small">Graph module ไม่ได้โหลด — ลอง switch ไป "Tree"</div>`;

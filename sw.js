@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.15.0';  // Sub-project B+C — admin Inventory drawer "อยู่ที่ไหน" breakdown per location (qty/path/lot list) + click row → transfer pre-filled; SKU edit unlocked with confirm modal + 23505 duplicate handling
+const CACHE_VERSION = 'thegood-stock-v0.15.1';  // Fix admin graph node click — passed loc object instead of loc.id to openModal, so edit form opened blank instead of pre-filled
 const STATIC_ASSETS = [
   './',
   './login.html',
