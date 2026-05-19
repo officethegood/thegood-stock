@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.14.0';  // UI unification — Field Clinical theme on admin + staff: role chips, page hero, dividers, fc-empty state, unified active-state (teal hairline), staggered page-load reveal, fc-btn-secondary variant
+const CACHE_VERSION = 'thegood-stock-v0.14.1';  // Staff home — add "ดูกระเป๋า ALS" button + renderBags() with v_bag_status view (template completion + expiry rollup); migrate laundry + oxygen link cards from legacy Bootstrap to fc-card / fc-btn-secondary
 const STATIC_ASSETS = [
   './',
   './login.html',
