@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.4.0';
+const CACHE_VERSION = 'thegood-stock-v0.7.0';  // Phase 6 — Linens & Laundry
 const STATIC_ASSETS = [
   './',
   './login.html',
@@ -23,6 +23,8 @@ const STATIC_ASSETS = [
   './shared/lots.js',
   './shared/loans.js',
   './shared/photo-capture.js',
+  './shared/bags.js',
+  './shared/linens.js',
   './shared/scanner.js',
   './js/login.js',
   './js/admin-shell.js',
@@ -34,8 +36,14 @@ const STATIC_ASSETS = [
   './js/settings-ui.js',
   './js/sessions-ui.js',
   './js/loans.js',
+  './js/bag-templates.js',
+  './js/bags.js',
   './js/staff-home.js',
   './js/staff-scan.js',
+  './shared/oxygen.js',
+  './js/oxygen.js',
+  './js/staff-oxygen.js',
+  './staff-oxygen.html',
 ];
 
 self.addEventListener('install', (e) => {

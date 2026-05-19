@@ -1135,3 +1135,385 @@ Tick each row as you verify. Re-run after every material change.
 | Partial / soft-pass | TBD | -- |
 | Blocked | TBD | -- |
 | Pending | TBD | T76-T100 |
+
+---
+
+## Phase 5 Oxygen Tanks (T101-T125)
+
+> **Pre-flight:** Phase 5 migrations `20260519050000`–`20260519050600` deployed. All Phase A tasks complete. At least one location exists (PF-9). All Phase B tasks complete.
+> **Verification log convention:** `[x]` followed by ` — <by> <YYYY-MM-DD> @ <commit-hash>: <evidence>`
+> **Test data:** All test tanks use deterministic serials (`OXY-T101`–`OXY-T125`). Run cleanup SQL at end of test session.
+
+---
+
+### Data model verification
+
+- [ ] T101: `oxygen_tanks` table exists with correct schema — 15 columns, status default `'ready'`, serial UNIQUE NOT NULL, no purchase_price, no acquired_at.
+  ```sql
+  SELECT column_name, data_type, column_default, is_nullable
+  FROM information_schema.columns
+  WHERE table_name = 'oxygen_tanks' ORDER BY ordinal_position;
+  -- Expected: 15 columns. status default='ready'. serial NOT NULL.
+  -- MUST NOT contain purchase_price or acquired_at columns.
+  ```
+
+- [ ] T102: `oxygen_movements` table exists — INSERT-only enforced (no UPDATE/DELETE RLS policies).
+  ```sql
+  SELECT policyname, cmd FROM pg_policies WHERE tablename = 'oxygen_movements';
+  -- Expected: SELECT and INSERT policies only. Zero UPDATE or DELETE policies.
+  ```
+
+- [ ] T103: `oxygen_tank_status` enum has exactly 5 values in correct order.
+  ```sql
+  SELECT enumlabel FROM pg_enum
+  WHERE enumtypid = 'oxygen_tank_status'::regtype ORDER BY enumsortorder;
+  -- Expected: ready, on_board, refilling, maintenance, retired (5 rows).
+  ```
+
+- [ ] T104: `tank_size` CHECK constraint — INSERT with invalid size fails.
+  ```sql
+  INSERT INTO oxygen_tanks (serial, tank_size, current_location_id)
+  SELECT 'OXY-T104-BADSIZE', 'huge', id FROM locations LIMIT 1;
+  -- Expected: ERROR — violates check constraint oxygen_tanks_tank_size_check.
+  -- No oxygen_tanks row created.
+  ```
+
+---
+
+### Admin: Add tank
+
+- [ ] T105: Admin creates new tank — `oxygen_tanks` row + initial `oxygen_movements` row (NULL → ready).
+  - Steps: Log in as Admin. Admin → "ถังออกซิเจน" tab → "+ เพิ่มถัง". Fill: serial=`OXY-T105`, size=medium, location=any, next_inspection_due=90 days. Click "บันทึก".
+  - Expected: toast "เพิ่มถังแล้ว". DB:
+  ```sql
+  SELECT serial, status, tank_size FROM oxygen_tanks WHERE serial = 'OXY-T105';
+  -- Expected: OXY-T105 / ready / medium
+
+  SELECT from_status, to_status FROM oxygen_movements
+  WHERE tank_id = (SELECT id FROM oxygen_tanks WHERE serial = 'OXY-T105')
+  ORDER BY performed_at ASC LIMIT 1;
+  -- Expected: NULL / ready
+  ```
+
+- [ ] T106: Duplicate serial rejected.
+  - Steps: Attempt to add a second tank with serial `OXY-T105` (T105 must already exist).
+  - Expected: inline error "หมายเลขถังนี้มีอยู่แล้ว". No second `oxygen_tanks` row.
+  ```sql
+  SELECT count(*) FROM oxygen_tanks WHERE serial = 'OXY-T105';
+  -- Expected: 1
+  ```
+
+---
+
+### State machine — allowed transitions
+
+- [ ] T107: `ready → on_board` — status updates, movement row inserted, location updated.
+  - Steps: Admin → tank `OXY-T105` → "เปลี่ยนสถานะ" → `on_board`, location = ambulance location, note="T107". Submit.
+  ```sql
+  SELECT status FROM oxygen_tanks WHERE serial = 'OXY-T105';
+  -- Expected: on_board
+
+  SELECT from_status, to_status, note FROM oxygen_movements
+  WHERE tank_id = (SELECT id FROM oxygen_tanks WHERE serial = 'OXY-T105')
+  ORDER BY performed_at DESC LIMIT 1;
+  -- Expected: ready / on_board / T107
+  ```
+
+- [ ] T108: `on_board → refilling` succeeds (Staff role).
+  - Steps: Log in as Employee. `staff-oxygen.html` → scan `OXY-T105` (now on_board) → select `refilling`. Submit.
+  ```sql
+  SELECT status FROM oxygen_tanks WHERE serial = 'OXY-T105';
+  -- Expected: refilling
+  ```
+
+- [ ] T109: `refilling → ready` by Admin — `last_refill_at` and `last_refill_by` updated.
+  - Steps: Admin → tank `OXY-T105` (refilling) → "เปลี่ยนสถานะ" → `ready`. Submit.
+  ```sql
+  SELECT status, last_refill_at IS NOT NULL AS has_refill_ts, last_refill_by
+  FROM oxygen_tanks WHERE serial = 'OXY-T105';
+  -- Expected: ready / true / <admin username>
+  ```
+
+- [ ] T110: `any → maintenance` by Admin succeeds.
+  - Steps: Admin → tank `OXY-T105` (ready) → "เปลี่ยนสถานะ" → `maintenance`, note="hydrostatic test". Submit.
+  ```sql
+  SELECT status FROM oxygen_tanks WHERE serial = 'OXY-T105';
+  -- Expected: maintenance
+  SELECT note FROM oxygen_movements
+  WHERE tank_id = (SELECT id FROM oxygen_tanks WHERE serial = 'OXY-T105')
+  ORDER BY performed_at DESC LIMIT 1;
+  -- Expected: hydrostatic test
+  ```
+
+- [ ] T111: `maintenance → ready` by Admin succeeds.
+  ```sql
+  SELECT status FROM oxygen_tanks WHERE serial = 'OXY-T105';
+  -- Expected: ready (after admin logs maintenance→ready)
+  ```
+
+---
+
+### State machine — blocked transitions
+
+- [ ] T112: Invalid transition (`ready → refilling`) blocked with exact Thai error string.
+  - Steps: DevTools Console (Admin JWT):
+  ```js
+  const { error } = await supabase.from('oxygen_movements').insert({
+    tank_id: '<OXY-T105 uuid>',
+    from_status: 'ready',
+    to_status: 'refilling',
+    performed_by: 'test'
+  });
+  console.log(error?.message);
+  ```
+  - Expected: `error.message` contains exactly `'การเปลี่ยนสถานะถังนี้ไม่ถูกต้อง'`. HTTP 400.
+  ```sql
+  SELECT count(*) FROM oxygen_movements WHERE to_status='refilling' AND from_status='ready';
+  -- Expected: 0
+  ```
+
+- [ ] T113: Retired tank — any transition blocked.
+  - Steps: SQL Editor (service role): set tank to `retired`. Then attempt any INSERT into `oxygen_movements` for that tank.
+  - Expected: error contains `'ถูกปลดระวางแล้ว ไม่สามารถเปลี่ยนสถานะได้'`.
+
+- [ ] T114: `from_status` mismatch blocked.
+  - Steps: Insert movement with `from_status` that does not match the tank's current status.
+  - Expected: error contains `'สถานะปัจจุบันของถัง'` and `'ไม่ตรงกับ from_status'`.
+
+---
+
+### Admin-only transitions
+
+- [ ] T115: Staff cannot log `refilling → ready` — RLS blocks INSERT.
+  - Steps: Log in as Employee. DevTools Console:
+  ```js
+  const { error } = await supabase.from('oxygen_movements').insert({
+    tank_id: '<refilling tank uuid>',
+    from_status: 'refilling',
+    to_status: 'ready',
+    performed_by: 'pt1'
+  });
+  console.log(error?.code);
+  ```
+  - Expected: `error.code = '42501'`. No row inserted.
+
+- [ ] T116: Staff cannot log transition to `maintenance` — RLS blocks.
+  - Expected: `error.code = '42501'`.
+
+---
+
+### Refill-batch alert
+
+- [ ] T117: Alert fires when refilling count reaches threshold (5).
+  - Pre-conditions: `OXYGEN_REFILL_THRESHOLD=5`, `NOTIFY_TELEGRAM_ENABLED=true`, URL + key set.
+  - Steps: Create 5 tanks via SQL Editor, transition all to `refilling`. After 5th INSERT:
+  ```sql
+  SELECT event_type, dedupe_key, success
+  FROM notification_log
+  WHERE dedupe_key = 'oxygen_refill_batch:' || to_char(CURRENT_DATE, 'YYYY-MM-DD');
+  -- Expected: 1 row, success=true
+  ```
+  - Expected also: Telegram message received listing 5 serials with sizes.
+
+- [ ] T118: Dedupe — 6th tank entering refilling same day does NOT send second alert.
+  ```sql
+  SELECT count(*) FROM notification_log
+  WHERE dedupe_key = 'oxygen_refill_batch:' || to_char(CURRENT_DATE, 'YYYY-MM-DD');
+  -- Expected: 1 (still 1 after 6th tank)
+  ```
+
+- [ ] T119: Below threshold (4 tanks) — no alert fires.
+  ```sql
+  SELECT count(*) FROM oxygen_tanks WHERE status = 'refilling';
+  -- Expected: 4. No new notification_log row for today.
+  ```
+
+---
+
+### Realtime
+
+- [ ] T120: `oxygen_tanks` Realtime subscription — status badge updates in admin tab without page reload.
+  - Steps: Admin tab "ถังออกซิเจน" open. In SQL Editor (service role): `UPDATE oxygen_tanks SET status='on_board' WHERE serial='OXY-T105';`
+  - Expected: Status badge in admin tab updates within ~2 seconds, no page reload.
+
+---
+
+### Dashboard panel
+
+- [ ] T121: Dashboard "สถานะถังออกซิเจน" panel shows correct per-status counts.
+  ```sql
+  SELECT status, count(*) FROM oxygen_tanks GROUP BY status ORDER BY status;
+  -- Compare each count against dashboard panel display.
+  ```
+
+- [ ] T122: Dashboard alert badge appears when refilling count >= threshold.
+  - Steps: Ensure `count(status='refilling') >= OXYGEN_REFILL_THRESHOLD`. Reload Dashboard.
+  - Expected: amber banner "ถังรอเติม {n} ถัง — ถึงเกณฑ์แจ้งเตือน" visible.
+
+---
+
+### Staff scan flow
+
+- [ ] T123: Staff scans tank serial — sees status card and logs `ready → on_board`.
+  - Steps: Log in as Employee. `staff-oxygen.html`. Scan/type `OXY-T105` (status=ready). Select on_board. Pick location. Submit.
+  - Expected: Success overlay. `oxygen_tanks.status = 'on_board'`. New movement row with `performed_by = <employee username>`.
+
+- [ ] T124: Staff scans unknown serial — inline error, no crash.
+  - Steps: Enter serial `OXY-DOESNT-EXIST`.
+  - Expected: Inline error "ไม่พบถังหมายเลขนี้ในระบบ". No 500 error. No row created.
+
+---
+
+### Service worker
+
+- [ ] T125: CACHE_VERSION bumped to `thegood-stock-v0.5.0` — new SW version installs. `staff-oxygen.html` loads offline.
+  - Steps: DevTools → Application → Service Workers → confirm `thegood-stock-v0.5.0` active. Simulate offline. Navigate to `staff-oxygen.html`.
+  - Expected: Page loads from cache. No network error.
+  ```javascript
+  const keys = await caches.keys();
+  console.log(keys); // ['thegood-stock-v0.5.0']
+  const c = await caches.open('thegood-stock-v0.5.0');
+  const reqs = await c.keys();
+  console.log(reqs.map(r => r.url));
+  // Expected: includes staff-oxygen.html, shared/oxygen.js, js/oxygen.js, js/staff-oxygen.js
+  ```
+
+---
+
+## Phase 5 Summary
+
+| Status | Count | Tests |
+|---|---|---|
+| Fully verified | TBD | — |
+| Partial / soft-pass | TBD | — |
+| Blocked | TBD | — |
+| Pending | TBD | T101-T125 |
+
+---
+
+## Phase 4 ALS Bags (T126-T150)
+
+### Template setup (T126–T130)
+
+- [ ] **T126** Admin opens ALS Bags tab. Empty state "ยังไม่มีถุงยา" shown. Button "จัดการเทมเพลต" visible.
+  - SQL: `SELECT count(*) FROM bag_templates` → 0
+  - Expected: tab loads without error
+
+- [ ] **T127** Admin creates template: code="TPL-ALS-ADULT", name="ALS ผู้ใหญ่", category="ALS". Adds 3 items: (1) mandatory target=5, (2) mandatory target=3, (3) non-mandatory target=10.
+  - SQL: `SELECT count(*) FROM bag_template_items WHERE bag_template_id = '<new id>'` → 3
+  - Expected: 1 bag_templates row + 3 bag_template_items rows
+
+- [ ] **T128** Admin attempts to create second template with code="TPL-ALS-ADULT" (duplicate). Save fails.
+  - Expected: inline error "รหัสเทมเพลตนี้มีอยู่แล้ว" (409 unique constraint bag_templates_code_key)
+
+- [ ] **T129** Employee (Staff role) attempts INSERT bag_templates directly via DevTools / REST.
+  - Expected: 403 — RLS policy bt_write rejects non-Admin
+
+- [ ] **T130** Employee attempts INSERT bag_template_items directly via DevTools / REST.
+  - Expected: 403 — RLS policy bti_write rejects non-Admin
+
+### Bag-location setup (T131–T133)
+
+- [ ] **T131** Admin creates bag location: type=bag, code="BAG-ALS-001", name="ถุง ALS รถ TG1", bag_template_id=<TPL-ALS-ADULT id>.
+  - SQL: `SELECT bag_template_id FROM locations WHERE code='BAG-ALS-001'` → non-null UUID
+  - Expected: locations row with type='bag' and bag_template_id populated
+
+- [ ] **T132** Admin opens ALS Bags tab. BAG-ALS-001 appears with alert_level=low_stock, completion_pct=0.
+  - SQL: `SELECT alert_level, completion_pct, mandatory_deficit_count FROM v_bag_status WHERE bag_code='BAG-ALS-001'`
+  - Expected: low_stock, 0, 2
+
+- [ ] **T133** Admin creates bag "BAG-ALS-002" with no bag_template_id. Appears with alert_level=no_template.
+  - SQL: `SELECT alert_level FROM v_bag_status WHERE bag_code='BAG-ALS-002'` → 'no_template'
+
+### Restock workflow (T134–T139)
+
+- [ ] **T134** Admin opens BAG-ALS-001 detail panel. Shopping list shows 2 mandatory deficits.
+  - Expected: mandatory_deficit_count=2; all 3 items rendered with correct target/actual
+
+- [ ] **T135** Admin completes restock for BAG-ALS-001: sets qty for all 3 items, skips photo, confirms.
+  - SQL: `SELECT count(*) FROM stock_movements WHERE location_id=<BAG-ALS-001> AND reason='bag_restock'` → 3
+  - SQL: `SELECT qty FROM stock_item_locations WHERE location_id=<BAG-ALS-001> AND item_id=<item1>` → 5
+  - Expected: 3 stock_movements (movement_type='receive'), stock_item_locations updated
+
+- [ ] **T136** After T135, ALS Bags tab shows BAG-ALS-001 with alert_level=complete, completion_pct=100.
+  - SQL: `SELECT alert_level, completion_pct FROM v_bag_status WHERE bag_code='BAG-ALS-001'` → ('complete', 100)
+
+- [ ] **T137** Admin replays same restock submit (same client_ref_id values — simulate network retry).
+  - Expected: each INSERT returns 409 (duplicate client_ref_id); client treats as already-posted; stock unchanged
+
+- [ ] **T138** Admin restocks item with tracks_lots=true. Lot picker (FEFO) appears in shopping list step.
+  - Expected: stock_movements row has lot_id populated; FEFO lot pre-selected
+
+- [ ] **T139** Employee attempts POST stock_movements with movement_type='receive' for bag location via DevTools.
+  - Expected: 403 — Phase 1 RLS policy sm_insert_admin blocks Staff from 'receive'
+
+### Bag status view correctness (T140–T143)
+
+- [ ] **T140** Issue 3 units of item from BAG-ALS-001 (dropping below target). Refresh ALS Bags tab.
+  - SQL: `SELECT alert_level, mandatory_deficit_count FROM v_bag_status WHERE bag_code='BAG-ALS-001'`
+  - Expected: low_stock, deficit_count > 0
+
+- [ ] **T141** Insert test stock_lots row for item in BAG-ALS-001 with expiry_date = CURRENT_DATE + 25.
+  - SQL: `SELECT alert_level FROM v_bag_status WHERE bag_code='BAG-ALS-001'`
+  - Expected: 'expiring' (expiring takes priority over low_stock)
+
+- [ ] **T142** Set test lot expiry_date = CURRENT_DATE - 1 (already past).
+  - SQL: `SELECT alert_level, expired_lots_count FROM v_bag_status WHERE bag_code='BAG-ALS-001'`
+  - Expected: 'expired', expired_lots_count=1
+
+- [ ] **T143** Run Phase 2 cron `SELECT run_expiry_alert()` to auto-expire test lot. Re-query v_bag_status.
+  - SQL: `SELECT status FROM stock_lots WHERE id='<test lot id>'` → 'expired'
+  - Expected: v_bag_status reflects updated state (may revert to low_stock or complete)
+
+### Cron and Telegram alert (T144–T147)
+
+- [ ] **T144** With BAG-ALS-001 in low_stock state, run `SELECT run_bag_status_alert()` with NOTIFY settings configured.
+  - SQL: `SELECT event_type, dedupe_key FROM notification_log WHERE event_type='bag_alert' ORDER BY created_at DESC LIMIT 1`
+  - Expected: 1 row, dedupe_key='bag_alert:YYYY-MM-DD'; Telegram receives message
+
+- [ ] **T145** Run `SELECT run_bag_status_alert()` a second time same day.
+  - Expected: tg-notify returns dedupe_hit=true; no second Telegram message sent
+
+- [ ] **T146** Set all bags to complete. Run `SELECT run_bag_status_alert()`.
+  - Expected: function returns without pg_net call; no new notification_log row
+
+- [ ] **T147** Set NOTIFY_TELEGRAM_ENABLED='false' in settings. Run `SELECT run_bag_status_alert()`.
+  - Expected: tg-notify returns {sent:false}; no Telegram message; behavior mirrors T147 in Phase 2
+
+### Staff scan bag path (T148–T149)
+
+- [ ] **T148** Staff opens staff-scan.html, scans "BAG-ALS-001" QR code.
+  - Expected: Bag checklist view appears (not standard issue flow); composition shown with qty vs target; expired/expiring items highlighted
+
+- [ ] **T149** Staff on bag checklist view: "เติมของ" button is absent.
+  - Expected: no restock button visible; checklist is read-only; info banner shown for incomplete bags
+
+### ALS_KIT category (T150)
+
+- [ ] **T150** After Phase 4 migration, stock_categories contains ALS_KIT.
+  - SQL: `SELECT code, name FROM stock_categories WHERE code='ALS_KIT'`
+  - Expected: 1 row — ('ALS_KIT', 'อุปกรณ์ถุงยา / ชุดปฐมพยาบาล')
+
+### Service worker cache (T151)
+
+- [ ] **T151** CACHE_VERSION bumped to thegood-stock-v0.6.0 and new Phase 4 assets cached.
+  - Steps: DevTools → Application → Cache Storage → thegood-stock-v0.6.0
+  ```javascript
+  const keys = await caches.keys();
+  console.log(keys); // ['thegood-stock-v0.6.0']
+  const c = await caches.open('thegood-stock-v0.6.0');
+  const reqs = await c.keys();
+  console.log(reqs.map(r => r.url));
+  // Expected: includes shared/bags.js, js/bags.js, js/bag-templates.js
+  ```
+
+---
+
+## Phase 4 Summary
+
+| Status | Count | Tests |
+|---|---|---|
+| Fully verified | TBD | — |
+| Partial / soft-pass | TBD | — |
+| Blocked | TBD | — |
+| Pending | TBD | T126-T151 |

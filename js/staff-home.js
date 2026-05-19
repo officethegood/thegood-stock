@@ -16,6 +16,25 @@
 
   document.getElementById('btn-view-loc').onclick = renderLocations;
   document.getElementById('btn-view-amb').onclick = renderAmbulances;
+
+  // Phase 5 — add ถังออกซิเจน scan link (Q-Phase5-6: separate page)
+  const oxyLinkTarget = document.getElementById('staff-oxygen-link-wrap');
+  if (!oxyLinkTarget) {
+    // Inject button below the existing action buttons if no placeholder exists
+    const detail = document.getElementById('staff-detail');
+    if (detail) {
+      const wrap = document.createElement('div');
+      wrap.className = 'mt-3 d-grid';
+      wrap.innerHTML = `
+        <a href="./staff-oxygen.html"
+           class="btn btn-outline-stock-accent"
+           style="min-height:52px; font-size:1.05rem; font-weight:600;">
+          <i class="bi bi-circle-square me-2"></i>สแกนถังออกซิเจน
+        </a>
+      `;
+      detail.parentNode.insertBefore(wrap, detail);
+    }
+  }
 })();
 
 async function renderLocations() {

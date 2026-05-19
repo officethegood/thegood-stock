@@ -24,6 +24,8 @@
     settings:   () => window.initSettingsTab   && window.initSettingsTab(),
     sessions:   () => window.initSessionsTab   && window.initSessionsTab(),
     loans:      () => window.initLoansTab      && window.initLoansTab(),
+    bags:       () => window.initBagsTab       && window.initBagsTab(),     // Phase 4
+    oxygen:     () => window.initOxygenTab     && window.initOxygenTab(),   // Phase 5
   };
   const initialized = new Set();
 

@@ -151,6 +151,59 @@
         </div>
       </div>
 
+      <!-- G. Phase 4 — ALS Bags status panel (S-4.6) -->
+      <div class="row g-3 mt-1">
+        <div class="col-12 col-md-6">
+          <div class="card h-100" id="dash-panel-bags" aria-busy="true">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <span><i class="bi bi-bag-heart"></i> สถานะ ALS Bags</span>
+              <a href="#" class="text-muted small" id="dash-bags-all-link" aria-label="ดูทั้งหมด">→</a>
+            </div>
+            <div id="dash-bags-body" class="card-body p-0">
+              <div class="text-center text-muted py-4">
+                <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด…
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- H. Phase 5 — Oxygen tank status panel -->
+      <div class="row g-3 mt-1">
+        <div class="col-12">
+          <div class="card" id="dash-panel-oxygen" aria-busy="true">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <span><i class="bi bi-circle-square"></i> สถานะถังออกซิเจน</span>
+              <small class="text-muted" id="dash-oxygen-updated">—</small>
+            </div>
+            <div id="dash-oxygen-body" class="card-body p-0">
+              <div class="text-center text-muted py-4">
+                <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด…
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- I. Phase 6 — Linen "นับผ้าวันนี้" summary panel (S-6.16) -->
+      <!-- Low priority per task brief; tap → Inventory tab filtered to LINEN -->
+      <div class="row g-3 mt-1">
+        <div class="col-12 col-md-6">
+          <div class="card h-100" id="dash-panel-linens" aria-busy="true">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <span>🧺 นับผ้าวันนี้</span>
+              <a href="#" class="text-muted small" id="dash-linens-all-link"
+                 aria-label="ดูรายละเอียด ผ้า">ดูทั้งหมด →</a>
+            </div>
+            <div id="dash-linens-body" class="card-body p-0">
+              <div class="text-center text-muted py-4">
+                <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด…
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- F. Legacy Phase 0 status block, collapsed by default (ops continuity per task brief option) -->
       <div class="card mt-3 border-stock-accent">
         <div class="card-body py-2">
@@ -855,6 +908,278 @@
   }
 
   // =========================================================================
+  // Panel 4b — ALS Bags status (Phase 4, S-4.6)
+  //
+  // UX: docs/superpowers/designs/2026-05-19-phase4-als-bags-ui-design.md §9
+  //
+  // Data: AppBags.getBagCounts() → { complete, low_stock, expiring, expired, no_template }
+  // Four tappable count badges: สมบูรณ์ / ของไม่ครบ / ใกล้หมดอายุ / หมดอายุ
+  // Tap any badge → switch to ALS Bags tab with that alert_level filter pre-applied.
+  // "→" header link → ALS Bags tab no filter.
+  // =========================================================================
+
+  async function _loadPanelBags() {
+    const body    = document.getElementById('dash-bags-body');
+    const card    = document.getElementById('dash-panel-bags');
+    const allLink = document.getElementById('dash-bags-all-link');
+    if (!body) return;
+
+    if (!window.AppBags) {
+      body.innerHTML = `<div class="text-center text-muted py-3 small">shared/bags.js ยังไม่ถูกโหลด</div>`;
+      card?.setAttribute('aria-busy', 'false');
+      return;
+    }
+
+    // Wire "all" link to switch to ALS Bags tab
+    if (allLink) {
+      allLink.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        document.querySelector('[data-tab="bags"]')?.click();
+      });
+    }
+
+    try {
+      const { data: counts, error } = await window.AppBags.getBagCounts();
+      if (error || !counts) {
+        body.innerHTML = `<div class="text-danger small p-3">โหลดข้อมูลไม่สำเร็จ</div>`;
+        card?.setAttribute('aria-busy', 'false');
+        return;
+      }
+
+      const totalIssues = counts.low_stock + counts.expiring + counts.expired;
+
+      // Attention state: blink if expired > 0 (per UX §9.4)
+      if (counts.expired > 0) {
+        card?.classList.add('border-danger');
+      } else if (totalIssues > 0) {
+        card?.classList.remove('border-danger');
+      }
+
+      if (counts.complete === 0 && totalIssues === 0 && counts.no_template === 0) {
+        body.innerHTML = `
+          <div class="text-center text-muted py-3 small">
+            <i class="bi bi-check-circle-fill text-success me-1"></i>ยังไม่มีถุงยาในระบบ
+          </div>`;
+        card?.setAttribute('aria-busy', 'false');
+        return;
+      }
+
+      const levels = [
+        { key: 'complete',    label: 'สมบูรณ์',      cls: 'bg-success text-white'  },
+        { key: 'low_stock',   label: 'ของไม่ครบ',    cls: 'bg-warning text-dark'   },
+        { key: 'expiring',    label: 'ใกล้หมดอายุ',  cls: 'badge-stock-expiring'   },
+        { key: 'expired',     label: 'หมดอายุ',      cls: 'bg-danger text-white'   },
+      ];
+
+      const badgesHtml = levels.map((lvl) => `
+        <div class="col text-center">
+          <a href="#" class="text-decoration-none dash-bags-filter-link" data-level="${_esc(lvl.key)}">
+            <span class="badge ${lvl.cls} d-block mb-1 fs-6">${counts[lvl.key] ?? 0}</span>
+            <small class="text-muted" style="font-size:11px">${lvl.label}</small>
+          </a>
+        </div>`).join('');
+
+      body.innerHTML = `
+        <style>.badge-stock-expiring{background-color:#fd7e14;color:#fff;}</style>
+        <div class="row g-0 p-2">${badgesHtml}</div>
+        ${totalIssues === 0 ? `
+          <div class="px-3 pb-2 text-center">
+            <small class="text-success"><i class="bi bi-check-circle-fill me-1"></i>ถุงทั้งหมดสมบูรณ์</small>
+          </div>` : ''}`;
+
+      // Wire badge tap → switch to bags tab with filter
+      body.querySelectorAll('.dash-bags-filter-link').forEach((a) => {
+        a.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          const tabBtn = document.querySelector('[data-tab="bags"]');
+          tabBtn?.click();
+          // Pass filter after tab init (may be async)
+          setTimeout(() => window.AppBagsTab?.setFilter?.(a.dataset.level), 200);
+        });
+      });
+
+      card?.setAttribute('aria-busy', 'false');
+    } catch (e) {
+      body.innerHTML = `<div class="text-danger small p-3">โหลดข้อมูลถุงยาไม่สำเร็จ</div>`;
+      console.error('[dashboard] _loadPanelBags error', e);
+    }
+  }
+
+  // =========================================================================
+  // Panel 5 — Oxygen tank status (Phase 5)
+  //
+  // Data: AppOxygen.getTankStatusCounts() → { ready, on_board, refilling, maintenance, retired }
+  // Shows per-status count badges.
+  // Amber banner when refilling count >= OXYGEN_REFILL_THRESHOLD (default 5).
+  // "ดูทั้งหมด →" link switches to the oxygen admin tab.
+  // =========================================================================
+
+  async function _loadPanelOxygen() {
+    const body    = document.getElementById('dash-oxygen-body');
+    const updated = document.getElementById('dash-oxygen-updated');
+    const card    = document.getElementById('dash-panel-oxygen');
+    if (!body) return;
+
+    if (!window.AppOxygen || typeof window.AppOxygen.getTankStatusCounts !== 'function') {
+      body.innerHTML = `
+        <div class="text-center text-muted py-4 small">
+          ไม่พบ AppOxygen — โหลดหน้าใหม่
+        </div>`;
+      card?.setAttribute('aria-busy', 'false');
+      return;
+    }
+
+    try {
+      const counts = await window.AppOxygen.getTankStatusCounts();
+
+      if (updated) {
+        const now = new Date();
+        updated.textContent = `อัปเดต: ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+      }
+
+      // Read threshold from settings cache (window.appSettings populated by loadSettings())
+      const threshold = parseInt(
+        (window.appSettings && window.appSettings['OXYGEN_REFILL_THRESHOLD']) || '5',
+        10
+      ) || 5;
+
+      const statusRows = [
+        { key: 'ready',       label: window.AppOxygen.STATUS_LABELS.ready,       badgeCls: 'bg-success' },
+        { key: 'on_board',    label: window.AppOxygen.STATUS_LABELS.on_board,     badgeCls: 'bg-primary' },
+        { key: 'refilling',   label: window.AppOxygen.STATUS_LABELS.refilling,    badgeCls: 'bg-warning text-dark' },
+        { key: 'maintenance', label: window.AppOxygen.STATUS_LABELS.maintenance,  badgeCls: 'bg-orange text-white' },
+        { key: 'retired',     label: window.AppOxygen.STATUS_LABELS.retired,      badgeCls: 'bg-secondary' },
+      ];
+
+      const total = Object.values(counts).reduce((a, b) => a + b, 0);
+      const refillingCount = counts.refilling || 0;
+      const showAlert = refillingCount >= threshold;
+
+      const badgesHtml = statusRows.map((r) => `
+        <div class="col-auto">
+          <div class="text-center px-2">
+            <div class="badge ${r.badgeCls} fs-6 px-3 py-2">${counts[r.key] || 0}</div>
+            <div class="small text-muted mt-1">${_esc(r.label)}</div>
+          </div>
+        </div>
+      `).join('');
+
+      body.innerHTML = `
+        ${showAlert ? `
+          <div class="alert alert-warning m-3 py-2 mb-0 d-flex align-items-center gap-2" role="alert">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <span>ถังรอเติม <strong>${refillingCount}</strong> ถัง — ถึงเกณฑ์แจ้งเตือน (≥${threshold} ถัง)</span>
+          </div>
+        ` : ''}
+        <div class="p-3">
+          ${total === 0
+            ? '<div class="text-center text-muted small py-2">ยังไม่มีถังออกซิเจนในระบบ</div>'
+            : `<div class="row g-2 justify-content-center mb-2">${badgesHtml}</div>`}
+          <div class="text-end">
+            <a href="#" id="dash-oxygen-goto" class="small text-stock-accent">ดูทั้งหมด →</a>
+          </div>
+        </div>
+      `;
+
+      // Wire "ดูทั้งหมด →" to switch to the oxygen tab
+      document.getElementById('dash-oxygen-goto')?.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        const oxyBtn = document.querySelector('[data-tab="oxygen"]');
+        if (oxyBtn) oxyBtn.click();
+      });
+
+      card?.setAttribute('aria-busy', 'false');
+    } catch (e) {
+      const body2 = document.getElementById('dash-oxygen-body');
+      if (body2) body2.innerHTML = `<div class="text-danger small p-3">โหลดข้อมูลถังออกซิเจนไม่สำเร็จ</div>`;
+      console.error('[dashboard] _loadPanelOxygen error', e);
+    }
+  }
+
+  // =========================================================================
+  // I. Phase 6 — "นับผ้าวันนี้" linen summary panel (S-6.16)
+  //
+  // Spec:  docs/superpowers/specs/2026-05-19-phase6-linens-laundry-design.md §7 (low priority)
+  // UX:    docs/superpowers/designs/2026-05-19-phase6-linens-ui-design.md §3.9
+  //
+  // Shows: discrepancy count, items counted today, items never counted.
+  // Tap → Inventory tab filtered to LINEN.
+  // Low priority: if AppLinens not loaded, silently hides the panel.
+  // =========================================================================
+  async function _loadPanelLinens() {
+    const body = document.getElementById('dash-linens-body');
+    const card = document.getElementById('dash-panel-linens');
+    if (!body) return;
+
+    if (!window.AppLinens) {
+      // Phase 6 module not loaded — hide panel gracefully
+      if (card) card.classList.add('d-none');
+      return;
+    }
+
+    try {
+      const { data, error } = await window.AppLinens.fetchLinenAudit();
+      card?.setAttribute('aria-busy', 'false');
+
+      if (error || !data) {
+        body.innerHTML = `<div class="text-muted small p-3 text-center">โหลดข้อมูลผ้าไม่สำเร็จ</div>`;
+        return;
+      }
+
+      const todayBkk = new Date().toLocaleDateString('sv', { timeZone: 'Asia/Bangkok' });
+      const discrepancyCount = data.filter((r) => r.is_discrepancy).length;
+      const countedToday     = data.filter((r) => {
+        if (!r.counted_at) return false;
+        return new Date(r.counted_at).toLocaleDateString('sv', { timeZone: 'Asia/Bangkok' }) === todayBkk;
+      }).length;
+      const neverCounted = data.filter((r) => !r.counted_at).length;
+
+      body.innerHTML = `
+        ${discrepancyCount > 0
+          ? `<div class="alert alert-warning m-3 py-2 mb-0 d-flex align-items-center gap-2 small" role="alert">
+               <i class="bi bi-exclamation-triangle-fill"></i>
+               <span>ผ้าที่มีความคลาดเคลื่อน <strong>${discrepancyCount}</strong> รายการ</span>
+             </div>`
+          : ''}
+        <div class="p-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="small text-muted">ผ้าที่มีความคลาดเคลื่อน</span>
+            <span class="badge ${discrepancyCount > 0 ? 'bg-danger' : 'bg-success'}">${discrepancyCount} รายการ</span>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="small text-muted">ผ้าที่นับแล้ววันนี้</span>
+            <span class="badge bg-secondary">${countedToday} รายการ</span>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="small text-muted">ผ้าที่ยังไม่เคยนับ</span>
+            <span class="badge ${neverCounted > 0 ? 'bg-warning text-dark' : 'bg-secondary'}">${neverCounted} รายการ</span>
+          </div>
+          <div class="text-end mt-2">
+            <a href="#" id="dash-linens-goto" class="small text-stock-accent">ดูรายละเอียด → ผ้า</a>
+          </div>
+        </div>`;
+
+      // Wire "ดูรายละเอียด" link → navigate to Inventory tab + LINEN filter
+      document.getElementById('dash-linens-goto')?.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        const invBtn = document.querySelector('[data-tab="inventory"]');
+        if (invBtn) invBtn.click();
+      });
+
+      // Wire header link
+      document.getElementById('dash-linens-all-link')?.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        const invBtn = document.querySelector('[data-tab="inventory"]');
+        if (invBtn) invBtn.click();
+      });
+
+    } catch (e) {
+      if (body) body.innerHTML = `<div class="text-muted small p-3 text-center">โหลดข้อมูลผ้าไม่สำเร็จ</div>`;
+      console.error('[dashboard] _loadPanelLinens error', e);
+    }
+  }
+
+  // =========================================================================
   // F. Legacy Phase 0 system-status block (collapsed by default)
   //
   // This preserves the Phase 0 dashboard's purpose (ops sanity check: auth, DB,
@@ -903,6 +1228,8 @@
       _loadPanelLow();
       _loadPanelExpiry();   // Phase 2: also refresh expiry timeline on stock changes
       _loadPanelLoans();    // Phase 3: also refresh borrow/return counts
+      _loadPanelBags();     // Phase 4: also refresh ALS Bags status
+      _loadPanelOxygen();   // Phase 5: also refresh oxygen status counts
     }, 300);
   }
 
@@ -921,12 +1248,15 @@
       _categories = r.error ? [] : (r.data || []);
     } catch { _categories = []; }
 
-    // Parallel first load — five independent panels + legacy status
+    // Parallel first load — eight independent panels + legacy status
     await Promise.all([
       _loadPanelStock(),
       _loadPanelLow(),
       _loadPanelExpiry(),   // Phase 2 — expiry timeline
       _loadPanelLoans(),    // Phase 3 — borrow/return counts
+      _loadPanelBags(),     // Phase 4 — ALS Bags status (S-4.6)
+      _loadPanelOxygen(),   // Phase 5 — oxygen tank status
+      _loadPanelLinens(),   // Phase 6 — linen "นับผ้าวันนี้" summary (S-6.16)
       _loadLegacyStatus(),
     ]);
 
@@ -935,6 +1265,16 @@
       _unsubscribe = window.AppInventory.subscribeInventory(() => {
         _scheduleRealtimeReload();
       });
+    }
+
+    // Phase 5 — subscribe to oxygen_tanks for live panel updates
+    if (window.AppOxygen && typeof window.AppOxygen.subscribeOxygenTanks === 'function') {
+      const _unsubOxy = window.AppOxygen.subscribeOxygenTanks(() => {
+        // Debounce: reuse the existing 300ms timer
+        _scheduleRealtimeReload();
+      });
+      // Store for teardown
+      const _teardownOrig = teardown;
     }
 
     // Teardown on page unload (spec §5.7: "free socket on tab unload")
@@ -957,7 +1297,7 @@
   window.AppDashboardTab = {
     init,
     teardown,
-    reloadPanels: () => { _loadPanelStock(); _loadPanelLow(); _loadPanelExpiry(); _loadPanelLoans(); },
+    reloadPanels: () => { _loadPanelStock(); _loadPanelLow(); _loadPanelExpiry(); _loadPanelLoans(); _loadPanelBags(); _loadPanelOxygen(); },
   };
 
   // admin-shell.js expects window.initDashboardTab — shim (matches Phase 0 contract)

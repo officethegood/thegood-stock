@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1e3a5f">
+<title>สแกนถังออกซิเจน — Thegood Stock</title>
+
+<!-- Phase 5 — Dedicated staff oxygen tank scan page.
+     Mirrors staff-scan.html shell.
+     Spec: docs/superpowers/specs/2026-05-19-phase5-oxygen-tanks-design.md §7.2
+     Design: docs/superpowers/designs/2026-05-19-phase5-oxygen-ui-design.md §3.5
+     Decision Q-Phase5-6: separate page, not mode toggle on staff-scan.html. -->
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./shared/styles.css">
+
+<style>
+  /* Page-local styles — mirrors staff-scan.html pattern for consistency.
+     Gloved-hand targets: tap cards >= 60px (UX §1.3). */
+  body { background-color: #f5f7fa; }
+  .oxy-wrap { max-width: 480px; margin: 0 auto; padding: 0 12px 32px; }
+
+  /* 7-step wizard steps */
+  .oxy-step { display: none; }
+  .oxy-step.active { display: block; }
+
+  /* Transition tap cards (UX §3.5 gloved-hands, min 60px) */
+  .oxy-choice-card {
+    min-height: 60px;
+    border: 2px solid #dee2e6;
+    border-radius: 12px;
+    padding: 12px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #fff;
+    transition: border-color .15s, background .15s;
+    margin-bottom: 10px;
+  }
+  .oxy-choice-card:hover,
+  .oxy-choice-card.selected {
+    border-color: var(--stock-accent, #0d9488);
+    background: #f0fdfa;
+  }
+  .oxy-choice-card .choice-label { font-weight: 500; font-size: 1.05rem; }
+
+  /* Status badge in tank card */
+  .oxy-tank-card {
+    border-radius: 14px;
+    border: 1px solid #dee2e6;
+    background: #fff;
+    padding: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  }
+
+  /* Step indicator dots */
+  .step-dots { display: flex; gap: 6px; justify-content: center; margin-bottom: 16px; }
+  .step-dot { width: 8px; height: 8px; border-radius: 50%; background: #dee2e6; }
+  .step-dot.done { background: var(--stock-accent, #0d9488); }
+  .step-dot.active { background: var(--stock-accent-dark, #0f766e); width: 20px; border-radius: 4px; }
+
+  /* Success overlay */
+  .oxy-success-overlay {
+    border-radius: 14px;
+    background: linear-gradient(135deg, #0d9488, #0f766e);
+    color: #fff;
+    text-align: center;
+    padding: 32px 20px;
+  }
+  .oxy-success-overlay .ok-icon { font-size: 4rem; line-height: 1; }
+  .oxy-success-overlay .ok-main { font-size: 1.4rem; font-weight: 700; margin-top: 10px; }
+  .oxy-success-overlay .ok-detail { font-size: 1rem; margin-top: 6px; opacity: .9; }
+
+  /* Photo preview */
+  .oxy-photo-preview { max-width: 80px; height: 60px; object-fit: cover; border-radius: 6px; }
+
+  @media (max-width: 575.98px) {
+    .oxy-wrap { padding: 0 8px 32px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Navbar — mirrors staff-scan.html; back link to staff.html -->
+<nav class="navbar bg-modern-primary navbar-dark px-3" role="navigation">
+  <a href="./staff.html" class="navbar-brand mb-0 d-flex align-items-center" aria-label="ย้อนกลับ">
+    <i class="bi bi-arrow-left me-2"></i><span>Thegood Stock</span>
+  </a>
+  <div>
+    <span class="text-white-50 me-2 d-none d-sm-inline">
+      <i class="bi bi-person-circle"></i> <span id="user-name">…</span>
+    </span>
+    <button class="btn btn-sm btn-outline-light" id="btn-logout" type="button">ออก</button>
+  </div>
+</nav>
+
+<main class="oxy-wrap pt-3" role="main">
+  <h5 class="mb-1">
+    <i class="bi bi-circle-square me-1 text-stock-accent"></i>สแกนถังออกซิเจน
+  </h5>
+  <p class="text-muted small mb-3">สแกนหรือพิมพ์หมายเลขถัง แล้วเลือกสถานะใหม่</p>
+
+  <!-- Step indicator -->
+  <div class="step-dots" id="oxy-step-dots" aria-hidden="true">
+    <div class="step-dot active" id="dot-1"></div>
+    <div class="step-dot" id="dot-2"></div>
+    <div class="step-dot" id="dot-3"></div>
+    <div class="step-dot" id="dot-4"></div>
+    <div class="step-dot" id="dot-5"></div>
+    <div class="step-dot" id="dot-6"></div>
+    <div class="step-dot" id="dot-7"></div>
+  </div>
+
+  <!-- Main wizard container — JS renders steps here -->
+  <div id="oxygen-scan-app">
+    <!-- Steps 1–7 rendered by js/staff-oxygen.js -->
+    <div class="text-center text-muted py-5">
+      <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด…
+    </div>
+  </div>
+</main>
+
+<!-- Scripts — same load order as staff-scan.html -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./shared/config.js"></script>
+<script src="./shared/supabase-client.js"></script>
+<script src="./shared/auth.js"></script>
+<script src="./shared/auth-jwt.js"></script>
+<script src="./shared/ui.js"></script>
+<script src="./shared/settings.js"></script>
+<script src="./shared/scanner.js"></script>
+<script src="./shared/cloudinary.js"></script>
+<script src="./shared/photo-capture.js"></script>
+<script src="./shared/oxygen.js"></script>
+<script src="./js/staff-oxygen.js"></script>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () =>
+      navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('SW failed', e))
+    );
+  }
+</script>
+
+</body>
+</html>
