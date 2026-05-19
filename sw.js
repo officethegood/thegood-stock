@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.12.0';  // Phase 0.7 — location hierarchy refactor (storage/bin/zone) + transfer modal with scan/manual + camera fallback + bin/zone QR in staff-print
+const CACHE_VERSION = 'thegood-stock-v0.12.1';  // Phase 0.7 — location hierarchy + transfer + camera fallback + bin/zone QR + auto-migrate on sublocation add (D10) + 3 critical bug fixes (transfer/scanner modal crash, requireRole array support)
 const STATIC_ASSETS = [
   './',
   './login.html',

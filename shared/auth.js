@@ -106,8 +106,11 @@
   }
 
   // Redirect to /403 on role mismatch. Returns true if OK to proceed.
+  // Accepts a single role string OR an array of allowed roles.
   function requireRole(role) {
-    if (getUserRole() !== role) {
+    const current = getUserRole();
+    const allowed = Array.isArray(role) ? role : [role];
+    if (!allowed.includes(current)) {
       window.location.replace('./403.html');
       return false;
     }

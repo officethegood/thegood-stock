@@ -307,6 +307,216 @@
   }
 
   // =========================================================================
+  // Error helper (shared by create + edit paths)
+  // =========================================================================
+  function _handleLocError(error) {
+    if (error.code === '23505') {
+      showToast('error', 'รหัส (Code) ซ้ำ — กรุณาเปลี่ยน');
+    } else if (error.code === '23514') {
+      showToast('error', 'ข้อมูลไม่ผ่านกฎ constraint (ตรวจสอบ parent และประเภท)');
+    } else if (error.message && error.message.includes('ไม่สามารถอยู่ภายใต้')) {
+      showToast('error', error.message);
+    } else {
+      showToast('error', error.message || 'บันทึกไม่สำเร็จ');
+    }
+  }
+
+  // =========================================================================
+  // D10 — auto-migrate stock when a sublocation is added to a parent that
+  // has direct items (stock_item_locations.location_id = parent, qty > 0).
+  // =========================================================================
+
+  /**
+   * Show the D10 warning modal listing direct-stock items.
+   * Returns a Promise that resolves to true (confirm) or false (cancel).
+   */
+  function _showAutoMigrateConfirm(items, newSubName) {
+    return new Promise((resolve) => {
+      const listHtml = items.map((it) => {
+        const name = it.stock_items ? escapeHtml(it.stock_items.name) : it.item_id;
+        const sku  = it.stock_items ? ` <span class="text-muted">(${escapeHtml(it.stock_items.sku || '')})</span>` : '';
+        return `<li class="mb-1"><i class="bi bi-box-seam me-1 text-muted"></i>${name}${sku} &times; <strong>${it.qty}</strong></li>`;
+      }).join('');
+
+      const modalHtml = `
+        <div class="modal fade" id="auto-migrate-modal" tabindex="-1">
+          <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+              <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fc-display">
+                  <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>
+                  ตำแหน่งนี้มีของอยู่ตรงๆ (${items.length} รายการ)
+                </h5>
+                <button type="button" class="btn-close" id="btn-amm-close"></button>
+              </div>
+              <div class="modal-body">
+                <ul class="list-unstyled mb-3 ps-1" style="max-height:200px;overflow-y:auto;">
+                  ${listHtml}
+                </ul>
+                <div class="alert alert-warning py-2 mb-0" style="font-size:13px;">
+                  ของทั้งหมดจะถูกย้ายไปยัง <strong>"${escapeHtml(newSubName)}"</strong> โดยอัตโนมัติ<br>
+                  ท่านสามารถจัดเรียงในระดับนี้เองทีหลังได้ (ใช้ปุ่ม "ย้าย" ในรายการของ)
+                </div>
+              </div>
+              <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-secondary" id="btn-amm-cancel">ยกเลิก</button>
+                <button type="button" class="btn btn-stock-primary" id="btn-amm-confirm">
+                  <i class="bi bi-arrow-right-circle me-1"></i>สร้างและย้ายของ
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>`;
+
+      document.body.insertAdjacentHTML('beforeend', modalHtml);
+      const el = document.getElementById('auto-migrate-modal');
+      const bsModal = new bootstrap.Modal(el, { backdrop: 'static', keyboard: false });
+      el.addEventListener('hidden.bs.modal', () => el.remove());
+
+      document.getElementById('btn-amm-cancel').onclick  = () => { bsModal.hide(); resolve(false); };
+      document.getElementById('btn-amm-close').onclick   = () => { bsModal.hide(); resolve(false); };
+      document.getElementById('btn-amm-confirm').onclick = () => { bsModal.hide(); resolve(true); };
+      bsModal.show();
+    });
+  }
+
+  /**
+   * Core D10 flow: check parent direct stock, optionally show confirm modal,
+   * INSERT the new sublocation, then transfer each item via RPC.
+   *
+   * @param {object} sb          Supabase client
+   * @param {object} payload     Location INSERT payload
+   * @param {string} parentId    Parent location id
+   * @param {string} newSubName  Display name of the new sublocation (for modal + note)
+   * @param {object} modal       Bootstrap modal instance (the create-location modal)
+   */
+  async function _createWithAutoMigrate(sb, payload, parentId, newSubName, modal) {
+    // 1. Query direct stock at parent
+    let { data: directStock, error: sErr } = await sb
+      .from('stock_item_locations')
+      .select('item_id, qty, stock_items(name, sku, tracks_lots)')
+      .eq('location_id', parentId)
+      .gt('qty', 0);
+
+    if (sErr) {
+      console.warn('[D10] Could not query direct stock:', sErr);
+      directStock = [];  // treat as empty — proceed with plain create
+    }
+
+    if (!directStock || directStock.length === 0) {
+      // No direct stock — plain INSERT, no migration needed
+      const { error } = await sb.from('locations').insert(payload);
+      if (error) { _handleLocError(error); return; }
+      modal.hide();
+      await load();
+      _expanded.add(parentId);
+      renderTree();
+      showToast('success', 'เพิ่มสถานที่แล้ว');
+      return;
+    }
+
+    // 2. Show confirmation modal
+    const confirmed = await _showAutoMigrateConfirm(directStock, newSubName);
+    if (!confirmed) return;  // user cancelled — no INSERT, no transfer
+
+    // 3. INSERT the new sublocation
+    const { data: newRows, error: insErr } = await sb
+      .from('locations')
+      .insert(payload)
+      .select('id')
+      .single();
+
+    if (insErr) { _handleLocError(insErr); return; }
+    const newId = newRows.id;
+
+    // 4. Close the create-location modal early so user sees progress
+    modal.hide();
+    await load();
+    _expanded.add(parentId);
+    renderTree();
+
+    // 5. Re-query direct stock (race-condition safety — another admin may have moved)
+    const { data: freshStock } = await sb
+      .from('stock_item_locations')
+      .select('item_id, qty, stock_items(name, tracks_lots)')
+      .eq('location_id', parentId)
+      .gt('qty', 0);
+
+    const toMove = freshStock || [];
+    if (toMove.length === 0) {
+      showToast('success', 'เพิ่มสถานที่แล้ว (ของถูกย้ายไปแล้วโดย session อื่น)');
+      return;
+    }
+
+    // 6. Separate lot-tracked vs non-lot items
+    const lotItems    = toMove.filter((it) => it.stock_items?.tracks_lots);
+    const nonLotItems = toMove.filter((it) => !it.stock_items?.tracks_lots);
+
+    if (lotItems.length > 0) {
+      console.warn(
+        `[D10] ${lotItems.length} lot-tracked item(s) skipped — please move manually:`,
+        lotItems.map((it) => it.stock_items?.name || it.item_id)
+      );
+    }
+
+    // 7. Show progress spinner if > 5 items
+    let progressEl = null;
+    if (nonLotItems.length > 5) {
+      progressEl = document.createElement('div');
+      progressEl.className = 'toast align-items-center text-bg-secondary border-0 position-fixed bottom-0 end-0 m-3 show';
+      progressEl.style.zIndex = '9999';
+      progressEl.innerHTML = `
+        <div class="d-flex">
+          <div class="toast-body">
+            <span class="spinner-border spinner-border-sm me-2"></span>
+            กำลังย้ายของ… (0/${nonLotItems.length})
+          </div>
+        </div>`;
+      document.body.appendChild(progressEl);
+    }
+
+    // 8. Transfer each non-lot item via RPC
+    let done = 0;
+    let failed = 0;
+    for (const item of nonLotItems) {
+      const { error: rpcErr } = await sb.rpc('transfer_stock', {
+        p_item_id:        item.item_id,
+        p_lot_id:         null,
+        p_source_loc_id:  parentId,
+        p_dest_loc_id:    newId,
+        p_qty:            item.qty,
+        p_source_scanned: false,
+        p_dest_scanned:   false,
+        p_note:           `auto-migrate when sublocation "${newSubName}" added`,
+        p_client_ref_id:  crypto.randomUUID(),
+      });
+      if (rpcErr) {
+        console.error('[D10] transfer_stock failed for item', item.item_id, rpcErr);
+        failed++;
+      } else {
+        done++;
+      }
+      if (progressEl) {
+        progressEl.querySelector('.toast-body').innerHTML = `
+          <span class="spinner-border spinner-border-sm me-2"></span>
+          กำลังย้ายของ… (${done}/${nonLotItems.length})`;
+      }
+    }
+
+    if (progressEl) progressEl.remove();
+
+    // 9. Summary toast
+    let msg = `สร้างและย้ายของ ${done} รายการสำเร็จ`;
+    if (failed > 0)      msg += ` (${failed} รายการล้มเหลว — ตรวจสอบ console)`;
+    if (lotItems.length) msg += ` · ${lotItems.length} รายการ lot-tracked ข้ามไว้ — โปรดย้ายด้วยตนเอง`;
+    showToast(failed > 0 ? 'warn' : 'success', msg);
+
+    // Reload tree to reflect final qty changes
+    await load();
+    renderTree();
+  }
+
+  // =========================================================================
   // Modal — create / edit
   // =========================================================================
 
@@ -565,31 +775,32 @@
       };
 
       const sb = getSupabaseClient();
-      const q  = isEdit
-        ? sb.from('locations').update(payload).eq('id', id)
-        : sb.from('locations').insert(payload);
-      const { error } = await q;
 
-      if (error) {
-        if (error.code === '23505') {
-          showToast('error', 'รหัส (Code) ซ้ำ — กรุณาเปลี่ยน');
-        } else if (error.code === '23514') {
-          showToast('error', 'ข้อมูลไม่ผ่านกฎ constraint (ตรวจสอบ parent และประเภท)');
-        } else if (error.message && error.message.includes('ไม่สามารถอยู่ภายใต้')) {
-          // DB trigger message (Thai)
-          showToast('error', error.message);
+      if (isEdit) {
+        // ── EDIT path ─────────────────────────────────────────────
+        const { error } = await sb.from('locations').update(payload).eq('id', id);
+        if (error) { _handleLocError(error); return; }
+        modal.hide();
+        await load();
+        renderTree();
+        showToast('success', 'อัปเดตสถานที่แล้ว');
+      } else {
+        // ── CREATE path ───────────────────────────────────────────
+        // D10: for sublocation types (shelf/bin/zone) check if parent
+        // has direct stock before committing the INSERT.
+        const subTypes = ['shelf', 'bin', 'zone'];
+        if (subTypes.includes(chosenType) && chosenParent) {
+          await _createWithAutoMigrate(sb, payload, chosenParent, chosenName, modal);
         } else {
-          showToast('error', error.message || 'บันทึกไม่สำเร็จ');
+          const { error } = await sb.from('locations').insert(payload);
+          if (error) { _handleLocError(error); return; }
+          modal.hide();
+          await load();
+          if (chosenParent) _expanded.add(chosenParent);
+          renderTree();
+          showToast('success', 'เพิ่มสถานที่แล้ว');
         }
-        return;
       }
-
-      modal.hide();
-      await load();
-      // Auto-expand new node's parent so user sees it
-      if (!isEdit && chosenParent) _expanded.add(chosenParent);
-      renderTree();
-      showToast('success', isEdit ? 'อัปเดตสถานที่แล้ว' : 'เพิ่มสถานที่แล้ว');
     };
 
     modal.show();

@@ -462,7 +462,7 @@
           </div>
         </div>
       </div>`;
-    const modalEl = wrap.firstChild;
+    const modalEl = wrap.firstElementChild;
     document.body.appendChild(modalEl);
     const bsModal = new bootstrap.Modal(modalEl);
 
