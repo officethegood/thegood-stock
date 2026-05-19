@@ -135,15 +135,17 @@
           </div>
         </div>
 
-        <!-- Panel 4 — Borrow/Return status (Phase 3 placeholder) -->
+        <!-- Panel 4 — Borrow/Return status (Phase 3 live) -->
         <div class="col-12 col-md-6">
-          <div class="card h-100" style="opacity:0.7;" aria-disabled="true">
-            <div class="card-body text-center py-4">
-              <div class="text-muted mb-2" style="font-size:2.5rem;">
-                <i class="bi bi-arrow-repeat"></i>
+          <div class="card h-100" id="dash-panel-loans" aria-busy="true">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <span><i class="bi bi-arrow-left-right"></i> สถานะอุปกรณ์ยืม-คืน</span>
+              <small class="text-muted" id="dash-loans-updated">—</small>
+            </div>
+            <div id="dash-loans-body" class="card-body p-0">
+              <div class="text-center text-muted py-4">
+                <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด…
               </div>
-              <h6 class="card-title text-muted mb-1">สถานะอุปกรณ์ยืม-คืน</h6>
-              <p class="small text-muted mb-0">🔒 เปิดใช้งานใน Phase 3 (ยืม-คืน + ภาพถ่าย)</p>
             </div>
           </div>
         </div>
@@ -496,6 +498,115 @@
     }
   }
 
+  // =========================================================================
+  // Panel 4 — Borrow/Return status (Phase 3 live)
+  //
+  // Data: AppLoans.getBorrowCounts() → { active, overdue, returnedToday }
+  // Three tappable rows: ยืมอยู่ / เกินกำหนด / คืนวันนี้
+  // Tap row → switch to loans tab with pre-applied filter via AppLoansTab.setFilter()
+  // =========================================================================
+  async function _loadPanelLoans() {
+    const body    = document.getElementById('dash-loans-body');
+    const updated = document.getElementById('dash-loans-updated');
+    const card    = document.getElementById('dash-panel-loans');
+    if (!body) return;
+
+    // AppLoans is loaded by shared/loans.js — may not be available if tab never opened.
+    if (!window.AppLoans || typeof window.AppLoans.getBorrowCounts !== 'function') {
+      body.innerHTML = `
+        <div class="text-center text-muted py-4 small">
+          ไม่พบ AppLoans — โหลดหน้าใหม่
+        </div>`;
+      card?.setAttribute('aria-busy', 'false');
+      return;
+    }
+
+    try {
+      const counts = await window.AppLoans.getBorrowCounts();
+
+      if (updated) {
+        const now = new Date();
+        updated.textContent = `อัปเดต: ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+      }
+
+      const rows = [
+        {
+          label:    'ยืมอยู่',
+          count:    counts.active,
+          badgeCls: 'bg-stock-accent-subtle text-stock-accent-dark',
+          filter:   'active',
+          icon:     'bi-arrow-right-circle',
+        },
+        {
+          label:    'เกินกำหนด',
+          count:    counts.overdue,
+          badgeCls: counts.overdue > 0 ? 'bg-danger' : 'bg-secondary',
+          filter:   'overdue',
+          icon:     'bi-exclamation-circle',
+        },
+        {
+          label:    'คืนวันนี้',
+          count:    counts.returnedToday,
+          badgeCls: 'bg-success',
+          filter:   'returned',
+          icon:     'bi-check-circle',
+        },
+      ];
+
+      const rowsHtml = rows.map((r) => `
+        <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3"
+           href="#" data-loans-filter="${_esc(r.filter)}"
+           aria-label="${_esc(r.label)}: ${r.count} รายการ">
+          <span class="d-flex align-items-center gap-2">
+            <i class="bi ${_esc(r.icon)} text-muted"></i>
+            ${_esc(r.label)}
+          </span>
+          <span class="badge ${r.badgeCls}">${r.count} รายการ</span>
+        </a>`).join('');
+
+      body.innerHTML = `<div class="list-group list-group-flush">${rowsHtml}</div>`;
+
+      body.querySelectorAll('[data-loans-filter]').forEach((link) => {
+        link.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          _gotoLoansTab(link.dataset.loansFilter);
+        });
+      });
+
+      card?.setAttribute('aria-busy', 'false');
+    } catch (e) {
+      const body2 = document.getElementById('dash-loans-body');
+      if (body2) body2.innerHTML = `<div class="text-danger small p-3">โหลดข้อมูลยืม-คืนไม่สำเร็จ</div>`;
+      console.error('[dashboard] _loadPanelLoans error', e);
+    }
+  }
+
+  /**
+   * Switch to loans tab and pre-apply a status filter.
+   * Polls for AppLoansTab.setFilter (lazy-init tab).
+   *
+   * @param {string} filter  'active'|'overdue'|'returned'
+   */
+  function _gotoLoansTab(filter) {
+    try { location.hash = `#loans?filter=${filter}`; } catch { /* ignore */ }
+
+    const loansBtn = document.querySelector('[data-tab="loans"]');
+    if (loansBtn) loansBtn.click();
+
+    let tries = 0;
+    const tick = () => {
+      if (window.AppLoansTab && typeof window.AppLoansTab.setFilter === 'function') {
+        window.AppLoansTab.setFilter(filter);
+        return;
+      }
+      if (typeof window.initLoansTab === 'function' && tries === 0) {
+        Promise.resolve(window.initLoansTab()).catch(() => {});
+      }
+      if (++tries < 15) setTimeout(tick, 80);
+    };
+    tick();
+  }
+
   /**
    * Switch to Inventory tab → ล็อตยา sub-view with the given expiry filter.
    * Phase 2 extension (mirrors _gotoInventoryLowStock pattern).
@@ -791,6 +902,7 @@
       _loadPanelStock();
       _loadPanelLow();
       _loadPanelExpiry();   // Phase 2: also refresh expiry timeline on stock changes
+      _loadPanelLoans();    // Phase 3: also refresh borrow/return counts
     }, 300);
   }
 
@@ -809,11 +921,12 @@
       _categories = r.error ? [] : (r.data || []);
     } catch { _categories = []; }
 
-    // Parallel first load — four independent panels + legacy status
+    // Parallel first load — five independent panels + legacy status
     await Promise.all([
       _loadPanelStock(),
       _loadPanelLow(),
       _loadPanelExpiry(),   // Phase 2 — expiry timeline
+      _loadPanelLoans(),    // Phase 3 — borrow/return counts
       _loadLegacyStatus(),
     ]);
 
@@ -844,7 +957,7 @@
   window.AppDashboardTab = {
     init,
     teardown,
-    reloadPanels: () => { _loadPanelStock(); _loadPanelLow(); _loadPanelExpiry(); },
+    reloadPanels: () => { _loadPanelStock(); _loadPanelLow(); _loadPanelExpiry(); _loadPanelLoans(); },
   };
 
   // admin-shell.js expects window.initDashboardTab — shim (matches Phase 0 contract)

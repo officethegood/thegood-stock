@@ -993,3 +993,828 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 })();
+
+// =============================================================================
+// Phase 3 — Mode toggle: เบิก-จ่าย / ยืม-คืน
+//
+// Spec: docs/superpowers/designs/2026-05-19-phase3-borrow-return-ui-design.md §5, §6
+// Decisions-locked:
+//   Q-Phase3-A — mode toggle at top of staff-scan.html
+//   Q-Phase3-C — photo is advisory; skip always shown
+//   Q-Phase3-D — Staff auto-fills borrower_username; Admin shows picker
+//   Q-Phase3-G — due_at default 3 days; presets 1/3/7/custom
+//
+// ARCHITECTURE NOTE:
+//   The Phase 1/2 scan state machine (above) handles เบิก-จ่าย mode unchanged.
+//   Phase 3 PREPENDS a mode toggle above the existing scan section.
+//   When ยืม-คืน mode is active, this module renders a separate borrow/return
+//   multi-step flow below the mode toggle and hides the Phase 1/2 scan section.
+//
+// Movement types in ยืม-คืน mode: ONLY 'borrow' and 'return' (not issue/adjustment_loss).
+// Those remain in เบิก-จ่าย mode exclusively.
+//
+// Requires (loaded before sw caches this file):
+//   shared/loans.js       — window.AppLoans
+//   shared/photo-capture.js — window.PhotoCaptureModal
+//   shared/inventory.js   — window.AppInventory
+// =============================================================================
+
+(function () {
+  'use strict';
+
+  // ==========================================================================
+  // Constants + state
+  // ==========================================================================
+
+  // Mode: 'issue' (เบิก-จ่าย, Phase 1/2) or 'borrow' (ยืม-คืน, Phase 3)
+  let _mode     = 'issue';   // current top-level mode
+  let _subMode  = 'borrow';  // within ยืม-คืน: 'borrow' or 'return'
+
+  // Borrow flow state
+  const _borrow = {
+    step:           1,      // 1=scan item, 2=scan loc, 3=due/qty, 4=photo, 5=confirm
+    item:           null,
+    location:       null,
+    qty:            1,
+    dueAt:          null,   // Date object
+    duePreset:      3,      // 1|3|7|'custom'
+    note:           '',
+    photoUrl:       null,
+    clientRefId:    null,
+  };
+
+  // Return flow state
+  const _return = {
+    step:           1,      // 1=scan item, 2=photo, 3=confirm
+    item:           null,
+    loan:           null,   // open loan row
+    photoUrl:       null,
+    clientRefId:    null,
+  };
+
+  function _esc(s) {
+    if (typeof window.escapeHtml === 'function') return window.escapeHtml(s);
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  function _toast(type, msg) { (window.showToast || (()=>{}))(type, msg); }
+
+  // ==========================================================================
+  // DOM injection — insert mode toggle above the existing scan section
+  // ==========================================================================
+
+  function _injectModeToggle() {
+    const scanPage = document.getElementById('scan-page');
+    if (!scanPage || document.getElementById('mode-toggle-row')) return;
+
+    const toggleDiv = document.createElement('div');
+    toggleDiv.id = 'mode-toggle-row';
+    toggleDiv.className = 'mb-3 mt-2';
+    toggleDiv.innerHTML = `
+      <div class="btn-group w-100" role="group" aria-label="เลือกโหมดการทำงาน">
+        <button type="button" id="mode-btn-issue"
+                class="btn btn-stock-primary active"
+                aria-label="โหมดเบิก-จ่าย"
+                style="min-height:48px; font-weight:600;">
+          เบิก-จ่าย
+        </button>
+        <button type="button" id="mode-btn-borrow"
+                class="btn btn-outline-secondary"
+                aria-label="โหมดยืม-คืน"
+                style="min-height:48px; font-weight:600;">
+          ยืม-คืน
+        </button>
+      </div>
+
+      <!-- ยืม-คืน panel (hidden when mode=issue) -->
+      <div id="borrow-return-panel" class="d-none mt-3">
+        <!-- Sub-mode toggle: ยืมอุปกรณ์ / คืนอุปกรณ์ -->
+        <div class="btn-group w-100 mb-3" role="group" aria-label="เลือกยืมหรือคืน">
+          <button type="button" id="submode-btn-borrow"
+                  class="btn btn-stock-primary active"
+                  aria-label="ยืมอุปกรณ์"
+                  style="min-height:48px;">
+            ↗ ยืมอุปกรณ์
+          </button>
+          <button type="button" id="submode-btn-return"
+                  class="btn btn-outline-secondary"
+                  aria-label="คืนอุปกรณ์"
+                  style="min-height:48px;">
+            ↩ คืนอุปกรณ์
+          </button>
+        </div>
+
+        <!-- Step-flow content area (re-rendered per step) -->
+        <div id="borrow-flow-content"></div>
+      </div>
+    `;
+
+    // Insert at start of scan-page main
+    scanPage.insertBefore(toggleDiv, scanPage.firstChild);
+
+    // Wire mode toggle
+    document.getElementById('mode-btn-issue')?.addEventListener('click', () => _setMode('issue'));
+    document.getElementById('mode-btn-borrow')?.addEventListener('click', () => _setMode('borrow'));
+    document.getElementById('submode-btn-borrow')?.addEventListener('click', () => _setSubMode('borrow'));
+    document.getElementById('submode-btn-return')?.addEventListener('click', () => _setSubMode('return'));
+  }
+
+  function _setMode(mode) {
+    _mode = mode;
+    const issueBtn  = document.getElementById('mode-btn-issue');
+    const borrowBtn = document.getElementById('mode-btn-borrow');
+    const panel     = document.getElementById('borrow-return-panel');
+    const scanSections = document.querySelectorAll('#scan-page > section, #scan-page > hr');
+
+    if (mode === 'issue') {
+      issueBtn?.classList.add('active', 'btn-stock-primary');
+      issueBtn?.classList.remove('btn-outline-secondary');
+      borrowBtn?.classList.remove('active', 'btn-stock-primary');
+      borrowBtn?.classList.add('btn-outline-secondary');
+      panel?.classList.add('d-none');
+      scanSections.forEach((s) => s.classList.remove('d-none'));
+    } else {
+      borrowBtn?.classList.add('active', 'btn-stock-primary');
+      borrowBtn?.classList.remove('btn-outline-secondary');
+      issueBtn?.classList.remove('active', 'btn-stock-primary');
+      issueBtn?.classList.add('btn-outline-secondary');
+      panel?.classList.remove('d-none');
+      scanSections.forEach((s) => s.classList.add('d-none'));
+      _renderBorrowReturnFlow();
+    }
+  }
+
+  function _setSubMode(sub) {
+    _subMode = sub;
+    const bBtn = document.getElementById('submode-btn-borrow');
+    const rBtn = document.getElementById('submode-btn-return');
+    if (sub === 'borrow') {
+      bBtn?.classList.add('active', 'btn-stock-primary');
+      bBtn?.classList.remove('btn-outline-secondary');
+      rBtn?.classList.remove('active', 'btn-stock-primary');
+      rBtn?.classList.add('btn-outline-secondary');
+      _resetBorrow();
+    } else {
+      rBtn?.classList.add('active', 'btn-stock-primary');
+      rBtn?.classList.remove('btn-outline-secondary');
+      bBtn?.classList.remove('active', 'btn-stock-primary');
+      bBtn?.classList.add('btn-outline-secondary');
+      _resetReturn();
+    }
+  }
+
+  function _renderBorrowReturnFlow() {
+    if (_subMode === 'borrow') _renderBorrowStep();
+    else _renderReturnStep();
+  }
+
+  // ==========================================================================
+  // BORROW FLOW — 5 steps
+  // ==========================================================================
+
+  function _resetBorrow() {
+    _borrow.step = 1; _borrow.item = null; _borrow.location = null;
+    _borrow.qty = 1; _borrow.dueAt = window.AppLoans ? window.AppLoans.defaultDueAt() : _defaultDue();
+    _borrow.duePreset = 3; _borrow.note = ''; _borrow.photoUrl = null;
+    _borrow.clientRefId = null;
+    _renderBorrowStep();
+  }
+
+  function _defaultDue() {
+    const d = new Date(); d.setDate(d.getDate() + 3); d.setHours(23,59,0,0); return d;
+  }
+
+  function _renderBorrowStep() {
+    const root = document.getElementById('borrow-flow-content');
+    if (!root) return;
+
+    // Step indicator
+    const steps = ['สแกนสินค้า','สแกนตำแหน่ง','กำหนดวันคืน','ถ่ายรูป','ยืนยัน'];
+    const stepIndicator = steps.map((s, i) => {
+      const n = i + 1;
+      const active = n === _borrow.step ? 'fw-bold text-stock-accent' : 'text-muted';
+      const done   = n < _borrow.step;
+      return `<span class="small ${active}" style="min-width:40px; text-align:center;">
+        <span class="${done ? 'text-success' : ''}">${done ? '✓' : n}</span>
+        <span class="d-none d-sm-inline"> ${_esc(s)}</span>
+      </span>`;
+    }).join('<span class="text-muted mx-1">›</span>');
+    root.innerHTML = `<div class="d-flex align-items-center flex-wrap gap-1 mb-3">${stepIndicator}</div>
+      <div id="borrow-step-body"></div>`;
+
+    const body = document.getElementById('borrow-step-body');
+    if (!body) return;
+
+    if (_borrow.step === 1) _renderBorrowStep1(body);
+    else if (_borrow.step === 2) _renderBorrowStep2(body);
+    else if (_borrow.step === 3) _renderBorrowStep3(body);
+    else if (_borrow.step === 4) _renderBorrowStep4(body);
+    else if (_borrow.step === 5) _renderBorrowStep5(body);
+  }
+
+  function _renderBorrowStep1(body) {
+    body.innerHTML = `
+      <div class="card p-3">
+        <h6 class="mb-2">ขั้นที่ 1: สแกนหรือพิมพ์ SKU สินค้า</h6>
+        <input type="text" id="borrow-sku-input" class="form-control mb-2"
+               placeholder="SKU / Barcode" autocomplete="off"
+               style="min-height:48px; font-size:1.05rem;">
+        <button type="button" id="borrow-step1-btn" class="btn btn-stock-primary w-100"
+                style="min-height:48px;">ค้นหาสินค้า →</button>
+        <div id="borrow-item-result" class="mt-2"></div>
+      </div>`;
+
+    document.getElementById('borrow-step1-btn')?.addEventListener('click', async () => {
+      const sku = (document.getElementById('borrow-sku-input')?.value || '').trim();
+      if (!sku) { _toast('warning', 'กรุณาระบุ SKU หรือ Barcode'); return; }
+      const res = await window.AppInventory.searchByBarcode(sku);
+      if (res.error || !res.data) {
+        document.getElementById('borrow-item-result').innerHTML =
+          `<div class="alert alert-warning small">ไม่พบสินค้า — ลองใหม่</div>`;
+        return;
+      }
+      const item = res.data;
+      if ((item.total_qty || 0) <= 0) {
+        document.getElementById('borrow-item-result').innerHTML =
+          `<div class="alert alert-warning small">ของไม่เหลือในคลัง — ไม่สามารถยืมได้</div>`;
+        return;
+      }
+      _borrow.item = item;
+      _borrow.step = 2;
+      _renderBorrowStep();
+    });
+
+    document.getElementById('borrow-sku-input')?.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') document.getElementById('borrow-step1-btn')?.click();
+    });
+  }
+
+  function _renderBorrowStep2(body) {
+    const item = _borrow.item;
+    body.innerHTML = `
+      <div class="card p-3">
+        <div class="alert alert-success small py-2 mb-2">
+          สินค้า: <strong>${_esc(item?.name || '')} (${_esc(item?.sku || '')})</strong>
+          · คงเหลือรวม: ${_esc(String(item?.total_qty || 0))} ชิ้น
+        </div>
+        <h6 class="mb-2">ขั้นที่ 2: สแกนหรือพิมพ์ตำแหน่งจัดเก็บ</h6>
+        <input type="text" id="borrow-loc-input" class="form-control mb-2"
+               placeholder="รหัสตำแหน่ง (เช่น ROOM-A)" autocomplete="off"
+               style="min-height:48px; font-size:1.05rem;">
+        <button type="button" id="borrow-step2-btn" class="btn btn-stock-primary w-100"
+                style="min-height:48px;">ค้นหาตำแหน่ง →</button>
+        <div id="borrow-loc-result" class="mt-2"></div>
+        <button type="button" class="btn btn-link btn-sm mt-2" id="borrow-back-1">← แก้ไขสินค้า</button>
+      </div>`;
+
+    document.getElementById('borrow-step2-btn')?.addEventListener('click', async () => {
+      const code = (document.getElementById('borrow-loc-input')?.value || '').trim();
+      if (!code) { _toast('warning', 'กรุณาระบุรหัสตำแหน่ง'); return; }
+      const res = await window.AppInventory.findLocationByCode(code);
+      if (res.error || !res.data) {
+        document.getElementById('borrow-loc-result').innerHTML =
+          `<div class="alert alert-warning small">ไม่พบตำแหน่ง — ลองใหม่</div>`;
+        return;
+      }
+      _borrow.location = res.data;
+      _borrow.step = 3;
+      if (!_borrow.dueAt) _borrow.dueAt = _defaultDue();
+      _renderBorrowStep();
+    });
+
+    document.getElementById('borrow-loc-input')?.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') document.getElementById('borrow-step2-btn')?.click();
+    });
+    document.getElementById('borrow-back-1')?.addEventListener('click', () => {
+      _borrow.step = 1; _renderBorrowStep();
+    });
+  }
+
+  function _renderBorrowStep3(body) {
+    const presets = [1, 3, 7];
+    const presetHtml = presets.map((d) => {
+      const active = _borrow.duePreset === d
+        ? 'btn-stock-primary fw-600'
+        : 'btn-outline-secondary';
+      return `<button type="button" class="btn ${active} flex-fill borrow-preset-btn"
+                      data-days="${d}" style="min-height:48px;">${d} วัน</button>`;
+    }).join('');
+
+    const dueStr = _borrow.dueAt ? _borrow.dueAt.toISOString().split('T')[0] : '';
+    body.innerHTML = `
+      <div class="card p-3">
+        <h6 class="mb-3">ขั้นที่ 3: กำหนดวันคืน + จำนวน</h6>
+
+        <label class="form-label small fw-semibold">จำนวน *</label>
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <button type="button" class="btn btn-outline-secondary" id="borrow-qty-minus"
+                  style="min-width:44px; min-height:44px; font-size:1.2rem;">−</button>
+          <input type="number" id="borrow-qty" class="form-control text-center"
+                 value="${_borrow.qty}" min="1" style="min-height:44px; max-width:80px;"
+                 inputmode="numeric">
+          <button type="button" class="btn btn-outline-secondary" id="borrow-qty-plus"
+                  style="min-width:44px; min-height:44px; font-size:1.2rem;">+</button>
+        </div>
+
+        <label class="form-label small fw-semibold">กำหนดคืน * <small class="text-muted">(Q-Phase3-G: default 3 วัน)</small></label>
+        <div class="d-flex gap-2 mb-2 flex-wrap">
+          ${presetHtml}
+          <button type="button" class="btn ${_borrow.duePreset === 'custom' ? 'btn-stock-primary fw-600' : 'btn-outline-secondary'} flex-fill borrow-preset-btn"
+                  data-days="custom" style="min-height:48px;">กำหนดเอง</button>
+        </div>
+
+        <div id="borrow-custom-date" class="${_borrow.duePreset === 'custom' ? '' : 'd-none'} mb-2">
+          <label class="form-label small">วันที่คืน</label>
+          <input type="date" id="borrow-due-date" class="form-control" value="${dueStr}"
+                 min="${new Date().toISOString().split('T')[0]}"
+                 style="min-height:44px;">
+        </div>
+
+        <div id="borrow-due-preview" class="text-muted small mb-3"></div>
+
+        <label class="form-label small">หมายเหตุ (ไม่บังคับ)</label>
+        <textarea id="borrow-note" class="form-control mb-3" rows="2"
+                  placeholder="หมายเหตุ">${_esc(_borrow.note)}</textarea>
+
+        <button type="button" id="borrow-step3-next" class="btn btn-stock-primary w-100"
+                style="min-height:48px;">ถัดไป: ถ่ายรูป →</button>
+        <button type="button" class="btn btn-link btn-sm mt-2" id="borrow-back-2">← แก้ไขตำแหน่ง</button>
+      </div>`;
+
+    _updateDuePreview();
+
+    body.querySelectorAll('.borrow-preset-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const days = btn.dataset.days;
+        _borrow.duePreset = days === 'custom' ? 'custom' : parseInt(days);
+        if (_borrow.duePreset !== 'custom') {
+          _borrow.dueAt = window.AppLoans ? window.AppLoans.dueDateFromNow(_borrow.duePreset) : _defaultDue();
+        }
+        document.getElementById('borrow-custom-date')?.classList.toggle('d-none', _borrow.duePreset !== 'custom');
+        _renderBorrowStep3Buttons();
+        _updateDuePreview();
+      });
+    });
+
+    document.getElementById('borrow-due-date')?.addEventListener('change', (ev) => {
+      const val = ev.target.value;
+      if (val) { _borrow.dueAt = new Date(val + 'T23:59:00'); _updateDuePreview(); }
+    });
+
+    document.getElementById('borrow-qty-minus')?.addEventListener('click', () => {
+      _borrow.qty = Math.max(1, _borrow.qty - 1);
+      const inp = document.getElementById('borrow-qty');
+      if (inp) inp.value = _borrow.qty;
+    });
+    document.getElementById('borrow-qty-plus')?.addEventListener('click', () => {
+      _borrow.qty = Math.min(999, _borrow.qty + 1);
+      const inp = document.getElementById('borrow-qty');
+      if (inp) inp.value = _borrow.qty;
+    });
+    document.getElementById('borrow-qty')?.addEventListener('input', (ev) => {
+      _borrow.qty = Math.max(1, parseInt(ev.target.value || '1', 10) || 1);
+    });
+
+    document.getElementById('borrow-note')?.addEventListener('input', (ev) => {
+      _borrow.note = ev.target.value;
+    });
+
+    document.getElementById('borrow-step3-next')?.addEventListener('click', () => {
+      _borrow.qty = Math.max(1, parseInt(document.getElementById('borrow-qty')?.value || '1', 10) || 1);
+      _borrow.note = document.getElementById('borrow-note')?.value || '';
+      if (!_borrow.dueAt || _borrow.dueAt <= new Date()) {
+        _toast('warning', 'วันคืนต้องไม่ผ่านมาแล้ว'); return;
+      }
+      _borrow.step = 4; _renderBorrowStep();
+    });
+
+    document.getElementById('borrow-back-2')?.addEventListener('click', () => {
+      _borrow.step = 2; _renderBorrowStep();
+    });
+  }
+
+  function _renderBorrowStep3Buttons() {
+    // Re-highlight preset buttons without full re-render
+    document.querySelectorAll('.borrow-preset-btn').forEach((btn) => {
+      const days = btn.dataset.days;
+      const isActive = days === 'custom'
+        ? _borrow.duePreset === 'custom'
+        : parseInt(days) === _borrow.duePreset;
+      btn.classList.toggle('btn-stock-primary', isActive);
+      btn.classList.toggle('btn-outline-secondary', !isActive);
+    });
+  }
+
+  function _updateDuePreview() {
+    const preview = document.getElementById('borrow-due-preview');
+    if (!preview || !_borrow.dueAt) return;
+    const fmt = window.AppLoans ? window.AppLoans.formatThaiDate(_borrow.dueAt)
+              : _borrow.dueAt.toLocaleDateString('th-TH');
+    preview.textContent = `กำหนดคืน: ${fmt}`;
+  }
+
+  function _renderBorrowStep4(body) {
+    const photoLabel = _borrow.photoUrl
+      ? `<div class="mb-2"><img src="${_esc(_borrow.photoUrl)}" class="img-thumbnail"
+             style="max-width:100px; height:75px; object-fit:cover;" alt="รูปก่อนยืม"></div>`
+      : '';
+    body.innerHTML = `
+      <div class="card p-3">
+        <h6 class="mb-2">ขั้นที่ 4: ถ่ายรูปอุปกรณ์ก่อนยืม (ไม่บังคับ)</h6>
+        ${photoLabel}
+        <button type="button" id="borrow-step4-photo" class="btn btn-outline-secondary mb-2 w-100"
+                style="min-height:48px;">
+          <i class="bi bi-camera me-1" aria-hidden="true"></i>📷 ถ่าย / เลือกรูป
+        </button>
+        <div class="d-flex gap-2">
+          <button type="button" id="borrow-step4-next" class="btn btn-stock-primary flex-grow-1"
+                  style="min-height:48px;">ถัดไป: ยืนยัน →</button>
+          <button type="button" id="borrow-step4-skip" class="btn btn-link"
+                  aria-label="ข้ามการถ่ายรูป"
+                  style="min-height:48px;">ข้าม — ไม่มีรูป</button>
+        </div>
+        <button type="button" class="btn btn-link btn-sm mt-2" id="borrow-back-3">← แก้ไขวันคืน</button>
+      </div>`;
+
+    document.getElementById('borrow-step4-photo')?.addEventListener('click', () => {
+      if (!window.PhotoCaptureModal) { _toast('warning', 'โหลดโมดูลถ่ายรูปไม่สำเร็จ'); return; }
+      const refId = _borrow.clientRefId || (_borrow.clientRefId = _uuid());
+      window.PhotoCaptureModal.open({
+        folder:     'thegood-stock/borrow/' + refId + '/borrow',
+        label:      'ถ่ายรูปอุปกรณ์ก่อนยืม',
+        optional:   true,
+        entityId:   refId,
+        onUploaded: (url) => {
+          _borrow.photoUrl = url;
+          _borrow.step = 5; _renderBorrowStep();
+        },
+        onSkipped: () => { _borrow.step = 5; _renderBorrowStep(); },
+        onError:   () => _toast('warning', 'อัปโหลดรูปไม่สำเร็จ — ยังดำเนินการได้'),
+      });
+    });
+
+    document.getElementById('borrow-step4-next')?.addEventListener('click', () => {
+      _borrow.step = 5; _renderBorrowStep();
+    });
+    document.getElementById('borrow-step4-skip')?.addEventListener('click', () => {
+      _borrow.step = 5; _renderBorrowStep();
+    });
+    document.getElementById('borrow-back-3')?.addEventListener('click', () => {
+      _borrow.step = 3; _renderBorrowStep();
+    });
+  }
+
+  function _renderBorrowStep5(body) {
+    const item = _borrow.item;
+    const loc  = _borrow.location;
+    const due  = _borrow.dueAt
+      ? (window.AppLoans ? window.AppLoans.formatThaiDate(_borrow.dueAt) : _borrow.dueAt.toLocaleDateString('th-TH'))
+      : '—';
+    body.innerHTML = `
+      <div class="card p-3">
+        <h6 class="mb-3">ยืนยันการยืม</h6>
+        <dl class="mb-3">
+          <dt class="small text-muted">สินค้า</dt>
+          <dd>${_esc(item?.name || '—')} <code class="small">${_esc(item?.sku || '')}</code></dd>
+          <dt class="small text-muted">ตำแหน่ง</dt>
+          <dd>${_esc(loc?.code || loc?.name || '—')}</dd>
+          <dt class="small text-muted">จำนวน</dt>
+          <dd>${_borrow.qty} ชิ้น</dd>
+          <dt class="small text-muted">ครบกำหนด</dt>
+          <dd>${_esc(due)}</dd>
+          <dt class="small text-muted">รูปถ่าย</dt>
+          <dd>${_borrow.photoUrl
+            ? `<img src="${_esc(_borrow.photoUrl)}" class="img-thumbnail"
+                   style="max-width:80px; height:60px; object-fit:cover;" alt="รูปก่อนยืม">`
+            : '<span class="text-muted small">ไม่มีรูป</span>'}</dd>
+          ${_borrow.note ? `<dt class="small text-muted">หมายเหตุ</dt><dd>${_esc(_borrow.note)}</dd>` : ''}
+        </dl>
+        <button type="button" id="borrow-confirm-btn" class="btn btn-stock-primary w-100 mb-2"
+                style="min-height:52px; font-weight:600;">ยืนยันการยืม</button>
+        <button type="button" id="borrow-back-4" class="btn btn-outline-secondary w-100"
+                style="min-height:44px;">← แก้ไข</button>
+      </div>`;
+
+    document.getElementById('borrow-confirm-btn')?.addEventListener('click', _submitBorrow);
+    document.getElementById('borrow-back-4')?.addEventListener('click', () => {
+      _borrow.step = 4; _renderBorrowStep();
+    });
+  }
+
+  async function _submitBorrow() {
+    const btn = document.getElementById('borrow-confirm-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>กำลังบันทึก…'; }
+
+    if (!_borrow.clientRefId) _borrow.clientRefId = _uuid();
+
+    const r = await window.AppLoans.createBorrow({
+      itemId:     _borrow.item.id,
+      locationId: _borrow.location.id,
+      qty:        _borrow.qty,
+      dueAt:      _borrow.dueAt,
+      note:       _borrow.note || null,
+      clientRefId: _borrow.clientRefId,
+    });
+
+    if (r.error) {
+      const msg = window.AppLoans.mapTriggerErrorToToast(r.error);
+      _toast('error', 'บันทึกไม่สำเร็จ: ' + msg);
+      if (btn) { btn.disabled = false; btn.textContent = 'ยืนยันการยืม'; }
+      return;
+    }
+
+    // PATCH photo if captured
+    if (_borrow.photoUrl && r.data?.id) {
+      const loanRes = await window.AppLoans.fetchLoanByBorrowMovement(r.data.id);
+      if (loanRes.data?.id) {
+        await window.AppLoans.patchLoanPhoto(loanRes.data.id, 'borrow', _borrow.photoUrl);
+      }
+    }
+
+    const due = _borrow.dueAt
+      ? (window.AppLoans ? window.AppLoans.formatThaiDate(_borrow.dueAt) : _borrow.dueAt.toLocaleDateString('th-TH'))
+      : '';
+    const toastMsg = _borrow.photoUrl
+      ? `ยืมสำเร็จ — กำหนดคืน ${due}`
+      : `ยืมสำเร็จ — แต่ไม่สามารถอัปโหลดรูปถ่ายได้ — กำหนดคืน ${due}`;
+    _toast(_borrow.photoUrl ? 'success' : 'warning', toastMsg);
+
+    setTimeout(() => _resetBorrow(), 1500);
+  }
+
+  // ==========================================================================
+  // RETURN FLOW — 3 steps
+  // ==========================================================================
+
+  function _resetReturn() {
+    _return.step = 1; _return.item = null; _return.loan = null;
+    _return.photoUrl = null; _return.clientRefId = null;
+    _renderReturnStep();
+  }
+
+  function _renderReturnStep() {
+    const root = document.getElementById('borrow-flow-content');
+    if (!root) return;
+
+    const steps = ['สแกนสินค้า','ถ่ายรูป','ยืนยันคืน'];
+    const stepIndicator = steps.map((s, i) => {
+      const n = i + 1;
+      const active = n === _return.step ? 'fw-bold text-stock-accent' : 'text-muted';
+      const done   = n < _return.step;
+      return `<span class="small ${active}" style="min-width:40px; text-align:center;">
+        <span class="${done ? 'text-success' : ''}">${done ? '✓' : n}</span>
+        <span class="d-none d-sm-inline"> ${_esc(s)}</span>
+      </span>`;
+    }).join('<span class="text-muted mx-1">›</span>');
+
+    root.innerHTML = `<div class="d-flex align-items-center flex-wrap gap-1 mb-3">${stepIndicator}</div>
+      <div id="return-step-body"></div>`;
+
+    const body = document.getElementById('return-step-body');
+    if (!body) return;
+
+    if (_return.step === 1) _renderReturnStep1(body);
+    else if (_return.step === 2) _renderReturnStep2(body);
+    else if (_return.step === 3) _renderReturnStep3(body);
+  }
+
+  function _renderReturnStep1(body) {
+    body.innerHTML = `
+      <div class="card p-3">
+        <h6 class="mb-2">ขั้นที่ 1: สแกนหรือพิมพ์ SKU สินค้าที่ต้องการคืน</h6>
+        <input type="text" id="return-sku-input" class="form-control mb-2"
+               placeholder="SKU / Barcode" autocomplete="off"
+               style="min-height:48px; font-size:1.05rem;">
+        <button type="button" id="return-step1-btn" class="btn btn-stock-primary w-100"
+                style="min-height:48px;">ค้นหารายการยืม →</button>
+        <div id="return-loan-result" class="mt-2"></div>
+      </div>`;
+
+    document.getElementById('return-step1-btn')?.addEventListener('click', async () => {
+      const sku = (document.getElementById('return-sku-input')?.value || '').trim();
+      if (!sku) { _toast('warning', 'กรุณาระบุ SKU หรือ Barcode'); return; }
+
+      const itemRes = await window.AppInventory.searchByBarcode(sku);
+      if (itemRes.error || !itemRes.data) {
+        document.getElementById('return-loan-result').innerHTML =
+          `<div class="alert alert-warning small">ไม่พบสินค้า — ลองใหม่</div>`;
+        return;
+      }
+
+      _return.item = itemRes.data;
+
+      const loanRes = await window.AppLoans.findOpenLoansForItem(itemRes.data.id);
+      if (loanRes.error || !loanRes.data?.length) {
+        document.getElementById('return-loan-result').innerHTML = `
+          <div class="alert alert-warning small">
+            ไม่มีรายการยืมที่ยังค้างอยู่สำหรับสินค้านี้<br>
+            <small>ถ้ายืมโดยผู้ใช้อื่น โปรดแจ้ง Admin</small>
+          </div>`;
+        return;
+      }
+
+      const loans = loanRes.data;
+      _return.loan = loans[0];  // most recent
+
+      // If multiple loans, show selection (edge case per UX §6)
+      if (loans.length > 1) {
+        const options = loans.map((l) => {
+          const due = l.due_at ? (window.AppLoans ? window.AppLoans.formatThaiDate(l.due_at) : l.due_at) : '—';
+          const overdue = l.status === 'overdue' ? ' <span class="badge bg-danger">เลยกำหนด</span>' : '';
+          return `<div class="form-check border rounded p-2 mb-1">
+            <input class="form-check-input" type="radio" name="return-loan-radio"
+                   id="loan-radio-${_esc(l.id)}" value="${_esc(l.id)}">
+            <label class="form-check-label" for="loan-radio-${_esc(l.id)}">
+              ยืมเมื่อ ${window.AppLoans ? window.AppLoans.formatThaiDate(l.borrowed_at) : l.borrowed_at}
+              · จำนวน ${l.qty} ชิ้น · ครบ ${due}${overdue}
+            </label>
+          </div>`;
+        }).join('');
+        document.getElementById('return-loan-result').innerHTML = `
+          <p class="small text-muted">พบรายการยืมหลายรายการ — เลือกรายการที่ต้องการคืน:</p>
+          ${options}
+          <button type="button" id="return-loan-select" class="btn btn-stock-primary w-100 mt-2"
+                  style="min-height:44px;">เลือก →</button>`;
+
+        document.getElementById('return-loan-select')?.addEventListener('click', () => {
+          const checked = document.querySelector('input[name="return-loan-radio"]:checked');
+          if (!checked) { _toast('warning', 'กรุณาเลือกรายการยืม'); return; }
+          _return.loan = loans.find((l) => l.id === checked.value) || loans[0];
+          _return.step = 2; _renderReturnStep();
+        });
+        return;
+      }
+
+      _return.step = 2; _renderReturnStep();
+    });
+
+    document.getElementById('return-sku-input')?.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') document.getElementById('return-step1-btn')?.click();
+    });
+  }
+
+  function _renderReturnStep2(body) {
+    const loan = _return.loan;
+    const item = _return.item;
+    const due  = loan?.due_at
+      ? (window.AppLoans ? window.AppLoans.formatThaiDate(loan.due_at) : loan.due_at)
+      : '—';
+    const isOverdue = loan?.status === 'overdue';
+    const overdueMsg = isOverdue
+      ? `<div class="alert alert-danger small mb-2">
+           <i class="bi bi-exclamation-triangle-fill me-1"></i>
+           เลยกำหนดคืน: ${due} — กรุณาคืนโดยเร็ว
+         </div>` : '';
+
+    const photoLabel = _return.photoUrl
+      ? `<div class="mb-2"><img src="${_esc(_return.photoUrl)}" class="img-thumbnail"
+             style="max-width:100px; height:75px; object-fit:cover;" alt="รูปเมื่อคืน"></div>`
+      : '';
+
+    body.innerHTML = `
+      <div class="card p-3">
+        ${overdueMsg}
+        <div class="alert alert-info small py-2 mb-3">
+          <strong>${_esc(item?.name || '')} (${_esc(item?.sku || '')})</strong><br>
+          จำนวน: ${loan?.qty || 1} ชิ้น · ครบกำหนด: ${_esc(due)}
+        </div>
+        <h6 class="mb-2">ขั้นที่ 2: ถ่ายรูปอุปกรณ์เมื่อคืน (ไม่บังคับ)</h6>
+        ${photoLabel}
+        <button type="button" id="return-step2-photo" class="btn btn-outline-secondary mb-2 w-100"
+                style="min-height:48px;">
+          <i class="bi bi-camera me-1" aria-hidden="true"></i>📷 ถ่าย / เลือกรูป
+        </button>
+        <div class="d-flex gap-2">
+          <button type="button" id="return-step2-next" class="btn btn-stock-primary flex-grow-1"
+                  style="min-height:48px;">ถัดไป: ยืนยัน →</button>
+          <button type="button" id="return-step2-skip" class="btn btn-link"
+                  aria-label="ข้ามการถ่ายรูป"
+                  style="min-height:48px;">ข้าม — ไม่มีรูป</button>
+        </div>
+        <button type="button" class="btn btn-link btn-sm mt-2" id="return-back-1">← แก้ไขสินค้า</button>
+      </div>`;
+
+    document.getElementById('return-step2-photo')?.addEventListener('click', () => {
+      if (!window.PhotoCaptureModal) { _toast('warning', 'โหลดโมดูลถ่ายรูปไม่สำเร็จ'); return; }
+      const loanId = _return.loan?.id || _uuid();
+      window.PhotoCaptureModal.open({
+        folder:     'thegood-stock/borrow/' + loanId + '/return',
+        label:      'ถ่ายรูปอุปกรณ์เมื่อคืน',
+        optional:   true,
+        entityId:   loanId,
+        onUploaded: (url) => { _return.photoUrl = url; _return.step = 3; _renderReturnStep(); },
+        onSkipped:  () => { _return.step = 3; _renderReturnStep(); },
+        onError:    () => _toast('warning', 'อัปโหลดรูปไม่สำเร็จ — ยังดำเนินการต่อได้'),
+      });
+    });
+    document.getElementById('return-step2-next')?.addEventListener('click', () => { _return.step = 3; _renderReturnStep(); });
+    document.getElementById('return-step2-skip')?.addEventListener('click', () => { _return.step = 3; _renderReturnStep(); });
+    document.getElementById('return-back-1')?.addEventListener('click', () => { _return.step = 1; _renderReturnStep(); });
+  }
+
+  function _renderReturnStep3(body) {
+    const loan = _return.loan;
+    const item = _return.item;
+    const borrowed = loan?.borrowed_at ? (window.AppLoans ? window.AppLoans.formatThaiDate(loan.borrowed_at) : loan.borrowed_at) : '—';
+    const due      = loan?.due_at      ? (window.AppLoans ? window.AppLoans.formatThaiDate(loan.due_at)      : loan.due_at)      : '—';
+    const isOverdue = loan?.status === 'overdue';
+
+    body.innerHTML = `
+      <div class="card p-3">
+        <h6 class="mb-3">ยืนยันการคืน</h6>
+        <dl class="mb-3">
+          <dt class="small text-muted">สินค้า</dt>
+          <dd>${_esc(item?.name || '—')} <code class="small">${_esc(item?.sku || '')}</code></dd>
+          <dt class="small text-muted">จำนวน</dt><dd>${loan?.qty || 1} ชิ้น</dd>
+          <dt class="small text-muted">ยืมเมื่อ</dt><dd>${_esc(borrowed)}</dd>
+          <dt class="small text-muted">ครบกำหนด</dt>
+          <dd>${_esc(due)} ${isOverdue ? '<span class="badge bg-danger ms-1">เลยกำหนด</span>' : ''}</dd>
+          <dt class="small text-muted">รูปถ่าย</dt>
+          <dd>${_return.photoUrl
+            ? `<img src="${_esc(_return.photoUrl)}" class="img-thumbnail"
+                   style="max-width:80px; height:60px; object-fit:cover;" alt="รูปเมื่อคืน">`
+            : '<span class="text-muted small">ไม่มีรูป</span>'}</dd>
+        </dl>
+        <button type="button" id="return-confirm-btn" class="btn btn-stock-primary w-100 mb-2"
+                style="min-height:52px; font-weight:600;">ยืนยันการคืน</button>
+        <button type="button" id="return-back-2" class="btn btn-outline-secondary w-100"
+                style="min-height:44px;">← แก้ไข</button>
+      </div>`;
+
+    document.getElementById('return-confirm-btn')?.addEventListener('click', _submitReturn);
+    document.getElementById('return-back-2')?.addEventListener('click', () => { _return.step = 2; _renderReturnStep(); });
+  }
+
+  async function _submitReturn() {
+    const btn = document.getElementById('return-confirm-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>กำลังบันทึก…'; }
+
+    const loan = _return.loan;
+    if (!_return.clientRefId) _return.clientRefId = _uuid();
+
+    const r = await window.AppLoans.createReturn({
+      itemId:     _return.item.id,
+      locationId: loan.locations?.id || loan.location_id_from,
+      qty:        loan.qty,
+      clientRefId: _return.clientRefId,
+    });
+
+    if (r.error) {
+      const msg = window.AppLoans.mapTriggerErrorToToast(r.error);
+      _toast('error', msg);
+      if (btn) { btn.disabled = false; btn.textContent = 'ยืนยันการคืน'; }
+      return;
+    }
+
+    // PATCH photo if captured
+    if (_return.photoUrl && loan?.id) {
+      await window.AppLoans.patchLoanPhoto(loan.id, 'return', _return.photoUrl);
+    }
+
+    const toastMsg = _return.photoUrl ? 'คืนสำเร็จ ขอบคุณ' : 'คืนสำเร็จ แต่ไม่มีรูปถ่าย';
+    _toast(_return.photoUrl ? 'success' : 'warning', toastMsg);
+    setTimeout(() => _resetReturn(), 1500);
+  }
+
+  // ==========================================================================
+  // UUID helper
+  // ==========================================================================
+
+  function _uuid() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+  }
+
+  // ==========================================================================
+  // Init — inject toggle after DOMContentLoaded
+  // ==========================================================================
+
+  function _init() {
+    // AppLoans may not be loaded yet (lazy). Retry up to 500ms.
+    if (!window.AppLoans) {
+      let tries = 0;
+      const tick = () => {
+        if (window.AppLoans || tries++ > 5) { _injectAndBind(); } else setTimeout(tick, 100);
+      };
+      tick();
+    } else {
+      _injectAndBind();
+    }
+  }
+
+  function _injectAndBind() {
+    _borrow.dueAt = window.AppLoans ? window.AppLoans.defaultDueAt() : _defaultDue();
+    _injectModeToggle();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _init);
+  } else {
+    _init();
+  }
+
+})();

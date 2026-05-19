@@ -27,6 +27,7 @@
     <li><button class="btn nav-link stock-tab" data-tab="ambulances"><i class="bi bi-truck"></i> Ambulances</button></li>
     <li><button class="btn nav-link stock-tab" data-tab="settings"><i class="bi bi-gear"></i> Settings</button></li>
     <li><button class="btn nav-link stock-tab" data-tab="sessions"><i class="bi bi-people"></i> Sessions</button></li>
+    <li><button class="btn nav-link stock-tab" data-tab="loans"><i class="bi bi-arrow-left-right"></i> ยืม-คืน</button></li>
   </ul>
 
   <div id="tab-dashboard"  class="tab-pane d-none"></div>
@@ -35,6 +36,7 @@
   <div id="tab-ambulances" class="tab-pane d-none"></div>
   <div id="tab-settings"   class="tab-pane d-none"></div>
   <div id="tab-sessions"   class="tab-pane d-none"></div>
+  <div id="tab-loans"     class="tab-pane d-none"></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -50,12 +52,18 @@
 <script src="./shared/inventory.js"></script>
 <script src="./shared/scanner.js"></script>
 
+<script src="./shared/cloudinary.js"></script>
+<script src="./shared/lots.js"></script>
+<script src="./shared/loans.js"></script>
+<script src="./shared/photo-capture.js"></script>
+
 <script src="./js/dashboard.js"></script>
 <script src="./js/locations.js"></script>
 <script src="./js/inventory.js"></script>
 <script src="./js/ambulances.js"></script>
 <script src="./js/settings-ui.js"></script>
 <script src="./js/sessions-ui.js"></script>
+<script src="./js/loans.js"></script>
 
 <script src="./js/admin-shell.js"></script>
 

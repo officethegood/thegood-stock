@@ -23,6 +23,7 @@
     ambulances: () => window.initAmbulancesTab && window.initAmbulancesTab(),
     settings:   () => window.initSettingsTab   && window.initSettingsTab(),
     sessions:   () => window.initSessionsTab   && window.initSessionsTab(),
+    loans:      () => window.initLoansTab      && window.initLoansTab(),
   };
   const initialized = new Set();
 

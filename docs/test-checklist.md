@@ -911,3 +911,227 @@ Tick each row as you verify. Re-run after every material change.
     ```
   - Expected: `ERROR: new row for relation "stock_lots" violates check constraint "chk_recalled_reason_required"`.
   - Confirm valid reason (>= 5 chars) succeeds — change `'short'` to `'ผู้ผลิตแจ้งเรียกคืน'` and confirm no error (then ROLLBACK either way).
+
+
+---
+
+## Phase 3 Borrow/Return (T76-T100)
+
+> Prerequisite: migrations 20260519030000-20260519030700 applied. Settings row OVERDUE_GROUP_THRESHOLD=10 present.
+
+### Migration verification
+
+- [ ] T76: stock_loans table exists with correct columns
+  - Steps: SQL Editor:
+    ```sql
+    SELECT column_name, data_type, is_nullable
+    FROM information_schema.columns
+    WHERE table_name = 'stock_loans'
+    ORDER BY ordinal_position;
+    ```
+  - Expected: columns present -- id, movement_id_borrow, movement_id_return, item_id, location_id_from, borrower_username (NOT NULL), borrowed_at, due_at (NOT NULL), returned_at, photo_borrow_url, photo_return_url, qty, status, notes, created_at, updated_at, updated_by.
+
+- [ ] T77: stock_loan_status enum exists
+  - Steps: SQL Editor:
+    ```sql
+    SELECT enumlabel FROM pg_enum
+    JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
+    WHERE pg_type.typname = 'stock_loan_status'
+    ORDER BY enumsortorder;
+    ```
+  - Expected: 4 rows -- active, returned, overdue, cancelled.
+
+- [ ] T78: due_at and borrower_username columns exist on stock_movements
+  - Steps: SQL Editor:
+    ```sql
+    SELECT column_name FROM information_schema.columns
+    WHERE table_name = 'stock_movements'
+      AND column_name IN ('due_at', 'borrower_username');
+    ```
+  - Expected: 2 rows.
+
+- [ ] T79: Trigger functions present with correct SECURITY DEFINER setting
+  - Steps: SQL Editor:
+    ```sql
+    SELECT proname, prosecdef FROM pg_proc
+    WHERE proname IN (
+      'validate_borrow_movement',
+      'create_loan_from_borrow',
+      'close_loan_from_return',
+      'run_overdue_alert'
+    )
+    ORDER BY proname;
+    ```
+  - Expected: 4 rows. validate_borrow_movement: prosecdef=false. Others: prosecdef=true.
+
+- [ ] T80: pg_cron jobs registered
+  - Steps: SQL Editor:
+    ```sql
+    SELECT jobname, schedule FROM cron.job
+    WHERE jobname IN ('overdue_alert_morning', 'overdue_alert_evening')
+    ORDER BY jobname;
+    ```
+  - Expected: 2 rows -- overdue_alert_evening (0 10 * * *), overdue_alert_morning (0 2 * * *).
+
+### Borrow flow (Staff scan page)
+
+- [ ] T81: Borrow flow -- full happy path creates stock_movements + stock_loans row
+  - Steps: staff-scan.html -> tap "ยืม-คืน" mode -> "ยืมอุปกรณ์" -> scan item barcode -> scan location QR -> due date 3 days (default) -> skip photo -> confirm.
+  - Expected: toast "ยืมสำเร็จ". SQL probe:
+    ```sql
+    SELECT sl.status, sl.borrower_username, sl.qty, sl.due_at,
+           sm.movement_type, sm.due_at AS sm_due_at
+    FROM stock_loans sl
+    JOIN stock_movements sm ON sm.id = sl.movement_id_borrow
+    ORDER BY sl.created_at DESC LIMIT 1;
+    ```
+    Expected: status=active, movement_type=borrow, sm_due_at NOT NULL.
+
+- [ ] T82: Borrow flow -- due_at defaults to 3 days from now at 23:59 (Q-Phase3-G)
+  - Steps: Open borrow flow -> reach due-date step -> observe pre-filled date.
+  - Expected: date input shows today+3 at 23:59. Preset button "3 วัน" is highlighted active.
+
+- [ ] T83: Borrow flow -- due_at in the past rejected with Thai toast
+  - Steps: Borrow flow -> manually set due date to yesterday -> confirm.
+  - Expected: toast contains "ของยืมเลยกำหนด".
+
+- [ ] T84: Borrow flow -- due_at missing rejected
+  - Steps: DevTools Console (Staff JWT):
+    ```javascript
+    const { error } = await window.AppLoans.createBorrow({
+      itemId: '<any valid item id>',
+      locationId: '<any valid location id>',
+      qty: 1,
+      dueAt: null,
+      borrowerUsername: null,
+    });
+    console.log(error?.message);
+    ```
+  - Expected: error message contains "ต้องระบุกำหนดคืน".
+
+- [ ] T85: Admin proxy-borrow sets borrower_username (Q-Phase3-D)
+  - Steps: DevTools Console (Admin JWT):
+    ```javascript
+    const { data, error } = await window.AppLoans.createBorrow({
+      itemId: '<item id>',
+      locationId: '<location id>',
+      qty: 1,
+      dueAt: new Date(Date.now() + 3*86400000).toISOString(),
+      borrowerUsername: 'somestaff',
+    });
+    console.log(data, error);
+    ```
+  - Expected: error=null. SQL probe on stock_loans shows borrower_username='somestaff'.
+
+- [ ] T86: Borrow flow with photo -- photo_borrow_url PATCHed after loan creation
+  - Steps: Borrow flow -> take photo (or upload file) -> confirm.
+  - Expected:
+    ```sql
+    SELECT photo_borrow_url FROM stock_loans ORDER BY created_at DESC LIMIT 1;
+    ```
+    Returns Cloudinary URL (NOT NULL).
+
+- [ ] T87: Borrow flow -- qty_delta drives stock down on borrow
+  - Steps: Note item total_qty before borrow. Complete borrow of qty=2.
+  - Expected: item total_qty decreases by 2. Verify via Dashboard -> Item Finder.
+
+### Return flow (Staff scan page)
+
+- [ ] T88: Return flow -- happy path closes loan and creates return movement
+  - Steps: staff-scan.html -> ยืม-คืน mode -> "คืนอุปกรณ์" -> scan item barcode -> skip photo -> confirm.
+  - Expected: toast "คืนสำเร็จ". SQL probe:
+    ```sql
+    SELECT sl.status, sl.returned_at, sl.movement_id_return
+    FROM stock_loans sl ORDER BY sl.updated_at DESC LIMIT 1;
+    ```
+    Expected: status=returned, returned_at NOT NULL, movement_id_return NOT NULL.
+
+- [ ] T89: Return flow -- no open loan for item gives Thai error toast
+  - Steps: staff-scan.html -> ยืม-คืน mode -> "คืนอุปกรณ์" -> scan item with no active/overdue loan.
+  - Expected: toast contains "ไม่พบรายการยืมที่เปิดอยู่".
+
+- [ ] T90: Return flow with photo -- photo_return_url PATCHed after return
+  - Steps: Return flow -> take photo -> confirm.
+  - Expected:
+    ```sql
+    SELECT photo_return_url FROM stock_loans ORDER BY updated_at DESC LIMIT 1;
+    ```
+    Returns Cloudinary URL (NOT NULL).
+
+### Loans tab (Admin)
+
+- [ ] T91: Admin loans tab renders loan list
+  - Steps: admin.html -> click "ยืม-คืน" tab.
+  - Expected: tab pane visible, loan list loads with cards showing borrower_username, due_at, status badge.
+
+- [ ] T92: Loans tab status filter -- overdue filter shows only overdue loans
+  - Steps: Loans tab -> status dropdown -> select "เกินกำหนด".
+  - Expected: only red "เกินกำหนด" badge cards visible.
+
+- [ ] T93: Loans tab search filter
+  - Steps: Loans tab -> type borrower username in search input.
+  - Expected: loan list filters client-side to matching rows.
+
+- [ ] T94: Loans tab detail drawer opens on tap
+  - Steps: Loans tab -> tap "จัดการ" on any loan card.
+  - Expected: Bootstrap offcanvas slides in with item name, borrower, due_at, status, borrow photo if present.
+
+- [ ] T95: Admin return via modal -- closes loan correctly
+  - Steps: Loans tab -> open detail drawer for active loan -> "บันทึกคืน" -> confirm (skip photo).
+  - Expected: modal closes, loan card status updates to "คืนแล้ว". SQL probe confirms status=returned.
+
+### Dashboard Panel 4
+
+- [ ] T96: Dashboard Panel 4 shows live borrow counts
+  - Steps: admin.html -> Dashboard tab.
+  - Expected: Panel 4 shows three rows ยืมอยู่ / เกินกำหนด / คืนวันนี้ with count badges. No placeholder text visible.
+
+- [ ] T97: Dashboard Panel 4 tap "เกินกำหนด" navigates to loans tab with overdue filter
+  - Steps: Dashboard -> click "เกินกำหนด" row in Panel 4.
+  - Expected: loans tab activates, filter shows "เกินกำหนด", list shows only overdue loans.
+
+### Overdue cron (smoke test)
+
+- [ ] T98: run_overdue_alert() -- Pass A marks overdue loans
+  - Steps: SQL Editor:
+    ```sql
+    UPDATE stock_loans SET due_at = now() - interval '2 hours'
+    WHERE status = 'active'
+    ORDER BY created_at DESC LIMIT 1;
+    SELECT run_overdue_alert();
+    SELECT id, status, due_at FROM stock_loans WHERE due_at < now() - interval '1 hour';
+    ```
+  - Expected: run_overdue_alert() returns void (no exception). Rows with due_at in past now have status=overdue.
+
+- [ ] T99: run_overdue_alert() -- skips Telegram when NOTIFY_SUPABASE_URL blank
+  - Steps: SQL Editor:
+    ```sql
+    UPDATE settings SET value = '' WHERE key = 'NOTIFY_SUPABASE_URL';
+    SELECT run_overdue_alert();
+    UPDATE settings SET value = '<real url>' WHERE key = 'NOTIFY_SUPABASE_URL';
+    ```
+  - Expected: WARNING logged (NOTIFY_SUPABASE_URL / NOTIFY_SERVICE_ROLE_KEY not set), no error raised.
+
+### Service worker cache
+
+- [ ] T100: CACHE_VERSION bumped to thegood-stock-v0.4.0 and new assets cached
+  - Steps: DevTools -> Application -> Cache Storage -> thegood-stock-v0.4.0.
+  - Expected: cache contains shared/loans.js, shared/photo-capture.js, js/loans.js. Old cache thegood-stock-v0.3.1 deleted on activate.
+    ```javascript
+    const keys = await caches.keys();
+    console.log(keys); // ['thegood-stock-v0.4.0']
+    const c = await caches.open('thegood-stock-v0.4.0');
+    const reqs = await c.keys();
+    console.log(reqs.map(r => r.url));
+    ```
+
+---
+
+## Phase 3 Summary
+
+| Status | Count | Tests |
+|---|---|---|
+| Fully verified | TBD | -- |
+| Partial / soft-pass | TBD | -- |
+| Blocked | TBD | -- |
+| Pending | TBD | T76-T100 |
