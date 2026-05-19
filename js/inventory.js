@@ -850,6 +850,67 @@
   // =========================================================================
   // Item detail drawer (design §2.4 — implemented as centered modal)
   // =========================================================================
+
+  // D12: Location type badge label (Phase 0.7)
+  function _locTypeBadge(type) {
+    const MAP = {
+      room: 'ห้อง', storage: 'ตู้', cabinet: 'ตู้', shelf: 'ชั้น',
+      bin: 'ตะกร้า', ambulance: 'รถ', bag: 'กระเป๋า', zone: 'โซน',
+    };
+    return MAP[type] || type || '';
+  }
+
+  // D12: Fetch breakdown rows from stock_item_locations + v_location_path (Phase 0.7)
+  async function _fetchLocationBreakdown(itemId) {
+    const sb = getSupabaseClient();
+
+    // Primary: join stock_item_locations with locations
+    const { data: silRows, error: silErr } = await sb
+      .from('stock_item_locations')
+      .select('location_id, qty, last_movement_at, locations(id,code,name,type,parent_id)')
+      .eq('item_id', itemId)
+      .gt('qty', 0)
+      .order('qty', { ascending: false });
+
+    if (silErr || !silRows) return { rows: [], pathMap: {} };
+
+    const locationIds = silRows.map((r) => r.location_id);
+
+    // Fetch breadcrumb paths for these location ids
+    let pathMap = {};
+    if (locationIds.length > 0) {
+      const { data: pathRows } = await sb
+        .from('v_location_path')
+        .select('id, path_display')
+        .in('id', locationIds);
+      if (pathRows) {
+        pathRows.forEach((p) => { pathMap[p.id] = p.path_display; });
+      }
+    }
+
+    // Sort: qty DESC already from DB; secondary sort by code ASC client-side
+    silRows.sort((a, b) => {
+      if (b.qty !== a.qty) return b.qty - a.qty;
+      const ca = (a.locations?.code || '');
+      const cb = (b.locations?.code || '');
+      return ca.localeCompare(cb);
+    });
+
+    return { rows: silRows, pathMap };
+  }
+
+  // D12: Fetch lots for a lot-tracked item (FEFO display — expiry ASC)
+  async function _fetchLotsForItem(itemId) {
+    const sb = getSupabaseClient();
+    const { data, error } = await sb
+      .from('v_lots_with_remaining')
+      .select('id, lot_number, expiry_date, current_qty, days_until_expiry')
+      .eq('item_id', itemId)
+      .order('expiry_date', { ascending: true, nullsFirst: false });
+    if (error || !data) return [];
+    return data;
+  }
+
   async function openItemDetailDrawer(itemId) {
     const modalEl = _createModalShell('inv-drawer', 'modal-lg', `
       <div class="modal-body">
@@ -867,22 +928,75 @@
         `<p class="text-danger">${_esc(_friendly(r.error, 'โหลดข้อมูลไม่สำเร็จ'))}</p>`;
       return;
     }
-    const { item, locations, total_qty } = r.data;
+    const { item, total_qty } = r.data;
     const low = (item.reorder_threshold || 0) > 0 && total_qty <= item.reorder_threshold;
 
-    const locRows = locations.length
-      ? locations.map((l) => {
-          const loc = l.locations || {};
-          return `
-            <li class="d-flex justify-content-between align-items-center py-1 border-bottom">
-              <div>
-                <code class="small">${_esc(loc.code || '')}</code>
-                <span class="ms-1">${_esc(loc.name || '')}</span>
-              </div>
-              <div class="fw-bold">${l.qty}</div>
+    // D12: Fetch multi-location breakdown + (if lot-tracked) lots
+    const [{ rows: silRows, pathMap }, lots] = await Promise.all([
+      _fetchLocationBreakdown(item.id),
+      item.tracks_lots ? _fetchLotsForItem(item.id) : Promise.resolve([]),
+    ]);
+
+    // D12: Build location breakdown HTML
+    let locBreakdownHtml;
+    if (silRows.length === 0) {
+      locBreakdownHtml = `
+        <div class="fc-empty">
+          <span class="fc-empty-label text-muted fst-italic small">// ไม่มีสต็อกในระบบ</span>
+        </div>`;
+    } else {
+      const locCount = silRows.length;
+      const totalQtySum = silRows.reduce((s, r) => s + (r.qty || 0), 0);
+
+      const rowsHtml = silRows.map((sil) => {
+        const loc = sil.locations || {};
+        const path = pathMap[sil.location_id]
+          || (loc.code ? `${loc.code} · ${loc.name}` : (loc.name || sil.location_id));
+        const badge = _locTypeBadge(loc.type);
+        const movAt = sil.last_movement_at
+          ? new Date(sil.last_movement_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
+          : '';
+
+        // D12: lot sub-list for lot-tracked items (all lots shown at item level, FEFO)
+        let lotSubHtml = '';
+        if (item.tracks_lots && lots.length > 0) {
+          const lotItems = lots.map((lot) => {
+            const expLabel = lot.expiry_date
+              ? new Date(lot.expiry_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
+              : 'ไม่มีวันหมดอายุ';
+            const urgentClass = (lot.days_until_expiry !== null && lot.days_until_expiry <= 30) ? 'text-danger' : 'text-muted';
+            return `<li class="py-0 ${urgentClass}">
+              <code class="fc-mono small">${_esc(lot.lot_number)}</code>
+              <span class="ms-1 small">${lot.current_qty} ชิ้น</span>
+              <span class="ms-1 small">· หมดอายุ ${_esc(expLabel)}</span>
             </li>`;
-        }).join('')
-      : `<li class="text-muted py-2">ไม่มีในคลัง — กด "รับเข้า" เพื่อเริ่ม</li>`;
+          }).join('');
+          lotSubHtml = `<ul class="list-unstyled ms-3 mb-0 mt-1">${lotItems}</ul>`;
+        }
+
+        return `
+          <li class="py-2 border-bottom">
+            <div class="d-flex align-items-start justify-content-between gap-2">
+              <div class="flex-grow-1 min-w-0">
+                <span class="fw-bold me-2">${sil.qty}</span>
+                <span class="badge bg-secondary text-white small me-1">${_esc(badge)}</span>
+                <span class="fc-mono small text-break">${_esc(path)}</span>
+                ${movAt ? `<span class="text-muted small ms-2">· ${movAt}</span>` : ''}
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-primary flex-shrink-0 drawer-loc-transfer"
+                      data-location-id="${_esc(sil.location_id)}"
+                      title="ย้ายของออกจากตำแหน่งนี้">
+                ย้าย →
+              </button>
+            </div>
+            ${lotSubHtml}
+          </li>`;
+      }).join('');
+
+      locBreakdownHtml = `
+        <p class="text-muted small mb-2">รวม <strong>${totalQtySum}</strong> ชิ้น ใน <strong>${locCount}</strong> สถานที่</p>
+        <ul class="list-unstyled mb-2">${rowsHtml}</ul>`;
+    }
 
     modalEl.querySelector('.modal-content').innerHTML = `
       <div class="modal-header">
@@ -901,9 +1015,14 @@
             ? '<span class="fc-badge fc-badge-ok">ใช้งาน</span>'
             : '<span class="fc-badge fc-badge-neutral">เลิกใช้</span>'}</div>
         </div>
-        <h6 class="mt-3">คงเหลือต่อสถานที่</h6>
-        <ul class="list-unstyled mb-2">${locRows}</ul>
-        <div class="d-flex justify-content-end fw-bold border-top pt-2"
+
+        <!-- D12: Multi-location breakdown (Phase 0.7 — T220, T221) -->
+        <h6 class="mt-3">อยู่ที่ไหน</h6>
+        <div id="drawer-loc-breakdown">
+          ${locBreakdownHtml}
+        </div>
+
+        <div class="d-flex justify-content-end fw-bold border-top pt-2 mt-2"
              aria-label="คงเหลือรวมทุกสถานที่">
           รวม: ${low
             ? `<span class="text-danger ms-2">${total_qty} <i class="bi bi-exclamation-triangle"></i></span>`
@@ -943,7 +1062,7 @@
     if (_isAdmin()) {
       document.getElementById('drawer-gain').onclick = () => { close(); openAdjustModal('gain', item); };
     }
-    // Phase 0.7: Transfer button — calls Transfer.openModal if module is loaded
+    // Phase 0.7: Transfer button (footer) — calls Transfer.openModal
     const transferBtn = document.getElementById('drawer-transfer');
     if (transferBtn) {
       transferBtn.onclick = () => {
@@ -955,6 +1074,18 @@
         }
       };
     }
+    // D12 (T221): Per-row "ย้าย →" buttons in breakdown — pre-fill source location
+    modalEl.querySelectorAll('.drawer-loc-transfer').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const sourceId = btn.dataset.locationId;
+        close();
+        if (window.Transfer && typeof window.Transfer.openModal === 'function') {
+          window.Transfer.openModal({ itemId: item.id, prefilledSourceId: sourceId });
+        } else {
+          _toast('error', 'โมดูล Transfer ยังไม่พร้อม — กรุณารีเฟรชหน้า');
+        }
+      });
+    });
     const deact = document.getElementById('drawer-deactivate');
     if (deact) deact.onclick = async () => {
       const ok = await _confirm(`ปิดใช้งานสินค้า "${item.name}" ?`);
@@ -986,6 +1117,50 @@
   }
 
   // =========================================================================
+  // D13: SKU change confirmation modal (Phase 0.7 — T222, T223)
+  // Returns a Promise<boolean> — resolves true if user confirms, false on cancel.
+  // =========================================================================
+  function _confirmSkuChange(oldSku, newSku) {
+    return new Promise((resolve) => {
+      const confirmEl = _createModalShell('inv-sku-confirm', '', `
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>ยืนยันการเปลี่ยน SKU?
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3 small">
+            <div><span class="text-muted">เดิม:</span> <code class="fc-mono">${_esc(oldSku)}</code></div>
+            <div><span class="text-muted">ใหม่:</span> <code class="fc-mono text-warning">${_esc(newSku)}</code></div>
+          </div>
+          <p class="small fw-semibold mb-1">ผลกระทบ:</p>
+          <ol class="small mb-0">
+            <li>QR sticker ที่พิมพ์ไว้ก่อนหน้านี้ ถ้าใช้ SKU เป็น payload จะ scan ไม่ติด (item_id-based QR ยัง OK)</li>
+            <li>Audit history (stock_movements) อ้าง item_id ไม่ใช่ SKU — เก็บไว้ครบ ไม่หาย</li>
+            <li>SKU ต้องไม่ซ้ำกับ item อื่นในระบบ</li>
+          </ol>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="sku-confirm-cancel">ยกเลิก</button>
+          <button type="button" class="btn btn-warning" id="sku-confirm-ok">ยืนยันเปลี่ยน</button>
+        </div>
+      `);
+      const confirmModal = new bootstrap.Modal(confirmEl, { backdrop: 'static' });
+      confirmEl.querySelector('#sku-confirm-cancel').onclick = () => {
+        confirmModal.hide();
+        resolve(false);
+      };
+      confirmEl.querySelector('#sku-confirm-ok').onclick = () => {
+        confirmModal.hide();
+        resolve(true);
+      };
+      confirmEl.addEventListener('hidden.bs.modal', () => resolve(false), { once: true });
+      confirmModal.show();
+    });
+  }
+
+  // =========================================================================
   // Add / Edit Item modal (design §2.5)
   // =========================================================================
   function openItemModal(existing) {
@@ -1005,8 +1180,12 @@
             <div class="col-12 col-sm-6 mb-2">
               <label class="form-label" for="if-sku">SKU *</label>
               <input id="if-sku" class="form-control" required aria-required="true"
-                     inputmode="latin" autocomplete="off"
-                     ${isEdit ? 'disabled' : ''}>
+                     inputmode="latin" autocomplete="off">
+              ${isEdit ? `
+              <small class="text-warning d-block mt-1" id="if-sku-warn">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                การเปลี่ยน SKU จะมีผลต่อ QR ที่พิมพ์แล้ว — ระบบจะถามยืนยันก่อนบันทึก
+              </small>` : ''}
             </div>
             <div class="col-12 col-sm-6 mb-2">
               <label class="form-label" for="if-barcode">Barcode</label>
@@ -1088,6 +1267,13 @@
       if (!name) { errEl.textContent = 'กรอกชื่อสินค้า'; errEl.classList.remove('d-none'); return; }
       if (!sku)  { errEl.textContent = 'กรอก SKU';      errEl.classList.remove('d-none'); return; }
 
+      // D13 (T222, T223): SKU change confirmation in edit mode
+      const skuChanged = isEdit && existing && sku !== (existing.sku || '');
+      if (skuChanged) {
+        const confirmed = await _confirmSkuChange(existing.sku, sku);
+        if (!confirmed) return;
+      }
+
       const payload = {
         name,
         sku,
@@ -1116,15 +1302,21 @@
       submitEl.textContent = 'บันทึก';
 
       if (res.error) {
-        const msg = res.error.code === '23505'
-          ? 'SKU หรือ Barcode ซ้ำ — เลือกใหม่'
-          : _friendly(res.error, 'บันทึกไม่สำเร็จ');
-        errEl.textContent = msg;
+        // D13 (T223): 23505 on edit with SKU changed → friendly duplicate message
+        if (res.error.code === '23505' && skuChanged) {
+          errEl.textContent = `SKU '${sku}' มีอยู่แล้วในระบบ — กรุณาใช้ค่าอื่น`;
+        } else {
+          errEl.textContent = res.error.code === '23505'
+            ? 'SKU หรือ Barcode ซ้ำ — เลือกใหม่'
+            : _friendly(res.error, 'บันทึกไม่สำเร็จ');
+        }
         errEl.classList.remove('d-none');
         return;
       }
       modal.hide();
-      _toast('success', isEdit ? 'อัปเดตแล้ว' : 'เพิ่มสินค้าแล้ว');
+      _toast('success', isEdit
+        ? (skuChanged ? 'เปลี่ยน SKU สำเร็จ' : 'อัปเดตแล้ว')
+        : 'เพิ่มสินค้าแล้ว');
       reload();
     };
 

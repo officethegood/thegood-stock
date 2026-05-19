@@ -2161,4 +2161,47 @@ Non-blockers (can ship after critical fixes):
     3. Confirm CTA card uses `fc-card` with `fc-btn-secondary` for "ดูสถานที่" / "ดูรถพยาบาล" buttons (no Bootstrap `.btn-outline-stock-accent` in rendered HTML).
     4. Click "ดูสถานที่จัดเก็บ" — `staff-detail` div contents are replaced (default `// no data` disappears).
     5. On iPhone SE: bottom nav is not obscured by hero; content area has `fc-staff-content` padding-bottom.
+
+---
+
+# Phase 0.7 — D12 Multi-location Breakdown + D13 SKU Edit (T220–T223)
+
+> Covers changes introduced in `feat(ui): D12 multi-location breakdown + D13 SKU edit in inventory drawer`
+> File: `js/inventory.js`
+
+- [ ] T220: Item drawer multi-location breakdown renders correctly.
+  - Steps:
+    1. Log in as Admin → admin.html → Inventory tab.
+    2. Click any item row that has stock in at least 2 locations.
+    3. Confirm the drawer "อยู่ที่ไหน" section shows one row per location with: qty (bold), type badge (เช่น ตู้/ชั้น/ตะกร้า), breadcrumb path from `v_location_path`, and a "ย้าย →" button.
+    4. Confirm the summary line reads "รวม X ชิ้น ใน Y สถานที่" matching the individual qty sum and row count.
+    5. For a lot-tracked item: confirm each location row has an indented lot sub-list with lot_number, current_qty, expiry date (sorted soonest-first). Lots with ≤30 days to expiry appear in red.
+    6. Click an item that exists in the system but has zero stock everywhere. Confirm the empty state shows `// ไม่มีสต็อกในระบบ`.
+  - Expected: All location rows match `stock_item_locations` rows with qty>0. SUM of row qtys equals the drawer's "รวม:" total.
+
+- [ ] T221: "ย้าย →" button in breakdown pre-fills transfer source location.
+  - Steps:
+    1. Open item drawer for an item with stock in multiple locations.
+    2. Click the "ย้าย →" button on a specific location row.
+    3. Confirm the Transfer modal opens with the source location already filled in (matching the row clicked).
+  - Expected: `Transfer.openModal` is called with `{ itemId, prefilledSourceId: <location_id of that row> }`. Transfer modal shows source location name/path without requiring manual selection.
+
+- [ ] T222: SKU edit happy path — warning chip + confirm modal + DB update.
+  - Steps:
+    1. Open an existing item in the Edit modal.
+    2. Confirm the SKU input is editable (no `disabled` attribute) and a yellow warning chip "การเปลี่ยน SKU จะมีผลต่อ QR..." appears below it.
+    3. Change the SKU to a new unique value (e.g. append `-v2`).
+    4. Submit — confirm the warning modal appears listing old SKU, new SKU, and 3 impact points.
+    5. Click "ยืนยันเปลี่ยน" — confirm: toast "เปลี่ยน SKU สำเร็จ", table refreshes, item now shows new SKU.
+    6. DB probe: `SELECT sku FROM stock_items WHERE id = '<id>';` returns new SKU.
+    7. If SKU is unchanged, submit directly without the confirm modal — confirm no modal appears.
+  - Expected: SKU updated in DB. `stock_movements` rows for the item still reference the same `item_id` (audit intact). No movement data lost.
+
+- [ ] T223: SKU edit duplicate check — 23505 → friendly toast.
+  - Steps:
+    1. Note the SKU of two different items, e.g. `ITEM-A` and `ITEM-B`.
+    2. Open Edit modal for `ITEM-A`.
+    3. Change SKU to `ITEM-B`'s SKU and confirm the warning modal.
+    4. Click "ยืนยันเปลี่ยน".
+  - Expected: Toast (or inline error) shows `"SKU 'ITEM-B' มีอยู่แล้วในระบบ — กรุณาใช้ค่าอื่น"`. Item is NOT updated. No crash.
   - Expected: hero visible; CTA buttons 44px min-height; bottom nav unobstructed.
