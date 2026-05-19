@@ -65,24 +65,148 @@
   }
 })();
 
+// Persisted view mode for staff locations: 'graph' (default) | 'table'
+let __locView = (typeof localStorage !== 'undefined' && localStorage.getItem('staff_loc_view')) || 'graph';
+
 async function renderLocations() {
   const sb = getSupabaseClient();
-  const { data, error } = await sb.from('locations')
-    .select('code,name,type,active,parent_id').order('type').order('code');
   const root = document.getElementById('staff-detail');
-  if (error) { root.innerHTML = `<div class="alert alert-danger">${error.message}</div>`; return; }
-  root.innerHTML = `
-    <h6>สถานที่จัดเก็บ (อ่านอย่างเดียว)</h6>
-    <table class="table table-sm">
-      <thead><tr><th>Code</th><th>Type</th><th>ชื่อ</th><th>Active</th></tr></thead>
-      <tbody>${data.map((l) => `<tr>
-        <td><code>${escapeHtml(l.code)}</code></td>
-        <td>${escapeHtml(l.type)}</td>
-        <td>${escapeHtml(l.name)}</td>
-        <td>${l.active ? '✓' : '✗'}</td>
-      </tr>`).join('')}</tbody>
-    </table>
-  `;
+  root.innerHTML = `<div class="text-muted small p-3"><i class="bi bi-hourglass-split me-1"></i>กำลังโหลด…</div>`;
+
+  const { data, error } = await sb.from('locations')
+    .select('id,code,name,type,active,parent_id,storage_style,laundry_role,ambulance_id,ambulances(plate,callsign)')
+    .order('type').order('code');
+  if (error) { root.innerHTML = `<div class="alert alert-danger">${escapeHtml(error.message)}</div>`; return; }
+
+  function viewToggle(active) {
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--fc-s3);gap:var(--fc-s3);flex-wrap:wrap">
+        <p class="fc-section-title" style="margin:0">
+          <i class="bi bi-diagram-3 me-1 text-stock-accent"></i>สถานที่จัดเก็บ
+          <span class="fc-mono" style="font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--fc-ink-mute);margin-left:var(--fc-s2)">${data.length} nodes</span>
+        </p>
+        <div role="tablist" aria-label="view mode" style="display:inline-flex;border:1px solid var(--fc-hairline-strong, rgba(12,25,41,0.15));border-radius:6px;overflow:hidden">
+          <button id="btn-locview-graph" class="fc-btn fc-btn-${active==='graph'?'primary':'ghost'}" style="border-radius:0;border:none;padding:6px 12px;min-height:36px;font-size:13px"><i class="bi bi-diagram-2 me-1"></i>Graph</button>
+          <button id="btn-locview-table" class="fc-btn fc-btn-${active==='table'?'primary':'ghost'}" style="border-radius:0;border:none;padding:6px 12px;min-height:36px;font-size:13px"><i class="bi bi-table me-1"></i>ตาราง</button>
+        </div>
+      </div>`;
+  }
+
+  function renderTable() {
+    root.innerHTML = `
+      <div class="fc-card">
+        ${viewToggle('table')}
+        <div style="overflow-x:auto">
+          <table class="table table-sm mb-0" style="font-size:14px">
+            <thead style="font-family:var(--fc-font-mono);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--fc-ink-mute)">
+              <tr><th>Code</th><th>Type</th><th>ชื่อ</th><th>Active</th></tr>
+            </thead>
+            <tbody>
+              ${data.map((l) => `<tr${l.active===false?' style="opacity:0.5"':''}>
+                <td><code class="fc-mono">${escapeHtml(l.code)}</code></td>
+                <td class="small text-muted">${escapeHtml(l.type)}</td>
+                <td>${escapeHtml(l.name)}</td>
+                <td>${l.active ? '✓' : '✗'}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        <p class="fc-mono" style="font-size:11px;color:var(--fc-ink-mute);margin-top:var(--fc-s3);margin-bottom:0">// อ่านอย่างเดียว · admin จัดการใน Console → สถานที่</p>
+      </div>`;
+    document.getElementById('btn-locview-graph').onclick = () => { __locView='graph'; try{localStorage.setItem('staff_loc_view','graph')}catch{}; renderGraph(); };
+    document.getElementById('btn-locview-table').onclick = () => {};
+  }
+
+  function nodeLabel(l) {
+    // Mermaid node label: code on line 1, name on line 2, optional metadata line 3
+    const lines = [escapeMer(l.code), escapeMer(l.name)];
+    if (l.type === 'storage' && l.storage_style) {
+      const styleLabel = ({closed:'ตู้ปิด',open:'ชั้นเปิด',mesh:'ตะแกรง',drawer:'ลิ้นชัก'})[l.storage_style] || l.storage_style;
+      lines.push(`(${styleLabel})`);
+    }
+    if (l.laundry_role) {
+      const roleLabel = ({clean:'พร้อมใช้',vehicle:'ในรถ',dirty:'รอซัก',external:'กำลังซัก'})[l.laundry_role] || l.laundry_role;
+      lines.push(`🧺 ${roleLabel}`);
+    }
+    if (l.type === 'ambulance' && l.ambulances) {
+      const plate = l.ambulances.plate || '';
+      const cs = l.ambulances.callsign ? ` · ${l.ambulances.callsign}` : '';
+      lines.push(`${plate}${cs}`);
+    }
+    return lines.join('<br/>');
+  }
+
+  function escapeMer(s) {
+    // Mermaid node text in [" ... "] — escape quotes
+    return String(s ?? '').replace(/"/g, '#quot;');
+  }
+
+  function buildMermaid() {
+    const lines = ['graph TD'];
+    // Nodes
+    data.forEach((l) => {
+      const safeId = `n_${l.id.replace(/-/g, '_')}`;
+      lines.push(`  ${safeId}["${nodeLabel(l)}"]:::${l.type}`);
+    });
+    // Edges (parent → child)
+    data.forEach((l) => {
+      if (l.parent_id) {
+        const parent = data.find((p) => p.id === l.parent_id);
+        if (parent) {
+          const pId = `n_${parent.id.replace(/-/g, '_')}`;
+          const cId = `n_${l.id.replace(/-/g, '_')}`;
+          lines.push(`  ${pId} --> ${cId}`);
+        }
+      }
+    });
+    // FC-themed class definitions
+    lines.push(`  classDef room      fill:#0c1929,stroke:#00B8A9,color:#f8f5ef,stroke-width:2px`);
+    lines.push(`  classDef ambulance fill:#1d4d8c,stroke:#00B8A9,color:#f8f5ef,stroke-width:2px`);
+    lines.push(`  classDef storage   fill:#f8f5ef,stroke:#00B8A9,color:#0c1929,stroke-width:1.5px`);
+    lines.push(`  classDef cabinet   fill:#f8f5ef,stroke:#00B8A9,color:#0c1929,stroke-width:1.5px`);
+    lines.push(`  classDef shelf     fill:#ffffff,stroke:#7a8a9a,color:#0c1929,stroke-width:1px`);
+    lines.push(`  classDef bin       fill:#ffffff,stroke:#a8b4c0,color:#0c1929,stroke-width:1px`);
+    lines.push(`  classDef bag       fill:#f59e0b,stroke:#7a4f00,color:#ffffff,stroke-width:2px`);
+    lines.push(`  classDef zone      fill:#fff7e6,stroke:#f59e0b,color:#7a4f00,stroke-width:1px`);
+    return lines.join('\n');
+  }
+
+  async function renderGraph() {
+    root.innerHTML = `
+      <div class="fc-card">
+        ${viewToggle('graph')}
+        <div style="display:flex;flex-wrap:wrap;gap:var(--fc-s3);margin-bottom:var(--fc-s3);font-size:11px;font-family:var(--fc-font-mono);letter-spacing:0.05em;text-transform:uppercase;color:var(--fc-ink-mute)">
+          <span><span style="display:inline-block;width:10px;height:10px;background:#0c1929;border:2px solid #00B8A9;vertical-align:middle;margin-right:4px"></span>room/ambulance</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#f8f5ef;border:1.5px solid #00B8A9;vertical-align:middle;margin-right:4px"></span>storage</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#fff;border:1px solid #7a8a9a;vertical-align:middle;margin-right:4px"></span>shelf/bin</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#f59e0b;border:2px solid #7a4f00;vertical-align:middle;margin-right:4px"></span>bag/zone</span>
+        </div>
+        <div id="loc-graph" style="overflow:auto;max-height:70vh;border:1px solid var(--fc-hairline-strong, rgba(12,25,41,0.08));border-radius:8px;padding:var(--fc-s4);background:repeating-linear-gradient(0deg,transparent,transparent 19px,rgba(12,25,41,0.04) 19px,rgba(12,25,41,0.04) 20px),repeating-linear-gradient(90deg,transparent,transparent 19px,rgba(12,25,41,0.04) 19px,rgba(12,25,41,0.04) 20px),#fafbfc">
+          <pre class="mermaid" style="background:transparent;margin:0">${buildMermaid()}</pre>
+        </div>
+        <p class="fc-mono" style="font-size:11px;color:var(--fc-ink-mute);margin-top:var(--fc-s3);margin-bottom:0">// อ่านอย่างเดียว · room/ambulance → storage → shelf → bin · bag → zone</p>
+      </div>`;
+    document.getElementById('btn-locview-graph').onclick = () => {};
+    document.getElementById('btn-locview-table').onclick = () => { __locView='table'; try{localStorage.setItem('staff_loc_view','table')}catch{}; renderTable(); };
+    if (window.mermaid) {
+      try {
+        mermaid.initialize({ startOnLoad: false, theme: 'base', themeVariables: {
+          fontFamily: 'Sarabun, IBM Plex Sans Thai, sans-serif', fontSize: '13px',
+          lineColor: '#7a8a9a', primaryColor: '#f8f5ef', primaryTextColor: '#0c1929'
+        }});
+        await mermaid.run({ nodes: root.querySelectorAll('pre.mermaid') });
+      } catch (e) {
+        console.warn('mermaid render failed', e);
+        const g = document.getElementById('loc-graph');
+        if (g) g.innerHTML = `<div class="alert alert-warning small">วาด graph ไม่สำเร็จ — ลอง switch ไป "ตาราง"</div>`;
+      }
+    } else {
+      const g = document.getElementById('loc-graph');
+      if (g) g.innerHTML = `<div class="alert alert-warning small">Mermaid ไม่ได้โหลด — ลอง switch ไป "ตาราง"</div>`;
+    }
+  }
+
+  if (__locView === 'table') renderTable(); else await renderGraph();
 }
 
 async function renderAmbulances() {

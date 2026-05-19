@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.14.1';  // Staff home — add "ดูกระเป๋า ALS" button + renderBags() with v_bag_status view (template completion + expiry rollup); migrate laundry + oxygen link cards from legacy Bootstrap to fc-card / fc-btn-secondary
+const CACHE_VERSION = 'thegood-stock-v0.14.2';  // Staff locations — n8n-style Mermaid graph view (default) with toggle to ตาราง; FC-themed nodes per type (room/storage/shelf/bin/bag/zone/ambulance); badges shown for storage_style + laundry_role + ambulance plate
 const STATIC_ASSETS = [
   './',
   './login.html',
