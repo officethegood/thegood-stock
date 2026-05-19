@@ -40,7 +40,14 @@
   // -------------------------------------------------------------------------
   // Auth + boot
   // -------------------------------------------------------------------------
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', async () => {
+    // BUG-0.7-R3-03 fix: ensure JWT is loaded into supabase client before queries
+    // (without this, direct-URL navigation falls back to anon key → RLS returns 0 rows)
+    if (typeof window.ensureLoggedIn === 'function') {
+      const ok = await window.ensureLoggedIn();
+      if (!ok) return;
+    }
+
     // requireRole throws / redirects if not allowed
     if (typeof window.requireRole === 'function') {
       window.requireRole(['Admin', 'Employee']);
