@@ -92,23 +92,103 @@ async function renderLocations() {
       </div>`;
   }
 
+  // Build parent chain (root → leaf) for one location using the locations array.
+  // Returns { depth, pathNames: string[], parent: locationRow | null }
+  function _buildChain(l, all) {
+    const chain = [];
+    let cur = l;
+    let guard = 0;
+    while (cur && guard < 8) {
+      chain.unshift(cur);
+      cur = cur.parent_id ? all.find((x) => x.id === cur.parent_id) : null;
+      guard++;
+    }
+    return {
+      depth: chain.length - 1,
+      pathNames: chain.map((c) => c.name),
+      parent: chain.length > 1 ? chain[chain.length - 2] : null,
+    };
+  }
+
+  // Sort key: full path string so siblings group naturally under their parent.
+  // Roots ordered by type (room before ambulance before bag) then code.
+  function _sortKey(l, all) {
+    const chain = _buildChain(l, all);
+    const typeOrder = { room: 1, ambulance: 2, bag: 3, storage: 4, cabinet: 4, shelf: 5, bin: 6, zone: 7 };
+    const rootType = typeOrder[chain.pathNames.length ? all.find((x) => x.id === l.id)?.type : 99] || 99;
+    return chain.pathNames.join('|') + '|' + l.code;
+  }
+
+  function _typeBadge(type) {
+    const meta = {
+      room:      { label: 'ห้อง',     bg: '#0c1929', fg: '#f8f5ef' },
+      ambulance: { label: 'รถ',       bg: '#1d4d8c', fg: '#f8f5ef' },
+      storage:   { label: 'ตู้',       bg: '#e6f7f5', fg: '#00574F' },
+      cabinet:   { label: 'ตู้',       bg: '#e6f7f5', fg: '#00574F' },
+      shelf:     { label: 'ชั้น',      bg: '#f0f3f7', fg: '#3a4a5c' },
+      bin:       { label: 'ตะกร้า',    bg: '#fafbfc', fg: '#5a6a7c' },
+      bag:       { label: 'กระเป๋า',   bg: '#f59e0b', fg: '#ffffff' },
+      zone:      { label: 'Zone',     bg: '#fff7e6', fg: '#7a4f00' },
+    }[type] || { label: type, bg: '#eee', fg: '#333' };
+    return `<span class="fc-mono" style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;letter-spacing:0.05em;background:${meta.bg};color:${meta.fg};font-weight:600">${escapeHtml(meta.label)}</span>`;
+  }
+
   function renderTable() {
+    // Sort: by full path so children appear under their parent
+    const sorted = [...data].sort((a, b) => _sortKey(a, data).localeCompare(_sortKey(b, data), 'th'));
+
+    const rowsHtml = sorted.map((l) => {
+      const chain = _buildChain(l, data);
+      const indent = chain.depth * 18; // px
+      const arrow = chain.depth > 0 ? '<span style="color:var(--fc-ink-mute);margin-right:6px">└</span>' : '';
+      const parentLabel = chain.parent
+        ? `<code class="fc-mono" style="font-size:11px;color:var(--fc-ink-mute);background:transparent;padding:0">${escapeHtml(chain.parent.code)}</code>`
+        : '<span class="fc-mono" style="font-size:11px;color:var(--fc-ink-mute);opacity:0.5">—</span>';
+      const pathLabel = chain.pathNames.length > 1
+        ? `<span class="small" style="color:var(--fc-ink-mute);font-size:12px">${chain.pathNames.slice(0, -1).map((n) => escapeHtml(n)).join(' › ')}</span>`
+        : '<span class="fc-mono" style="font-size:11px;color:var(--fc-ink-mute);opacity:0.5">root</span>';
+      const meta = [];
+      if (l.storage_style) {
+        const sLabel = ({closed:'ตู้ปิด',open:'ชั้นเปิด',mesh:'ตะแกรง',drawer:'ลิ้นชัก'})[l.storage_style] || l.storage_style;
+        meta.push(`<span class="fc-mono small" style="color:var(--fc-ink-mute);font-size:11px">(${sLabel})</span>`);
+      }
+      if (l.laundry_role) {
+        const rLabel = ({clean:'พร้อมใช้',vehicle:'ในรถ',dirty:'รอซัก',external:'กำลังซัก'})[l.laundry_role] || l.laundry_role;
+        meta.push(`<span class="fc-mono small" style="color:#0c574f;font-size:11px;background:#e6f7f5;padding:1px 6px;border-radius:3px">🧺 ${rLabel}</span>`);
+      }
+      return `
+        <tr${l.active===false?' style="opacity:0.5"':''}>
+          <td style="padding-left:${12 + indent}px;white-space:nowrap">
+            ${arrow}<code class="fc-mono">${escapeHtml(l.code)}</code>
+          </td>
+          <td>${_typeBadge(l.type)}</td>
+          <td>
+            <div>${escapeHtml(l.name)}</div>
+            <div style="margin-top:2px">${pathLabel}</div>
+          </td>
+          <td>${parentLabel}</td>
+          <td class="small">${meta.join(' ') || '<span style="opacity:0.4">—</span>'}</td>
+          <td style="text-align:center">${l.active ? '<span style="color:var(--fc-ok,#10b981)">✓</span>' : '<span style="color:var(--fc-pulse-red,#E63946)">✗</span>'}</td>
+        </tr>`;
+    }).join('');
+
     root.innerHTML = `
       <div class="fc-card">
         ${viewToggle('table')}
+        <p class="fc-mono" style="font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--fc-ink-mute);margin-bottom:var(--fc-s3)">เรียงตามลำดับชั้น — ลูกอยู่ใต้พ่อแม่ของมัน</p>
         <div style="overflow-x:auto">
           <table class="table table-sm mb-0" style="font-size:14px">
             <thead style="font-family:var(--fc-font-mono);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--fc-ink-mute)">
-              <tr><th>Code</th><th>Type</th><th>ชื่อ</th><th>Active</th></tr>
+              <tr>
+                <th style="white-space:nowrap">Code</th>
+                <th>Type</th>
+                <th>ชื่อ / Path</th>
+                <th>Parent</th>
+                <th>Meta</th>
+                <th style="text-align:center">Active</th>
+              </tr>
             </thead>
-            <tbody>
-              ${data.map((l) => `<tr${l.active===false?' style="opacity:0.5"':''}>
-                <td><code class="fc-mono">${escapeHtml(l.code)}</code></td>
-                <td class="small text-muted">${escapeHtml(l.type)}</td>
-                <td>${escapeHtml(l.name)}</td>
-                <td>${l.active ? '✓' : '✗'}</td>
-              </tr>`).join('')}
-            </tbody>
+            <tbody>${rowsHtml}</tbody>
           </table>
         </div>
         <p class="fc-mono" style="font-size:11px;color:var(--fc-ink-mute);margin-top:var(--fc-s3);margin-bottom:0">// อ่านอย่างเดียว · admin จัดการใน Console → สถานที่</p>
