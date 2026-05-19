@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.13.0';  // Phase 0.7+Laundry — location.laundry_role + v_linen_state_summary dashboard + 4 quick actions (เติมรถ/ใช้เปื้อน/ส่งซัก/รับคืน+loss)
+const CACHE_VERSION = 'thegood-stock-v0.13.1';  // Phase 0.7+Laundry — staff.html bootstrap.bundle + laundry.js category_id='LINEN' fix (no is_linen column in Phase 6 schema)
 const STATIC_ASSETS = [
   './',
   './login.html',

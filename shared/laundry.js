@@ -57,12 +57,26 @@
   // Data fetchers
   // =========================================================================
 
-  /** Fetch all linen stock items (is_linen=true). */
+  /** Cache the LINEN category UUID (Phase 6 schema uses category_id FK
+   *  to stock_categories, not a is_linen boolean column). */
+  let _linenCategoryId = null;
+  async function _getLinenCategoryId() {
+    if (_linenCategoryId) return _linenCategoryId;
+    const { data, error } = await _sb()
+      .from('stock_categories').select('id').eq('code', 'LINEN').single();
+    if (error || !data) return null;
+    _linenCategoryId = data.id;
+    return _linenCategoryId;
+  }
+
+  /** Fetch all linen stock items (category_id matches LINEN). */
   async function _fetchLinenItems() {
+    const linenCatId = await _getLinenCategoryId();
+    if (!linenCatId) return { data: [], error: null };
     return _safe(() =>
       _sb().from('stock_items')
-        .select('id,sku,name,linen_subcategory')
-        .eq('is_linen', true)
+        .select('id,sku,name,linen_subcategory,category_id')
+        .eq('category_id', linenCatId)
         .eq('active', true)
         .order('name')
     );
@@ -105,7 +119,7 @@
   async function _fetchExternalStock(extLocId) {
     return _safe(() =>
       _sb().from('stock_item_locations')
-        .select('item_id, qty, stock_items(id,name,sku,is_linen)')
+        .select('item_id, qty, stock_items(id,name,sku,category_id)')
         .eq('location_id', extLocId)
         .gt('qty', 0)
     );
@@ -232,7 +246,7 @@
 
     if (itemsRes.error || !itemsRes.data?.length) {
       document.getElementById('laundry-modal-body').innerHTML =
-        `<div class="alert alert-warning">ไม่พบสินค้าผ้า (is_linen=true) ในระบบ</div>`;
+        `<div class="alert alert-warning">ไม่พบสินค้าผ้า (category=LINEN) ในระบบ</div>`;
       document.getElementById('laundry-modal-footer').innerHTML =
         `<button class="btn btn-secondary" data-bs-dismiss="modal">ปิด</button>`;
       return;
@@ -436,14 +450,15 @@
     const extLocs   = extLocsRes.data;
 
     // Fetch all dirty-location stock for linen items
+    const linenCatId = await _getLinenCategoryId();
     const dirtyStockRes = await _safe(() =>
       _sb().from('stock_item_locations')
-        .select('item_id, location_id, qty, stock_items(id,name,sku,is_linen)')
+        .select('item_id, location_id, qty, stock_items(id,name,sku,category_id)')
         .in('location_id', dirtyLocs.map((l) => l.id))
         .gt('qty', 0)
     );
 
-    const dirtyStock = (dirtyStockRes.data || []).filter((r) => r.stock_items?.is_linen);
+    const dirtyStock = (dirtyStockRes.data || []).filter((r) => r.stock_items?.category_id === linenCatId);
     if (!dirtyStock.length) {
       document.getElementById('laundry-modal-body').innerHTML =
         `<div class="alert alert-info">ไม่มีผ้าสกปรกในระบบขณะนี้</div>`;
