@@ -13,13 +13,17 @@
 </head>
 <body>
 
-<nav class="navbar bg-modern-primary navbar-dark px-3">
-  <span class="navbar-brand mb-0">🏥 Thegood Stock</span>
-  <div>
-    <span class="text-white-50 me-2">👤 <span id="user-name">…</span></span>
-    <button class="btn btn-sm btn-outline-light" id="btn-logout">ออก</button>
+<nav class="fc-topbar">
+  <span class="fc-brand">
+    <span class="fc-brand-mark" id="brand-mark"></span>
+    <span class="fc-display" style="font-size:18px;letter-spacing:0.01em">thegood</span><span class="fc-mono" style="color:var(--fc-vital);font-weight:600">/stock</span>
+  </span>
+  <div style="display:flex;align-items:center;gap:var(--fc-s4)">
+    <span style="font-family:var(--fc-font-mono);font-size:12px;opacity:0.7"><span id="user-name">…</span></span>
+    <button class="fc-btn fc-btn-ghost" id="btn-logout" style="padding:6px 12px;min-height:36px;color:var(--fc-paper);border-color:rgba(248,245,239,0.25)">ออก</button>
   </div>
 </nav>
+<script>document.addEventListener('DOMContentLoaded',()=>{var m=document.getElementById('brand-mark');if(m&&window.Icons)m.innerHTML=window.Icons.cross('');m&&(m.style.cssText='display:inline-flex;width:28px;height:28px;border-radius:6px;background:var(--fc-vital);align-items:center;justify-content:center;color:#fff;padding:4px');});</script>
 
 <div class="container mt-4">
   <h4 id="staff-greeting">สวัสดี <span id="user-name-2"></span></h4>
@@ -28,13 +32,19 @@
   <div class="card mb-3"><div class="card-body">
     <p class="mb-2"><strong>เริ่มต้น Phase 1 — สแกนเบิก-จ่าย</strong></p>
     <div class="d-grid gap-2 mb-3">
-      <a class="btn btn-stock-primary btn-lg" href="./staff-scan.html">
-        <i class="bi bi-camera"></i> 📷 สแกนเบิก-จ่าย
+      <a class="fc-btn fc-btn-primary" href="./staff-scan.html" style="justify-content:center;min-height:56px;font-size:16px" id="cta-scan">
+        <span id="cta-scan-icon" style="display:inline-flex"></span>
+        <span>สแกนเบิก-จ่าย</span>
       </a>
-      <a class="btn btn-outline-stock-accent btn-lg" href="./staff-print.html">
-        🖨️ พิมพ์ QR
+      <a class="fc-btn fc-btn-ghost" href="./staff-print.html" style="justify-content:center;min-height:56px;font-size:16px" id="cta-print">
+        <span id="cta-print-icon" style="display:inline-flex"></span>
+        <span>พิมพ์ QR</span>
       </a>
     </div>
+    <script>document.addEventListener('DOMContentLoaded',()=>{if(!window.Icons)return;
+      document.getElementById('cta-scan-icon').innerHTML=window.Icons.scan('');
+      document.getElementById('cta-print-icon').innerHTML=window.Icons.printer('');
+    });</script>
     <p class="mb-2 text-muted small">เครื่องมืออื่น</p>
     <button class="btn btn-outline-stock-accent me-2" id="btn-view-loc"><i class="bi bi-geo-alt"></i> ดูสถานที่จัดเก็บ</button>
     <button class="btn btn-outline-stock-accent" id="btn-view-amb"><i class="bi bi-truck"></i> ดูรถพยาบาล</button>
@@ -42,6 +52,20 @@
 
   <div id="staff-detail"></div>
 </div>
+
+<nav class="fc-bottom-nav" aria-label="staff navigation">
+  <a href="./staff.html" class="active" id="bn-home" aria-label="หน้าหลัก"><span id="bn-icon-home"></span><span>หลัก</span></a>
+  <a href="./staff-scan.html" id="bn-scan" aria-label="สแกน"><span id="bn-icon-scan"></span><span>สแกน</span></a>
+  <a href="./staff-oxygen.html" id="bn-oxy" aria-label="ออกซิเจน"><span id="bn-icon-oxy"></span><span>O₂</span></a>
+  <a href="./staff-print.html" id="bn-print" aria-label="พิมพ์ QR"><span id="bn-icon-print"></span><span>พิมพ์</span></a>
+</nav>
+<script>document.addEventListener('DOMContentLoaded',()=>{if(!window.Icons)return;
+  document.getElementById('bn-icon-home').innerHTML=window.Icons.cross('');
+  document.getElementById('bn-icon-scan').innerHTML=window.Icons.scan('');
+  document.getElementById('bn-icon-oxy').innerHTML=window.Icons.cylinder('');
+  document.getElementById('bn-icon-print').innerHTML=window.Icons.printer('');
+  document.body.style.paddingBottom='80px';
+});</script>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./shared/config.js"></script>

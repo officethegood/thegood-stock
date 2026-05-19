@@ -369,5 +369,19 @@
   }
 </script>
 
+
+<nav class="fc-bottom-nav" aria-label="staff navigation">
+  <a href="./staff.html" id="bn-home"  aria-label="หน้าหลัก"><span id="bn-icon-home"></span><span>หลัก</span></a>
+  <a href="./staff-scan.html" id="bn-scan" class="active" aria-label="สแกน"><span id="bn-icon-scan"></span><span>สแกน</span></a>
+  <a href="./staff-oxygen.html" id="bn-oxy"  aria-label="ออกซิเจน"><span id="bn-icon-oxy"></span><span>O₂</span></a>
+  <a href="./staff-print.html" id="bn-print"  aria-label="พิมพ์ QR"><span id="bn-icon-print"></span><span>พิมพ์</span></a>
+</nav>
+<script>document.addEventListener('DOMContentLoaded',()=>{if(!window.Icons)return;
+  document.getElementById('bn-icon-home').innerHTML=window.Icons.cross('');
+  document.getElementById('bn-icon-scan').innerHTML=window.Icons.scan('');
+  document.getElementById('bn-icon-oxy').innerHTML=window.Icons.cylinder('');
+  document.getElementById('bn-icon-print').innerHTML=window.Icons.printer('');
+  document.body.style.paddingBottom='80px';
+});</script>
 </body>
 </html>

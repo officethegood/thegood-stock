@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.9.0';  // Phase 0.6 — Field Clinical visual refresh Wave 1 (FC tokens + Mitr/IBM Plex Sans Thai/JetBrains Mono + 24-icon SVG system)
+const CACHE_VERSION = 'thegood-stock-v0.9.1';  // Phase 0.6 Wave 2 — bottom-nav staff pages + FC topbar admin + brand wordmark + scan/print CTA icons
 const STATIC_ASSETS = [
   './',
   './login.html',

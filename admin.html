@@ -13,26 +13,34 @@
 </head>
 <body>
 
-<nav class="navbar bg-modern-primary navbar-dark px-3">
-  <span class="navbar-brand mb-0">🏥 Thegood Stock <small class="text-white-50">— Admin</small></span>
-  <div>
-    <span class="text-white-50 me-2">👤 <span id="user-name">…</span></span>
-    <button class="btn btn-sm btn-outline-light" id="btn-logout">ออก</button>
+<nav class="fc-topbar">
+  <span class="fc-brand">
+    <span class="fc-brand-mark" id="brand-mark" style="display:inline-flex;width:32px;height:32px;border-radius:8px;background:var(--fc-vital);align-items:center;justify-content:center;color:#fff;padding:5px"></span>
+    <span class="fc-display" style="font-size:20px;letter-spacing:0.01em;font-weight:600">thegood</span><span class="fc-mono" style="color:var(--fc-vital);font-weight:600;font-size:18px">/stock</span>
+    <span style="margin-left:var(--fc-s4);font-family:var(--fc-font-mono);font-size:11px;letter-spacing:0.15em;text-transform:uppercase;opacity:0.55">admin console</span>
+  </span>
+  <div style="display:flex;align-items:center;gap:var(--fc-s4)">
+    <span style="font-family:var(--fc-font-mono);font-size:12px;opacity:0.7"><span id="user-name">…</span></span>
+    <button class="fc-btn fc-btn-ghost" id="btn-logout" style="padding:6px 14px;min-height:36px;color:var(--fc-paper);border-color:rgba(248,245,239,0.25);font-size:13px">ออก</button>
   </div>
 </nav>
+<script>document.addEventListener('DOMContentLoaded',()=>{var m=document.getElementById('brand-mark');if(m&&window.Icons)m.innerHTML=window.Icons.cross('');});</script>
+
+<div class="fc-tab-list" style="padding:var(--fc-s3) var(--fc-s5);overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch">
+  <ul class="nav nav-pills flex-nowrap gap-2 mb-0" style="border:none;flex-wrap:nowrap">
+    <li><button class="btn nav-link stock-tab fc-tab" data-tab="dashboard"><i class="bi bi-speedometer2"></i> Dashboard</button></li>
+    <li><button class="btn nav-link stock-tab fc-tab" data-tab="locations"><i class="bi bi-geo-alt"></i> สถานที่</button></li>
+    <li><button class="btn nav-link stock-tab fc-tab" data-tab="inventory"><i class="bi bi-box-seam"></i> สต๊อก</button></li>
+    <li><button class="btn nav-link stock-tab fc-tab" data-tab="ambulances"><i class="bi bi-truck"></i> รถพยาบาล</button></li>
+    <li><button class="btn nav-link stock-tab fc-tab" data-tab="loans"><i class="bi bi-arrow-left-right"></i> ยืม-คืน</button></li>
+    <li><button class="btn nav-link stock-tab fc-tab" data-tab="oxygen"><i class="bi bi-circle-square"></i> ถังออกซิเจน</button></li>
+    <li><button class="btn nav-link stock-tab fc-tab" data-tab="bags"><i class="bi bi-bag-heart"></i> ALS Bags</button></li>
+    <li><button class="btn nav-link stock-tab fc-tab" data-tab="settings"><i class="bi bi-gear"></i> ตั้งค่า</button></li>
+    <li><button class="btn nav-link stock-tab fc-tab" data-tab="sessions"><i class="bi bi-people"></i> Sessions</button></li>
+  </ul>
+</div>
 
 <div class="container-fluid mt-3">
-  <ul class="nav nav-pills mb-3 flex-wrap gap-1">
-    <li><button class="btn nav-link stock-tab" data-tab="dashboard"><i class="bi bi-speedometer2"></i> Dashboard</button></li>
-    <li><button class="btn nav-link stock-tab" data-tab="locations"><i class="bi bi-geo-alt"></i> Locations</button></li>
-    <li><button class="btn nav-link stock-tab" data-tab="inventory"><i class="bi bi-box-seam"></i> Inventory</button></li>
-    <li><button class="btn nav-link stock-tab" data-tab="ambulances"><i class="bi bi-truck"></i> Ambulances</button></li>
-    <li><button class="btn nav-link stock-tab" data-tab="settings"><i class="bi bi-gear"></i> Settings</button></li>
-    <li><button class="btn nav-link stock-tab" data-tab="sessions"><i class="bi bi-people"></i> Sessions</button></li>
-    <li><button class="btn nav-link stock-tab" data-tab="loans"><i class="bi bi-arrow-left-right"></i> ยืม-คืน</button></li>
-    <li><button class="btn nav-link stock-tab" data-tab="oxygen"><i class="bi bi-circle-square"></i> ถังออกซิเจน</button></li>
-    <li><button class="btn nav-link stock-tab" data-tab="bags"><i class="bi bi-bag-heart"></i> ALS Bags</button></li>
-  </ul>
 
   <div id="tab-dashboard"  class="tab-pane d-none"></div>
   <div id="tab-locations"  class="tab-pane d-none"></div>
