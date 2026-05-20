@@ -2053,13 +2053,38 @@
   // Adjustment Loss / Gain modal (shared shape)
   // =========================================================================
   async function openAdjustModal(kind, prefillItem) {
-    // kind: 'loss' (any role) | 'gain' (Admin only)
+    // kind: 'loss' (any role — damage report, delta-down)
+    //     | 'gain' (Admin only — now a SET-ABSOLUTE "ปรับยอด/นับใหม่": pick a
+    //               location where the item already has stock, type the new
+    //               total (0 allowed = reset), system posts the gain/loss delta)
     if (kind === 'gain' && !_isAdmin()) { _toast('error', 'เฉพาะ Admin เท่านั้น'); return; }
     await _ensureLocations();
 
-    const title = kind === 'loss' ? 'ของหาย / ชำรุด' : 'ปรับยอด +';
-    const iconCls = kind === 'loss' ? 'bi-exclamation-triangle' : 'bi-plus-circle';
-    const btnCls  = kind === 'loss' ? 'btn-warning' : 'btn-stock-primary';
+    const isSet = (kind === 'gain');  // gain modal = set-absolute count
+
+    // Only locations where THIS item currently has stock (qty > 0).
+    const { rows: stockRows } = await _fetchLocationBreakdown(prefillItem.id);
+    const qtyByLoc = {};
+    (stockRows || []).forEach((r) => { qtyByLoc[r.location_id] = r.qty; });
+
+    if (!stockRows || !stockRows.length) {
+      _toast('warning', isSet
+        ? 'สินค้านี้ยังไม่มีสต็อกที่ใด — ใช้ "รับเข้า" เพื่อเพิ่มของครั้งแรก'
+        : 'สินค้านี้ยังไม่มีสต็อกที่ใด — ไม่มีอะไรให้บันทึกของหาย');
+      return;
+    }
+
+    const title   = isSet ? 'ปรับยอด (ตั้งค่ายอดใหม่)' : 'ของหาย / ชำรุด';
+    const iconCls = isSet ? 'bi-pencil-square' : 'bi-exclamation-triangle';
+    const btnCls  = isSet ? 'btn-stock-primary' : 'btn-warning';
+    const qtyLabel = isSet ? 'ยอดใหม่ * (ใส่ 0 เพื่อล้างเป็นศูนย์)' : 'จำนวนที่หาย *';
+    const qtyMin   = isSet ? 0 : 1;
+
+    const locOptions = (stockRows || []).map((r) => {
+      const l = r.locations || {};
+      const label = `${l.code || '?'} — ${l.name || ''} (มี ${r.qty})`;
+      return `<option value="${_esc(r.location_id)}">${_esc(label)}</option>`;
+    }).join('');
 
     const modalEl = _createModalShell('inv-adjust-modal', '', `
       <form id="inv-adjust-form">
@@ -2075,21 +2100,23 @@
             </div>
           </div>
           <div class="mb-2">
-            <label class="form-label" for="af-location">สถานที่ *</label>
+            <label class="form-label" for="af-location">สถานที่ * <span class="text-muted small">(เฉพาะที่มีของอยู่)</span></label>
             <select id="af-location" class="form-select" required>
               <option value="">— เลือก —</option>
-              ${_locations.map((l) => `<option value="${_esc(l.id)}">${_esc(_locLabel(l))}</option>`).join('')}
+              ${locOptions}
             </select>
+            <div id="af-current" class="form-text text-muted" style="font-size:12px;"></div>
           </div>
           <div class="row g-2">
             <div class="col-12 col-sm-4 mb-2">
-              <label class="form-label" for="af-qty">จำนวน *</label>
-              <input id="af-qty" type="number" min="1" step="1" class="form-control"
+              <label class="form-label" for="af-qty">${_esc(qtyLabel)}</label>
+              <input id="af-qty" type="number" min="${qtyMin}" step="1" class="form-control"
                      inputmode="numeric" required>
             </div>
             <div class="col-12 col-sm-8 mb-2">
               <label class="form-label" for="af-note">เหตุผล *</label>
-              <input id="af-note" class="form-control" required>
+              <input id="af-note" class="form-control" required
+                     placeholder="${isSet ? 'เช่น นับสต็อกใหม่ / reset เพื่อย้าย' : 'เช่น ชำรุด / สูญหาย'}">
             </div>
           </div>
           <div id="af-error" class="alert alert-danger mt-2 d-none" role="alert" aria-live="polite"></div>
@@ -2102,18 +2129,53 @@
     `);
     const modal = new bootstrap.Modal(modalEl);
 
+    // Show current qty when a location is picked; in set mode, pre-fill the new-total field
+    const locSel  = modalEl.querySelector('#af-location');
+    const curEl   = modalEl.querySelector('#af-current');
+    const qtyEl   = modalEl.querySelector('#af-qty');
+    locSel.addEventListener('change', () => {
+      const cur = qtyByLoc[locSel.value];
+      if (cur == null) { curEl.textContent = ''; return; }
+      curEl.textContent = `ยอดปัจจุบันที่นี่: ${cur} ${prefillItem.unit || 'ชิ้น'}`;
+      if (isSet && !qtyEl.value) qtyEl.value = cur;  // convenient starting point
+    });
+
     modalEl.querySelector('#inv-adjust-form').onsubmit = async (ev) => {
       ev.preventDefault();
       const errEl = modalEl.querySelector('#af-error');
       errEl.classList.add('d-none'); errEl.textContent = '';
 
-      const locId = modalEl.querySelector('#af-location').value;
-      const qty   = parseInt(modalEl.querySelector('#af-qty').value, 10);
+      const locId = locSel.value;
+      const qty   = parseInt(qtyEl.value, 10);
       const note  = modalEl.querySelector('#af-note').value.trim();
-      if (!locId || !Number.isFinite(qty) || qty <= 0 || !note) {
+      const minOk = isSet ? (qty >= 0) : (qty >= 1);
+      if (!locId || !Number.isFinite(qty) || !minOk || !note) {
         errEl.textContent = 'กรอกข้อมูลไม่ครบ';
         errEl.classList.remove('d-none');
         return;
+      }
+
+      const current = qtyByLoc[locId] ?? 0;
+      let opKind, opQty;  // opKind: 'gain'|'loss', opQty: positive delta
+      if (isSet) {
+        // Set-absolute: compute the delta to reach the target qty
+        const delta = qty - current;
+        if (delta === 0) {
+          _toast('info', 'ยอดไม่เปลี่ยน — ไม่ต้องบันทึก');
+          modal.hide();
+          return;
+        }
+        opKind = delta > 0 ? 'gain' : 'loss';
+        opQty  = Math.abs(delta);
+      } else {
+        // Loss: delta-down. Cannot lose more than is present.
+        if (qty > current) {
+          errEl.textContent = `ของหายได้ไม่เกินยอดที่มี (${current})`;
+          errEl.classList.remove('d-none');
+          return;
+        }
+        opKind = 'loss';
+        opQty  = qty;
       }
 
       const submitEl = modalEl.querySelector('#af-submit');
@@ -2121,9 +2183,9 @@
       submitEl.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>กำลังบันทึก…';
 
       const clientRefId = crypto.randomUUID ? crypto.randomUUID() : window.AppInventory._uuid();
-      const r = kind === 'loss'
-        ? await window.AppInventory.adjustmentLoss(prefillItem.id, locId, qty, note, clientRefId)
-        : await window.AppInventory.adjustmentGain(prefillItem.id, locId, qty, note, clientRefId);
+      const r = opKind === 'loss'
+        ? await window.AppInventory.adjustmentLoss(prefillItem.id, locId, opQty, note, clientRefId)
+        : await window.AppInventory.adjustmentGain(prefillItem.id, locId, opQty, note, clientRefId);
 
       submitEl.disabled = false;
       submitEl.textContent = 'บันทึก';
@@ -2136,7 +2198,9 @@
       if (r.data && r.data.replay) {
         _toast('info', 'รายการนี้บันทึกแล้ว');
       } else {
-        _toast('success', kind === 'loss' ? 'บันทึกของหายแล้ว' : 'ปรับยอดแล้ว');
+        _toast('success', isSet
+          ? `ปรับยอดเป็น ${qty} แล้ว`
+          : 'บันทึกของหายแล้ว');
       }
       modal.hide();
       reload();

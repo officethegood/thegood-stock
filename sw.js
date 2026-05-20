@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.17.0';  // UX consolidation — Staff home 14 buttons → 3 task cards (no jargon); Admin 8 tabs → 5 (คลัง merges สต๊อก/ออกซิเจน/ALS Bags; Sessions → ตั้งค่า)
+const CACHE_VERSION = 'thegood-stock-v0.17.1';  // ปรับยอด modal — set-absolute (type new total, 0 allowed to reset); location dropdown filtered to where the item actually has stock + shows current qty
 const STATIC_ASSETS = [
   './',
   './login.html',
