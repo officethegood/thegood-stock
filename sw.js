@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.17.1';  // ปรับยอด modal — set-absolute (type new total, 0 allowed to reset); location dropdown filtered to where the item actually has stock + shows current qty
+const CACHE_VERSION = 'thegood-stock-v0.17.2';  // ล้างของในตำแหน่งนี้ — location edit modal can empty all stock at a location in one action (adjustment_loss per item, ledger preserved); prerequisite for deleting a location with stock
 const STATIC_ASSETS = [
   './',
   './login.html',

@@ -710,9 +710,15 @@
                 </div>
 
               </div>
-              <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
-                <button type="submit" class="btn btn-stock-primary">บันทึก</button>
+              <div class="modal-footer ${isEdit ? 'justify-content-between' : ''}">
+                ${isEdit ? `
+                  <button type="button" class="btn btn-outline-danger btn-sm" id="btn-loc-clear-stock">
+                    <i class="bi bi-eraser"></i> ล้างของในตำแหน่งนี้
+                  </button>` : ''}
+                <div class="d-flex gap-2">
+                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+                  <button type="submit" class="btn btn-stock-primary">บันทึก</button>
+                </div>
               </div>
             </form>
           </div>
@@ -724,6 +730,12 @@
     const modalEl = document.getElementById('loc-modal');
     const modal   = new bootstrap.Modal(modalEl);
     modalEl.addEventListener('hidden.bs.modal', () => modalEl.remove());
+
+    // "ล้างของในตำแหน่งนี้" — empty all stock at this location (edit mode only)
+    const clearBtn = document.getElementById('btn-loc-clear-stock');
+    if (clearBtn && isEdit) {
+      clearBtn.onclick = () => _clearLocationStock(id, modal);
+    }
 
     const fType        = document.getElementById('f-type');
     const fParent      = document.getElementById('f-parent');
@@ -967,6 +979,60 @@
   // =========================================================================
   // Delete
   // =========================================================================
+  // Empty all stock from a location — posts adjustment_loss per item so the
+  // ledger keeps a record. Lets the admin reset a location before re-stocking
+  // (and is the prerequisite for deleting a location that still has stock).
+  async function _clearLocationStock(locId, modal) {
+    const sb  = getSupabaseClient();
+    const loc = _all.find((x) => x.id === locId);
+
+    const { data, error } = await sb
+      .from('stock_item_locations')
+      .select('item_id, qty, stock_items(name, sku, tracks_lots)')
+      .eq('location_id', locId)
+      .gt('qty', 0);
+    if (error) { showToast('error', 'โหลดข้อมูลของในตำแหน่งไม่สำเร็จ'); return; }
+    if (!data || !data.length) { showToast('info', 'ตำแหน่งนี้ไม่มีของอยู่แล้ว'); return; }
+
+    const totalItems = data.length;
+    const totalQty   = data.reduce((s, r) => s + (r.qty || 0), 0);
+    const locName    = loc ? `${loc.code} — ${loc.name}` : 'ตำแหน่งนี้';
+
+    const ok = await showConfirm(
+      `ล้างของทั้งหมดใน "${locName}"? ` +
+      `จะตัด ${totalItems} รายการ (รวม ${totalQty} ชิ้น) ให้เป็น 0 — ` +
+      `บันทึกลงประวัติเป็นการปรับยอด กู้คืนไม่ได้`
+    );
+    if (!ok) return;
+
+    if (!window.AppInventory || !window.AppInventory.adjustmentLoss) {
+      showToast('error', 'โมดูล inventory ยังไม่พร้อม — รีเฟรชหน้าใหม่');
+      return;
+    }
+
+    let done = 0, failed = 0;
+    const failNames = [];
+    for (const r of data) {
+      const ref = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()));
+      const res = await window.AppInventory.adjustmentLoss(
+        r.item_id, locId, r.qty, `ล้างตำแหน่ง ${loc?.code || ''}`, ref
+      );
+      if (res && res.error) { failed++; failNames.push(r.stock_items?.name || r.item_id); }
+      else done++;
+    }
+
+    if (failed) {
+      showToast('warning',
+        `ล้างสำเร็จ ${done} รายการ · ล้มเหลว ${failed} (${failNames.slice(0, 3).join(', ')}` +
+        `${failNames.length > 3 ? '…' : ''}) — รายการที่ track ล็อตอาจต้องจัดการแยก`);
+    } else {
+      showToast('success', `ล้างของใน ${loc?.code || 'ตำแหน่ง'} สำเร็จ — ${done} รายการเป็น 0`);
+    }
+    if (modal) { try { modal.hide(); } catch {} }
+    await load();
+    renderTree();
+  }
+
   async function handleDelete(id) {
     const loc    = _all.find((x) => x.id === id);
     const count  = childCount(id);
