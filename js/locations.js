@@ -11,9 +11,12 @@
   // State
   // =========================================================================
   let _all          = [];        // flat array from Supabase
-  let _expanded     = new Set(); // set of expanded node ids
+  let _expanded     = new Set(); // set of expanded node ids (persisted in localStorage)
+  let _itemsByLoc   = new Map(); // location_id → [{sku,name,qty,unit,reorder_threshold}]
   let _unsubscribe  = null;      // realtime teardown
   let _refreshTimer = null;      // debounce handle
+
+  const _LS_OPEN_KEY = 'admin_loc_tree_open';
 
   // =========================================================================
   // Type metadata
@@ -73,12 +76,43 @@
   }
 
   // =========================================================================
+  // Stock items per location (for Rich Tree Cards item previews)
+  // =========================================================================
+  async function _fetchItemStock() {
+    try {
+      const sb = getSupabaseClient();
+      const { data, error } = await sb
+        .from('stock_item_locations')
+        .select('location_id, qty, stock_items(id, sku, name, unit, reorder_threshold)')
+        .gt('qty', 0);
+      if (error) {
+        console.warn('[locations] _fetchItemStock error', error);
+        return;
+      }
+      _itemsByLoc = new Map();
+      for (const row of (data || [])) {
+        const locId = row.location_id;
+        if (!_itemsByLoc.has(locId)) _itemsByLoc.set(locId, []);
+        _itemsByLoc.get(locId).push({
+          sku:               row.stock_items?.sku  || '',
+          name:              row.stock_items?.name || '',
+          qty:               row.qty               || 0,
+          unit:              row.stock_items?.unit || '',
+          reorder_threshold: row.stock_items?.reorder_threshold ?? 0,
+        });
+      }
+    } catch (e) {
+      console.warn('[locations] _fetchItemStock threw', e);
+    }
+  }
+
+  // =========================================================================
   // Realtime
   // =========================================================================
   function _scheduleRealtimeReload() {
     if (_refreshTimer) clearTimeout(_refreshTimer);
     _refreshTimer = setTimeout(async () => {
-      try { await load(); renderTree(); }
+      try { await load(); await _fetchItemStock(); renderTree(); }
       catch (e) { console.warn('[locations] realtime reload failed', e); }
     }, 300);
   }
@@ -99,7 +133,7 @@
   }
 
   // =========================================================================
-  // Tree rendering
+  // Tree rendering — Rich Tree Cards (Concept A)
   // =========================================================================
 
   /** Return breadcrumb path string for a location (fast, from _all). */
@@ -114,31 +148,7 @@
     return _all.filter((l) => l.parent_id === id).length;
   }
 
-  function renderTree() {
-    const tree = window.AppLocations
-      ? window.AppLocations.getLocationTree(_all)
-      : _fallbackFlatTree();
-
-    const root = document.getElementById('loc-tree');
-    if (!root) return;
-
-    const html = _renderNodes(tree, 0);
-    root.innerHTML = html || `<p class="text-muted small px-2 py-3">ยังไม่มีสถานที่ — กด "เพิ่มใหม่"</p>`;
-
-    // Attach events
-    root.querySelectorAll('[data-act]').forEach((btn) => {
-      const id  = btn.dataset.id;
-      const act = btn.dataset.act;
-      if (act === 'toggle')  btn.onclick = () => _toggleExpand(id);
-      if (act === 'add-child') btn.onclick = () => openModal(null, id);
-      if (act === 'print')   btn.onclick = () => _printQR(id);
-      if (act === 'edit')    btn.onclick = () => openModal(id);
-      if (act === 'del')     btn.onclick = () => handleDelete(id);
-    });
-  }
-
   function _fallbackFlatTree() {
-    // Fallback if shared/locations.js not loaded — build shallow tree inline
     const byId = new Map(_all.map((r) => [r.id, { ...r, children: [] }]));
     const roots = [];
     for (const n of byId.values()) {
@@ -146,77 +156,6 @@
       else roots.push(n);
     }
     return roots;
-  }
-
-  function _renderNodes(nodes, depth) {
-    return nodes.map((l) => {
-      const hasChildren = l.children && l.children.length > 0;
-      const isExpanded  = _expanded.has(l.id);
-      const isInactive  = !l.active;
-      const indent      = depth * 20;
-
-      // Display type: cabinet → storage for legacy rows
-      const dispType = (l.type === 'cabinet') ? 'storage' : l.type;
-      const badge = `<span class="fc-badge ${badgeClassForType(dispType)} ms-1" style="font-size:10px;padding:2px 7px;">
-        <i class="${iconClassForType(dispType)}" style="font-size:10px;margin-right:2px;"></i>${labelForType(dispType)}
-      </span>`;
-
-      const storageHint = (dispType === 'storage' && l.storage_style)
-        ? `<span class="text-muted small ms-2" style="font-size:10px;">(${_storageStyleLabel(l.storage_style)})</span>`
-        : '';
-
-      const laundryMeta = _laundryRoleMeta(l.laundry_role);
-      const laundryBadge = laundryMeta
-        ? `<span class="fc-badge fc-badge-neutral ms-1" style="font-size:10px;padding:2px 7px;background:var(--fc-paper-sub);">
-            <i class="bi ${laundryMeta.icon}" style="font-size:10px;margin-right:2px;"></i>${laundryMeta.label}
-           </span>`
-        : '';
-
-      const breadcrumb = depth > 0
-        ? `<span class="text-muted ms-2" style="font-size:10px;font-family:var(--fc-font-mono);">${escapeHtml(pathFor(l.id))}</span>`
-        : '';
-
-      const toggleBtn = hasChildren
-        ? `<button class="btn btn-link p-0 me-1" data-act="toggle" data-id="${l.id}" aria-label="${isExpanded ? 'ซ่อนลูก' : 'แสดงลูก'}" style="min-width:24px;color:var(--fc-ink-soft);">
-            <i class="bi ${isExpanded ? 'bi-chevron-down' : 'bi-chevron-right'}" style="font-size:12px;"></i>
-          </button>`
-        : `<span style="display:inline-block;width:24px;"></span>`;
-
-      const codeHtml = `<code class="fc-mono me-2" style="font-size:11px;background:var(--fc-paper-sub);padding:1px 5px;border-radius:3px;">${escapeHtml(l.code)}</code>`;
-
-      const nameHtml = `<span class="${isInactive ? 'text-muted text-decoration-line-through' : ''}" style="font-size:14px;">${escapeHtml(l.name)}</span>`;
-
-      // Action buttons — "add child" only if type can have children
-      const canHaveChildren = !['bin', 'zone'].includes(dispType);
-      const addChildBtn = canHaveChildren
-        ? `<button class="btn btn-link p-0 ms-1 text-muted" data-act="add-child" data-id="${l.id}" aria-label="เพิ่ม location ลูก" title="เพิ่ม location ภายใน" style="min-width:32px;min-height:32px;">
-            <i class="bi bi-plus-circle" style="font-size:12px;"></i>
-          </button>`
-        : '';
-
-      const row = `
-        <div class="d-flex align-items-center py-1 loc-row" style="padding-left:${indent + 4}px;min-height:38px;" data-id="${l.id}">
-          ${toggleBtn}
-          ${codeHtml}
-          ${nameHtml}
-          ${badge}
-          ${storageHint}
-          ${laundryBadge}
-          ${breadcrumb}
-          <span class="ms-auto d-flex align-items-center gap-1">
-            ${addChildBtn}
-            <button class="btn btn-link p-0 text-stock-accent" data-act="print" data-id="${l.id}" aria-label="พิมพ์ QR ${escapeHtml(l.code)}" title="พิมพ์ QR" style="min-width:32px;min-height:32px;"><i class="bi bi-printer" style="font-size:13px;"></i></button>
-            <button class="btn btn-link p-0" data-act="edit" data-id="${l.id}" aria-label="แก้ไข" style="min-width:32px;min-height:32px;"><i class="bi bi-pencil" style="font-size:13px;"></i></button>
-            <button class="btn btn-link p-0 text-danger" data-act="del" data-id="${l.id}" aria-label="ลบ" style="min-width:32px;min-height:32px;"><i class="bi bi-trash" style="font-size:13px;"></i></button>
-          </span>
-        </div>`;
-
-      const childrenHtml = (hasChildren && isExpanded)
-        ? `<div class="loc-children">${_renderNodes(l.children, depth + 1)}</div>`
-        : (hasChildren && !isExpanded ? '' : '');
-
-      return row + childrenHtml;
-    }).join('');
   }
 
   function _storageStyleLabel(s) {
@@ -237,9 +176,232 @@
          : null;
   }
 
+  /** Compute item status: 'out' | 'low' | 'ok' */
+  function _itemStatus(item) {
+    if (item.qty <= 0) return 'out';
+    if (item.reorder_threshold > 0 && item.qty <= item.reorder_threshold) return 'low';
+    return 'ok';
+  }
+
+  /**
+   * Roll up alert counts across a subtree (node + all descendants).
+   * Returns { low: N, out: N }
+   */
+  function _rollupAlerts(nodeId, childrenMap) {
+    let low = 0, out = 0;
+    const items = _itemsByLoc.get(nodeId) || [];
+    for (const it of items) {
+      const s = _itemStatus(it);
+      if (s === 'out') out++;
+      else if (s === 'low') low++;
+    }
+    const kids = childrenMap.get(nodeId) || [];
+    for (const kid of kids) {
+      const r = _rollupAlerts(kid.id, childrenMap);
+      low += r.low; out += r.out;
+    }
+    return { low, out };
+  }
+
+  /** Child-type label for meta line */
+  function _childTypeLabel(type) {
+    return type === 'room'      ? 'ห้อง'
+         : type === 'storage'   ? 'ตู้'
+         : type === 'cabinet'   ? 'ตู้'
+         : type === 'shelf'     ? 'ชั้น'
+         : type === 'bin'       ? 'ตะกร้า'
+         : type === 'ambulance' ? 'รถ'
+         : type === 'bag'       ? 'กระเป๋า'
+         : type === 'zone'      ? 'โซน'
+         : 'รายการ';
+  }
+
+  /**
+   * Render the Rich Tree Card list (called recursively).
+   * childrenMap: Map<parentId, [child, ...]>
+   */
+  function _buildRtcNodes(nodes, childrenMap) {
+    const ul = document.createElement('ul');
+    ul.className = 'rtc-children';
+
+    for (const l of nodes) {
+      const dispType = (l.type === 'cabinet') ? 'storage' : l.type;
+      const kids     = childrenMap.get(l.id) || [];
+      const hasKids  = kids.length > 0;
+      const isOpen   = _expanded.has(l.id);
+
+      // Direct stock items at this location
+      const ownItems = _itemsByLoc.get(l.id) || [];
+      const ownCount = ownItems.length;
+
+      // Alert roll-up (self + descendants)
+      const { low, out } = _rollupAlerts(l.id, childrenMap);
+
+      // Laundry badge
+      const laundryMeta  = _laundryRoleMeta(l.laundry_role);
+
+      // Build <li>
+      const li = document.createElement('li');
+      li.className = 'rtc-node' + (isOpen ? ' is-open' : '') + (!l.active ? ' rtc-inactive' : '');
+      if (!hasKids && !ownCount) li.classList.add('is-leaf');
+      li.dataset.type = dispType;
+      li.dataset.id   = l.id;
+
+      // Meta content
+      const metaParts = [];
+      if (hasKids) {
+        const firstKidType = kids[0] ? _childTypeLabel((kids[0].type === 'cabinet' ? 'storage' : kids[0].type)) : 'รายการ';
+        metaParts.push(`<i class="bi bi-diagram-3"></i> ${kids.length} ${firstKidType}`);
+      }
+      if (ownCount) {
+        metaParts.push(`<i class="bi bi-box-seam"></i> ${ownCount} รายการ`);
+      }
+      if (l.storage_style) {
+        metaParts.push(`<span style="font-size:.68rem;color:var(--fc-ink-mute)">(${_storageStyleLabel(l.storage_style)})</span>`);
+      }
+      if (laundryMeta) {
+        metaParts.push(`<i class="bi ${laundryMeta.icon}"></i> ${laundryMeta.label}`);
+      }
+
+      const alertsHtml = [
+        out ? `<span class="rtc-alert rtc-alert-out"><i class="bi bi-x-octagon-fill"></i>${out} หมด</span>` : '',
+        low ? `<span class="rtc-alert rtc-alert-low"><i class="bi bi-exclamation-triangle-fill"></i>${low} ใกล้หมด</span>` : '',
+      ].filter(Boolean).join(' ');
+
+      const metaHtml = metaParts.join('<span class="rtc-meta-sep mx-1">·</span>');
+
+      // Action buttons
+      const canAddChild = !['bin', 'zone'].includes(dispType);
+      const actionsHtml = `
+        <div class="rtc-actions">
+          ${canAddChild ? `<button class="btn btn-sm" title="เพิ่ม location ภายใน" data-act="add-child" data-id="${l.id}"><i class="bi bi-plus-circle"></i></button>` : ''}
+          <button class="btn btn-sm" title="พิมพ์ QR" data-act="print" data-id="${l.id}"><i class="bi bi-printer"></i></button>
+          <button class="btn btn-sm" title="แก้ไข" data-act="edit" data-id="${l.id}"><i class="bi bi-pencil"></i></button>
+          <button class="btn btn-sm text-danger" title="ลบ" data-act="del" data-id="${l.id}"><i class="bi bi-trash"></i></button>
+        </div>`;
+
+      li.innerHTML = `
+        <div class="rtc-row">
+          <button class="rtc-twisty" data-act="toggle" data-id="${l.id}" aria-label="ขยาย/ยุบ">
+            <i class="bi bi-chevron-right"></i>
+          </button>
+          <span class="rtc-icon"><i class="${iconClassForType(dispType)}"></i></span>
+          <div class="rtc-main">
+            <div class="rtc-title">
+              <span class="rtc-name">${escapeHtml(l.name)}</span>
+              <code class="rtc-code">${escapeHtml(l.code)}</code>
+              <span class="rtc-chip-type">${escapeHtml(labelForType(dispType))}</span>
+            </div>
+            <div class="rtc-meta">
+              ${metaHtml}
+              ${alertsHtml ? `<span class="rtc-meta-sep mx-1">·</span>${alertsHtml}` : ''}
+            </div>
+          </div>
+          ${actionsHtml}
+        </div>`;
+
+      // Item preview panel (only rendered when there are own items)
+      if (ownCount > 0) {
+        const MAX_PREVIEW = 4;
+        const preview  = ownItems.slice(0, MAX_PREVIEW);
+        const moreCount = ownCount - preview.length;
+
+        const itemsDiv = document.createElement('div');
+        itemsDiv.className = 'rtc-items';
+
+        for (const it of preview) {
+          const s  = _itemStatus(it);
+          const row = document.createElement('div');
+          row.className = 'rtc-item';
+          row.innerHTML = `
+            <span class="rtc-item-sku">${escapeHtml(it.sku)}</span>
+            <span class="rtc-item-name">${escapeHtml(it.name)}</span>
+            <span class="rtc-item-qty">${it.qty} ${escapeHtml(it.unit)}</span>
+            <span class="rtc-item-flag ${s}">${s}</span>`;
+          itemsDiv.appendChild(row);
+        }
+
+        if (moreCount > 0) {
+          const moreBtn = document.createElement('button');
+          moreBtn.className = 'rtc-item-more';
+          moreBtn.innerHTML = `<i class="bi bi-arrow-right-short"></i> + อีก ${moreCount} รายการ`;
+          moreBtn.onclick = (ev) => {
+            ev.stopPropagation();
+            openModal(l.id); // open edit modal — user can navigate from there
+          };
+          itemsDiv.appendChild(moreBtn);
+        }
+
+        li.appendChild(itemsDiv);
+      }
+
+      // Children
+      if (hasKids) {
+        const kidsWrap = document.createElement('div');
+        kidsWrap.className = 'rtc-kids';
+        kidsWrap.appendChild(_buildRtcNodes(kids, childrenMap));
+        li.appendChild(kidsWrap);
+      }
+
+      ul.appendChild(li);
+    }
+
+    return ul;
+  }
+
+  function renderTree() {
+    const tree = window.AppLocations
+      ? window.AppLocations.getLocationTree(_all)
+      : _fallbackFlatTree();
+
+    const root = document.getElementById('loc-tree');
+    if (!root) return;
+
+    if (!tree || tree.length === 0) {
+      root.innerHTML = `
+        <div class="rtc-empty">
+          <i class="bi bi-geo-alt"></i>
+          <div class="rtc-empty-label">ยังไม่มีสถานที่ — กดเพิ่มใหม่</div>
+        </div>`;
+      return;
+    }
+
+    // Build children map for O(1) lookup during roll-up
+    const childrenMap = new Map();
+    for (const loc of _all) {
+      if (loc.parent_id) {
+        if (!childrenMap.has(loc.parent_id)) childrenMap.set(loc.parent_id, []);
+        childrenMap.get(loc.parent_id).push(loc);
+      }
+    }
+
+    // Render
+    const wrap = document.createElement('div');
+    wrap.className = 'rtc-tree';
+    wrap.appendChild(_buildRtcNodes(tree, childrenMap));
+    root.innerHTML = '';
+    root.appendChild(wrap);
+
+    // Attach events via delegation on the wrapper
+    wrap.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('[data-act]');
+      if (!btn) return;
+      ev.stopPropagation();
+      const id  = btn.dataset.id;
+      const act = btn.dataset.act;
+      if (act === 'toggle')    { _toggleExpand(id); return; }
+      if (act === 'add-child') { openModal(null, id); return; }
+      if (act === 'print')     { _printQR(id); return; }
+      if (act === 'edit')      { openModal(id); return; }
+      if (act === 'del')       { handleDelete(id); return; }
+    });
+  }
+
   function _toggleExpand(id) {
     if (_expanded.has(id)) _expanded.delete(id);
     else _expanded.add(id);
+    // Persist open set
+    try { localStorage.setItem(_LS_OPEN_KEY, JSON.stringify([..._expanded])); } catch {}
     renderTree();
   }
 
@@ -1107,6 +1269,12 @@
   }
 
   window.initLocationsTab = async function () {
+    // Restore persisted open set from localStorage
+    try {
+      const saved = JSON.parse(localStorage.getItem(_LS_OPEN_KEY) || '[]');
+      _expanded = new Set(saved);
+    } catch { _expanded = new Set(); }
+
     if (_adminView === 'graph') {
       // For graph view, ensure data is loaded first
       try {
@@ -1134,11 +1302,9 @@
           <i class="bi bi-plus"></i> เพิ่มใหม่
         </button>
       </div>
-      <div class="card shadow-sm">
-        <div class="card-body p-2" id="loc-tree" style="min-height:80px;">
-          <div class="d-flex align-items-center justify-content-center py-4 text-muted">
-            <span class="spinner-border spinner-border-sm me-2"></span> กำลังโหลด…
-          </div>
+      <div id="loc-tree" style="min-height:80px;">
+        <div class="d-flex align-items-center justify-content-center py-4 text-muted">
+          <span class="spinner-border spinner-border-sm me-2"></span> กำลังโหลด…
         </div>
       </div>
     `;
@@ -1152,15 +1318,18 @@
 
     document.getElementById('btn-loc-expand-all').onclick = () => {
       _all.forEach((l) => _expanded.add(l.id));
+      try { localStorage.setItem(_LS_OPEN_KEY, JSON.stringify([..._expanded])); } catch {}
       renderTree();
     };
     document.getElementById('btn-loc-collapse-all').onclick = () => {
       _expanded.clear();
+      try { localStorage.setItem(_LS_OPEN_KEY, JSON.stringify([])); } catch {}
       renderTree();
     };
 
     try {
       await load();
+      await _fetchItemStock();
       renderTree();
       _subscribeRealtime();
     } catch (e) {

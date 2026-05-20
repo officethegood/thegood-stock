@@ -1377,6 +1377,332 @@ input[type="time"] { font-variant-numeric: tabular-nums; }
 }
 
 /* =============================================
+   Rich Tree Cards — Locations Concept A
+   (Phase 0.8 — appended 2026-05-20)
+   Adapted from reference design; uses FC tokens.
+   ============================================= */
+
+/* --- Per-type accent tokens (FC-derived hex values) ---
+   room      : fc-vital-deep   #007F75
+   ambulance : fc-pulse-red    #E63946
+   storage   : fc-ok           #2A9D8F (slightly darker teal)
+   shelf     : #5B7FA6          (muted FC ink-blue)
+   bin       : fc-amber         #F4A261 toned
+   bag       : fc-yellow        #D4A017 (golden)
+   zone      : fc-ink-soft      rgba grey
+*/
+:root {
+  --rtc-room:      #007F75;
+  --rtc-ambulance: #C0392B;
+  --rtc-storage:   #2A9D8F;
+  --rtc-shelf:     #5B7FA6;
+  --rtc-bin:       #B85A16;
+  --rtc-bag:       #B8860B;
+  --rtc-zone:      #607080;
+
+  --rtc-ok:  #2A9D8F;
+  --rtc-low: #B85A16;
+  --rtc-out: #C0392B;
+}
+
+/* Container */
+.rtc-tree {
+  background: var(--fc-paper-elev);
+  border: 1px solid var(--fc-hairline);
+  border-radius: var(--fc-r3);
+  box-shadow: var(--fc-elev-1);
+  padding: var(--fc-s4);
+}
+
+/* Root list */
+.rtc-tree > ul.rtc-children {
+  list-style: none;
+  margin: 0; padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+/* Per-type cascade */
+.rtc-node[data-type="room"]      { --c: var(--rtc-room); }
+.rtc-node[data-type="ambulance"] { --c: var(--rtc-ambulance); }
+.rtc-node[data-type="storage"]   { --c: var(--rtc-storage); }
+.rtc-node[data-type="cabinet"]   { --c: var(--rtc-storage); }
+.rtc-node[data-type="shelf"]     { --c: var(--rtc-shelf); }
+.rtc-node[data-type="bin"]       { --c: var(--rtc-bin); }
+.rtc-node[data-type="bag"]       { --c: var(--rtc-bag); }
+.rtc-node[data-type="zone"]      { --c: var(--rtc-zone); }
+
+/* The card row */
+.rtc-node {
+  --c: var(--rtc-zone);
+  list-style: none;
+  position: relative;
+}
+
+.rtc-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px 34px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 8px;
+  background: var(--fc-paper-elev);
+  border: 1px solid var(--fc-hairline);
+  border-radius: var(--fc-r2);
+  box-shadow: var(--fc-elev-1);
+  cursor: pointer;
+  transition: border-color .12s, background .12s;
+  overflow: hidden;
+}
+
+/* Left accent strip */
+.rtc-row::before {
+  content: "";
+  position: absolute;
+  left: -1px; top: 8px; bottom: 8px;
+  width: 3px;
+  background: var(--c);
+  border-radius: 3px;
+}
+
+.rtc-row:hover {
+  border-color: var(--c);
+  background: color-mix(in srgb, var(--c) 5%, var(--fc-paper-elev));
+}
+
+/* Twisty chevron */
+.rtc-twisty {
+  width: 22px; height: 22px;
+  display: inline-grid; place-items: center;
+  border: 0; background: transparent; padding: 0;
+  color: var(--fc-ink-mute);
+  border-radius: var(--fc-r1);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.rtc-twisty:hover { background: var(--fc-paper-sub); color: var(--fc-ink); }
+.rtc-twisty i { transition: transform .15s ease; font-size: .85rem; }
+.rtc-node.is-open > .rtc-row .rtc-twisty i { transform: rotate(90deg); }
+.rtc-node.is-leaf > .rtc-row .rtc-twisty { visibility: hidden; }
+
+/* Type icon square */
+.rtc-icon {
+  width: 30px; height: 30px;
+  border-radius: 7px;
+  display: grid; place-items: center;
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 14%, var(--fc-paper-elev));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 22%, var(--fc-paper-elev));
+  font-size: .95rem;
+  flex-shrink: 0;
+}
+
+/* Main text area */
+.rtc-main { min-width: 0; }
+.rtc-title {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 5px;
+  line-height: 1.2;
+}
+.rtc-name {
+  font-family: var(--fc-font-display);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--fc-ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rtc-inactive .rtc-name {
+  color: var(--fc-ink-mute);
+  text-decoration: line-through;
+}
+.rtc-code {
+  font-family: var(--fc-font-mono);
+  font-size: .68rem;
+  color: var(--fc-ink-soft);
+  background: var(--fc-paper-sub);
+  border: 1px solid var(--fc-hairline);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.rtc-chip-type {
+  font-family: var(--fc-font-display);
+  font-size: .64rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 9%, var(--fc-paper-elev));
+  border: 1px solid color-mix(in srgb, var(--c) 28%, var(--fc-paper-elev));
+}
+
+/* Meta line */
+.rtc-meta {
+  margin-top: 2px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px;
+  font-size: .75rem;
+  color: var(--fc-ink-soft);
+}
+.rtc-meta-sep { color: var(--fc-hairline); }
+
+/* Alert badges */
+.rtc-alert {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-family: var(--fc-font-display);
+  font-size: .68rem; font-weight: 600;
+  padding: 1px 7px; border-radius: 999px;
+}
+.rtc-alert-low {
+  color: var(--rtc-low);
+  background: color-mix(in srgb, var(--rtc-low) 12%, white);
+  border: 1px solid color-mix(in srgb, var(--rtc-low) 28%, white);
+}
+.rtc-alert-out {
+  color: var(--rtc-out);
+  background: color-mix(in srgb, var(--rtc-out) 12%, white);
+  border: 1px solid color-mix(in srgb, var(--rtc-out) 28%, white);
+}
+
+/* Action buttons — visible on hover */
+.rtc-actions {
+  display: flex; align-items: center; gap: 2px;
+  opacity: 0;
+  transition: opacity .12s;
+}
+.rtc-row:hover .rtc-actions { opacity: 1; }
+.rtc-actions .btn {
+  --bs-btn-padding-y: .14rem;
+  --bs-btn-padding-x: .38rem;
+  --bs-btn-font-size: .78rem;
+  color: var(--fc-ink-soft);
+  border-color: transparent;
+  background: transparent;
+}
+.rtc-actions .btn:hover {
+  color: var(--fc-ink);
+  background: var(--fc-paper-sub);
+}
+
+/* Item preview panel */
+.rtc-items {
+  margin: 5px 0 8px calc(22px + 34px + 18px);
+  border: 1px dashed var(--fc-hairline-strong);
+  border-radius: var(--fc-r2);
+  background: var(--fc-paper-sub);
+  padding: 5px 8px;
+  display: grid;
+  gap: 1px;
+}
+.rtc-item {
+  display: grid;
+  grid-template-columns: 82px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 5px;
+  font-size: .8rem;
+  border-radius: 4px;
+}
+.rtc-item:hover { background: var(--fc-paper-elev); }
+.rtc-item-sku {
+  font-family: var(--fc-font-mono);
+  font-size: .68rem;
+  color: var(--fc-ink-soft);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rtc-item-name {
+  color: var(--fc-ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rtc-item-qty {
+  font-family: var(--fc-font-mono);
+  font-size: .78rem;
+  color: var(--fc-ink-soft);
+  white-space: nowrap;
+}
+.rtc-item-flag {
+  font-family: var(--fc-font-display);
+  font-size: .63rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.rtc-item-flag.ok  { color: var(--rtc-ok);  background: color-mix(in srgb, var(--rtc-ok)  10%, white); }
+.rtc-item-flag.low { color: var(--rtc-low); background: color-mix(in srgb, var(--rtc-low) 12%, white); }
+.rtc-item-flag.out { color: var(--rtc-out); background: color-mix(in srgb, var(--rtc-out) 12%, white); }
+
+.rtc-item-more {
+  grid-column: 1 / -1;
+  border: 0; background: transparent;
+  color: var(--fc-ink-soft);
+  font-family: var(--fc-font-body);
+  font-size: .76rem;
+  padding: 3px 5px;
+  border-radius: 4px;
+  text-align: left;
+  cursor: pointer;
+}
+.rtc-item-more:hover { color: var(--fc-ink); background: var(--fc-paper-elev); }
+
+/* Children container + dashed guide line */
+.rtc-kids > ul.rtc-children {
+  list-style: none;
+  margin: 0; padding: 0;
+  display: grid; gap: 6px;
+  margin-left: 14px;
+  padding-left: 16px;
+  position: relative;
+}
+.rtc-kids > ul.rtc-children::before {
+  content: "";
+  position: absolute;
+  left: 5px; top: 0; bottom: 12px;
+  border-left: 1.5px dashed color-mix(in srgb, var(--c, var(--rtc-zone)) 30%, var(--fc-hairline));
+}
+.rtc-kids > ul.rtc-children > li.rtc-node::before {
+  content: "";
+  position: absolute;
+  left: -11px; top: 22px; width: 12px;
+  border-top: 1.5px dashed color-mix(in srgb, var(--c, var(--rtc-zone)) 30%, var(--fc-hairline));
+}
+
+/* Expand / collapse: CSS hides .rtc-items and .rtc-kids when not .is-open */
+.rtc-node > .rtc-items,
+.rtc-node > .rtc-kids { display: none; }
+.rtc-node.is-open > .rtc-items,
+.rtc-node.is-open > .rtc-kids { display: block; }
+
+/* Empty state */
+.rtc-empty {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: var(--fc-s3);
+  padding: var(--fc-s7) var(--fc-s5);
+  color: var(--fc-ink-mute);
+  text-align: center;
+}
+.rtc-empty i { font-size: 2rem; opacity: .35; }
+.rtc-empty-label {
+  font-family: var(--fc-font-mono);
+  font-size: 12px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+/* Mobile */
+@media (max-width: 640px) {
+  .rtc-kids > ul.rtc-children { margin-left: 6px; padding-left: 10px; }
+  .rtc-kids > ul.rtc-children > li.rtc-node::before { left: -7px; width: 8px; }
+  .rtc-items { margin-left: 4px; }
+  .rtc-item { grid-template-columns: 70px 1fr auto; }
+  .rtc-item-flag { display: none; }
+  .rtc-row { grid-template-columns: 22px 28px 1fr auto; gap: 5px; }
+}
+
+/* =============================================
    FC Wave 3 — Table density + thead + modal polish
    (Phase 0.6 — appended 2026-05-19)
    ============================================= */
