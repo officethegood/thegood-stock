@@ -535,6 +535,55 @@
   }
 
   // =========================================================================
+  // D14: populate a <select> from lookup_lists
+  // Uses window.LookupLists.fetchByKind when available, falls back to direct query.
+  // Graceful fallback: if table missing keeps existing placeholder option.
+  // currentValue that is no longer active is appended with "(ปิดใช้งาน)" so edit is safe.
+  // =========================================================================
+  async function _fillLookupSelect(selectEl, kind, currentValue) {
+    let rows = [];
+    try {
+      if (window.LookupLists?.fetchByKind) {
+        const r = await window.LookupLists.fetchByKind(kind);
+        rows = (r && r.data) || [];
+      } else {
+        const r = await getSupabaseClient()
+          .from('lookup_lists')
+          .select('code,name,sort_order,active')
+          .eq('kind', kind)
+          .eq('active', true)
+          .order('sort_order');
+        rows = r.data || [];
+      }
+    } catch (e) {
+      console.warn('[D14] lookup_lists fetch failed for kind=' + kind, e);
+      return;
+    }
+    if (!rows.length) return;
+
+    const placeholder = selectEl.options[0];
+    selectEl.innerHTML = '';
+    selectEl.appendChild(placeholder);
+
+    const codes = new Set(rows.map((r) => r.code));
+    rows.forEach((r) => {
+      const opt = document.createElement('option');
+      opt.value = r.code;
+      opt.textContent = r.name;
+      selectEl.appendChild(opt);
+    });
+
+    if (currentValue && !codes.has(currentValue)) {
+      const opt = document.createElement('option');
+      opt.value = currentValue;
+      opt.textContent = currentValue + ' (ปิดใช้งาน)';
+      selectEl.appendChild(opt);
+    }
+
+    if (currentValue) selectEl.value = currentValue;
+  }
+
+  // =========================================================================
   // Modal — create / edit
   // =========================================================================
 
@@ -611,14 +660,11 @@
                 </div>
 
                 <!-- storage_style — shown only when type=storage -->
+                <!-- D14: options populated at runtime from lookup_lists (kind='storage_style') -->
                 <div class="mb-3 d-none" id="storage-style-row">
                   <label class="form-label fw-medium">รูปแบบตู้ <span class="text-danger">*</span></label>
                   <select id="f-storage-style" class="form-select">
                     <option value="">-- เลือกรูปแบบ --</option>
-                    <option value="closed">ตู้ปิด / ลิ้นชัก</option>
-                    <option value="open">ชั้นเปิด</option>
-                    <option value="mesh">ตะแกรง</option>
-                    <option value="drawer">ลิ้นชักหลายชั้น</option>
                   </select>
                 </div>
 
@@ -792,6 +838,10 @@
     refreshStorageStyle();
     refreshAmbulancePicker();
 
+    // D14: populate storage_style from lookup_lists (async; current value applied inside helper)
+    const _existingStorageStyle = isEdit ? (row?.storage_style || null) : null;
+    _fillLookupSelect(fStorageStyle, 'storage_style', _existingStorageStyle);
+
     // Populate generate-code button
     document.getElementById('btn-gen-code').onclick = async () => {
       const code = await generateCode(fType.value, fParent.value || null);
@@ -812,7 +862,9 @@
       document.getElementById('f-qr').value    = row.qr_payload || '';
       document.getElementById('f-note').value  = row.note || '';
       document.getElementById('f-active').checked = !!row.active;
-      if (row.storage_style) fStorageStyle.value = row.storage_style;
+      // storage_style value is applied by _fillLookupSelect; if that already ran synchronously
+      // or the table is missing, fall back to direct assignment here.
+      if (row.storage_style && !fStorageStyle.value) fStorageStyle.value = row.storage_style;
       if (row.laundry_role)  fLaundryRole.value  = row.laundry_role;
       // Pre-select the linked ambulance (wait for the async populate to finish first)
       if (row.type === 'ambulance' && row.ambulance_id) {

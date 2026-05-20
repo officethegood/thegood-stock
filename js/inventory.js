@@ -79,6 +79,63 @@
   function _confirm(msg)      { return (window.showConfirm || (()=> Promise.resolve(window.confirm(msg))))(msg); }
   function _isAdmin()         { try { return window.getUserRole?.() === 'Admin'; } catch { return false; } }
 
+  /**
+   * D14: populate a <select> from lookup_lists.
+   * Uses window.LookupLists.fetchByKind if present, else queries Supabase directly.
+   * Graceful fallback: if table missing (migration not applied) keeps existing options.
+   * If currentValue is not in active rows, appends it with "(ปิดใช้งาน)" suffix.
+   *
+   * @param {HTMLSelectElement} selectEl
+   * @param {string} kind  — 'linen_subcategory' | 'storage_style' | 'tank_size'
+   * @param {string|null} currentValue  — existing row value (edit mode), or null
+   */
+  async function _fillLookupSelect(selectEl, kind, currentValue) {
+    let rows = [];
+    try {
+      if (window.LookupLists?.fetchByKind) {
+        const r = await window.LookupLists.fetchByKind(kind);
+        rows = (r && r.data) || [];
+      } else {
+        const r = await getSupabaseClient()
+          .from('lookup_lists')
+          .select('code,name,sort_order,active')
+          .eq('kind', kind)
+          .eq('active', true)
+          .order('sort_order');
+        rows = r.data || [];
+      }
+    } catch (e) {
+      // Migration not applied yet or network error — leave placeholder option intact
+      console.warn('[D14] lookup_lists fetch failed for kind=' + kind, e);
+      return;
+    }
+    if (!rows.length) return;  // nothing to populate — leave placeholder
+
+    // Keep first <option> (placeholder), replace the rest
+    const placeholder = selectEl.options[0];
+    selectEl.innerHTML = '';
+    selectEl.appendChild(placeholder);
+
+    const codes = new Set(rows.map((r) => r.code));
+    rows.forEach((r) => {
+      const opt = document.createElement('option');
+      opt.value = r.code;
+      opt.textContent = r.name;
+      selectEl.appendChild(opt);
+    });
+
+    // If currentValue not in active list, append it so edit doesn't silently lose data
+    if (currentValue && !codes.has(currentValue)) {
+      const opt = document.createElement('option');
+      opt.value = currentValue;
+      opt.textContent = currentValue + ' (ปิดใช้งาน)';
+      selectEl.appendChild(opt);
+    }
+
+    // Apply current value after options are in place
+    if (currentValue) selectEl.value = currentValue;
+  }
+
   /** Friendly Thai error mapper — falls back to error.friendly when present (AppInventory attaches). */
   function _friendly(err, fallback) {
     if (!err) return fallback || 'เกิดข้อผิดพลาด';
@@ -1365,16 +1422,11 @@
             </div>
           </div>
           <!-- Phase 6: linen sub-category — shown only when category = ผ้า (LINEN) -->
+          <!-- D14: options populated at runtime from lookup_lists (kind='linen_subcategory') -->
           <div class="mb-2 d-none" id="if-linen-subcat-row">
             <label class="form-label" for="if-linen-subcat">หมวดย่อยผ้า <span class="text-danger">*</span></label>
             <select id="if-linen-subcat" class="form-select">
               <option value="">— เลือกหมวดย่อย —</option>
-              <option value="sheet">ผ้าปูที่นอน</option>
-              <option value="blanket">ผ้าห่ม</option>
-              <option value="towel">ผ้าขนหนู</option>
-              <option value="gown">เสื้อกาวน์</option>
-              <option value="wipe">ผ้าเช็ดเครื่องมือ</option>
-              <option value="pillowcase">ปลอกหมอน</option>
             </select>
             <small class="text-muted">สินค้าหมวดผ้าต้องระบุหมวดย่อย</small>
           </div>
@@ -1418,6 +1470,10 @@
     }
     catSel.addEventListener('change', _refreshSubcatRow);
 
+    // D14: populate linen_subcategory from lookup_lists, then apply edit value
+    const _existingSubcat = isEdit ? (existing.linen_subcategory || null) : null;
+    _fillLookupSelect(subcatSel, 'linen_subcategory', _existingSubcat);
+
     if (isEdit) {
       modalEl.querySelector('#if-name').value       = existing.name || '';
       modalEl.querySelector('#if-sku').value        = existing.sku || '';
@@ -1428,8 +1484,7 @@
       modalEl.querySelector('#if-active').checked   = !!existing.active;
       // Phase 2: tracks_lots toggle
       modalEl.querySelector('#if-tracks-lots').checked = !!existing.tracks_lots;
-      // Phase 6: linen sub-category
-      if (existing.linen_subcategory) subcatSel.value = existing.linen_subcategory;
+      // Phase 6: linen sub-category — value is set inside _fillLookupSelect after rows load
     }
     _refreshSubcatRow();
 

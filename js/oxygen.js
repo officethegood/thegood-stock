@@ -78,6 +78,55 @@
   }
 
   // =========================================================================
+  // D14: populate a <select> from lookup_lists
+  // Uses window.LookupLists.fetchByKind when available, falls back to direct query.
+  // Graceful fallback: if table missing keeps existing placeholder option.
+  // currentValue that is no longer active is appended with "(ปิดใช้งาน)".
+  // =========================================================================
+  async function _fillLookupSelect(selectEl, kind, currentValue) {
+    let rows = [];
+    try {
+      if (window.LookupLists?.fetchByKind) {
+        const r = await window.LookupLists.fetchByKind(kind);
+        rows = (r && r.data) || [];
+      } else {
+        const r = await window.getSupabaseClient()
+          .from('lookup_lists')
+          .select('code,name,sort_order,active')
+          .eq('kind', kind)
+          .eq('active', true)
+          .order('sort_order');
+        rows = r.data || [];
+      }
+    } catch (e) {
+      console.warn('[D14] lookup_lists fetch failed for kind=' + kind, e);
+      return;
+    }
+    if (!rows.length) return;
+
+    const placeholder = selectEl.options[0];
+    selectEl.innerHTML = '';
+    selectEl.appendChild(placeholder);
+
+    const codes = new Set(rows.map((r) => r.code));
+    rows.forEach((r) => {
+      const opt = document.createElement('option');
+      opt.value = r.code;
+      opt.textContent = r.name;
+      selectEl.appendChild(opt);
+    });
+
+    if (currentValue && !codes.has(currentValue)) {
+      const opt = document.createElement('option');
+      opt.value = currentValue;
+      opt.textContent = currentValue + ' (ปิดใช้งาน)';
+      selectEl.appendChild(opt);
+    }
+
+    if (currentValue) selectEl.value = currentValue;
+  }
+
+  // =========================================================================
   // Load locations (needed by add-tank and log-transition modals)
   // =========================================================================
 
@@ -152,13 +201,11 @@
                 <input type="text" id="oxy-add-serial" class="form-control"
                        placeholder="เช่น OXY-0001" required autocomplete="off">
               </div>
+              <!-- D14: options populated at runtime from lookup_lists (kind='tank_size') -->
               <div class="mb-3">
                 <label class="form-label" for="oxy-add-size">ขนาดถัง <span class="text-danger">*</span></label>
                 <select id="oxy-add-size" class="form-select" required>
                   <option value="">— เลือกขนาด —</option>
-                  <option value="small">เล็ก (small)</option>
-                  <option value="medium">กลาง (medium)</option>
-                  <option value="large">ใหญ่ (large)</option>
                 </select>
               </div>
               <div class="mb-3">
@@ -797,6 +844,10 @@
     _mounted = true;
 
     _renderShell();
+    // D14: populate tank_size dropdown from lookup_lists
+    const sizeEl = document.getElementById('oxy-add-size');
+    if (sizeEl) _fillLookupSelect(sizeEl, 'tank_size', null);
+
     await _loadLocations();
     await _loadList();
     _startRealtime();

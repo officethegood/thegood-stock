@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.15.5';  // Linen editability — item modal exposes หมวดย่อยผ้า select (incl. new ปลอกหมอน enum value); drawer gains พิมพ์ QR button (works for linen too); createItem whitelist fixed (was dropping tracks_lots + linen_subcategory)
+const CACHE_VERSION = 'thegood-stock-v0.16.0';  // D14 user-managed taxonomy — lookup_lists table, ตั้งค่า → จัดการรายการ sub-tab (CRUD หมวดสินค้า/หมวดย่อยผ้า/รูปแบบตู้/ขนาดถัง); all dropdowns read from DB instead of hardcode
 const STATIC_ASSETS = [
   './',
   './login.html',
@@ -30,6 +30,7 @@ const STATIC_ASSETS = [
   './shared/locations-graph.js',
   './shared/transfer.js',
   './shared/laundry.js',
+  './shared/lookup-lists.js',
   './js/login.js',
   './js/admin-shell.js',
   './js/dashboard.js',
