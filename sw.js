@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.15.2';  // Fix Phase 0.7 regression — cabinet→storage merge broke linen filter: v_linen_audit + trigger + staff-scan all hard-coded type='cabinet'; inventory linen mode now shows zero-stock items via stock_items+audit overlay
+const CACHE_VERSION = 'thegood-stock-v0.15.3';  // Linen rows now clickable → open same item drawer as regular items (รับเข้า/ปรับยอด/ย้าย/แก้ไข/ปิดใช้งาน) — fixes action inconsistency between ผ้า view and normal inventory
 const STATIC_ASSETS = [
   './',
   './login.html',

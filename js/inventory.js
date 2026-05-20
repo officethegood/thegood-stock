@@ -901,7 +901,9 @@
       const mobileSubrow = `<div class="text-muted small d-md-none">
         ตู้ ${_esc(row.location_name || '—')} • นับ: ${row.counted_qty ?? '—'} ผืน • ${_esc(lastDate)}
       </div>`;
-      return `<tr>
+      // Row is clickable → opens the same item drawer as regular items
+      // (so linen items get รับเข้า / ปรับยอด / ย้าย / แก้ไข / ปิดใช้งาน too).
+      return `<tr data-id="${_esc(row.item_id)}" class="inv-linen-row" style="cursor:pointer">
         <td>${_esc(row.item_name)}${mobileSubrow}</td>
         <td class="d-none d-md-table-cell">${subcatLabel}</td>
         <td class="d-none d-md-table-cell small text-muted">${_esc(row.location_name || '—')}</td>
@@ -909,9 +911,17 @@
         <td class="d-none d-md-table-cell small text-muted">${_esc(lastDate)}</td>
         <td class="d-none d-md-table-cell text-end">${row.counted_qty ?? '—'}</td>
         <td class="text-end">${badge}</td>
-        <td></td>
+        <td class="text-end"><i class="bi bi-chevron-right text-muted small"></i></td>
       </tr>`;
     }).join('');
+
+    // Wire row clicks → item drawer (same actions as the normal item list)
+    tbody.querySelectorAll('.inv-linen-row').forEach((tr) => {
+      tr.addEventListener('click', () => {
+        const id = tr.dataset.id;
+        if (id) openItemDetailDrawer(id);
+      });
+    });
   }
 
   // =========================================================================
