@@ -18,14 +18,11 @@
 
   const inits = {
     dashboard:  () => window.initDashboardTab  && window.initDashboardTab(),
+    warehouse:  () => window.initWarehouseTab  && window.initWarehouseTab(),  // nests inventory/oxygen/bags
     locations:  () => window.initLocationsTab  && window.initLocationsTab(),
-    inventory:  () => window.initInventoryTab  && window.initInventoryTab(),
-    // ambulances: lives inside the Settings tab as a sub-section (sub-nav: "ระบบ" / "รถพยาบาล")
-    settings:   () => window.initSettingsTab   && window.initSettingsTab(),
-    sessions:   () => window.initSessionsTab   && window.initSessionsTab(),
+    // ambulances: sub-tab inside settings (ระบบ / รถพยาบาล / จัดการรายการ / Sessions)
+    settings:   () => window.initSettingsTab   && window.initSettingsTab(),   // nests sessions
     loans:      () => window.initLoansTab      && window.initLoansTab(),
-    bags:       () => window.initBagsTab       && window.initBagsTab(),     // Phase 4
-    oxygen:     () => window.initOxygenTab     && window.initOxygenTab(),   // Phase 5
   };
   const initialized = new Set();
 

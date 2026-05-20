@@ -32,13 +32,10 @@
 <div class="fc-tab-list fc-reveal fc-reveal-2" style="padding:var(--fc-s3) var(--fc-s5);overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch">
   <ul class="nav nav-pills flex-nowrap gap-2 mb-0" style="border:none;flex-wrap:nowrap">
     <li><button class="btn nav-link stock-tab fc-tab" data-tab="dashboard"><i class="bi bi-speedometer2"></i> Dashboard</button></li>
+    <li><button class="btn nav-link stock-tab fc-tab" data-tab="warehouse"><i class="bi bi-box-seam"></i> คลัง</button></li>
     <li><button class="btn nav-link stock-tab fc-tab" data-tab="locations"><i class="bi bi-geo-alt"></i> สถานที่</button></li>
-    <li><button class="btn nav-link stock-tab fc-tab" data-tab="inventory"><i class="bi bi-box-seam"></i> สต๊อก</button></li>
     <li><button class="btn nav-link stock-tab fc-tab" data-tab="loans"><i class="bi bi-arrow-left-right"></i> ยืม-คืน</button></li>
-    <li><button class="btn nav-link stock-tab fc-tab" data-tab="oxygen"><i class="bi bi-circle-square"></i> ถังออกซิเจน</button></li>
-    <li><button class="btn nav-link stock-tab fc-tab" data-tab="bags"><i class="bi bi-bag-heart"></i> ALS Bags</button></li>
     <li><button class="btn nav-link stock-tab fc-tab" data-tab="settings"><i class="bi bi-gear"></i> ตั้งค่า</button></li>
-    <li><button class="btn nav-link stock-tab fc-tab" data-tab="sessions"><i class="bi bi-people"></i> Sessions</button></li>
   </ul>
 </div>
 <div class="fc-tab-rule"></div>
@@ -46,13 +43,14 @@
 <div class="container-fluid mt-3 fc-reveal fc-reveal-3">
 
   <div id="tab-dashboard"  class="tab-pane d-none"></div>
+  <div id="tab-warehouse"  class="tab-pane d-none">
+    <!-- #tab-inventory / #tab-oxygen / #tab-bags injected here by initWarehouseTab() -->
+  </div>
   <div id="tab-locations"  class="tab-pane d-none"></div>
-  <div id="tab-inventory"  class="tab-pane d-none"></div>
-  <div id="tab-settings"   class="tab-pane d-none"></div>
-  <div id="tab-sessions"   class="tab-pane d-none"></div>
+  <div id="tab-settings"   class="tab-pane d-none">
+    <!-- #tab-sessions injected here by initSettingsTab() -->
+  </div>
   <div id="tab-loans"      class="tab-pane d-none"></div>
-  <div id="tab-oxygen"     class="tab-pane d-none"></div>
-  <div id="tab-bags"       class="tab-pane d-none"></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -95,6 +93,7 @@
 <script src="./js/bag-templates.js"></script>
 <script src="./js/bags.js"></script>
 <script src="./js/oxygen.js"></script>
+<script src="./js/warehouse-shell.js"></script>
 
 <script src="./js/admin-shell.js"></script>
 

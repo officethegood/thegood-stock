@@ -6,11 +6,12 @@
     return x == null ? (fallback ?? '') : x;
   }
 
-  // Sub-tab persistence: 'system' (default) | 'ambulances' | 'lists'
+  // Sub-tab persistence: 'system' (default) | 'ambulances' | 'lists' | 'sessions'
   let _subTab = (typeof localStorage !== 'undefined' && localStorage.getItem('settings_subtab')) || 'system';
 
-  // Track whether the lists pane has been initialised
-  let _listsInited = false;
+  // Track whether the lists / sessions panes have been initialised
+  let _listsInited    = false;
+  let _sessionsInited = false;
 
   function _renderShell(activeSub) {
     return `
@@ -20,6 +21,7 @@
           <button id="btn-set-sub-system"     class="fc-btn fc-btn-${activeSub==='system'?'primary':'ghost'}"     style="border-radius:0;border:none;padding:8px 16px;min-height:40px;font-size:13px;font-weight:600;letter-spacing:0.02em"><i class="bi bi-gear me-1"></i>ระบบ</button>
           <button id="btn-set-sub-ambulances" class="fc-btn fc-btn-${activeSub==='ambulances'?'primary':'ghost'}" style="border-radius:0;border:none;padding:8px 16px;min-height:40px;font-size:13px;font-weight:600;letter-spacing:0.02em"><i class="bi bi-truck me-1"></i>รถพยาบาล</button>
           <button id="btn-set-sub-lists"      class="fc-btn fc-btn-${activeSub==='lists'?'primary':'ghost'}"      style="border-radius:0;border:none;padding:8px 16px;min-height:40px;font-size:13px;font-weight:600;letter-spacing:0.02em"><i class="bi bi-list-ul me-1"></i>จัดการรายการ</button>
+          <button id="btn-set-sub-sessions"  class="fc-btn fc-btn-${activeSub==='sessions'?'primary':'ghost'}"  style="border-radius:0;border:none;padding:8px 16px;min-height:40px;font-size:13px;font-weight:600;letter-spacing:0.02em"><i class="bi bi-people me-1"></i>Sessions</button>
         </div>
       </div>
 
@@ -31,6 +33,9 @@
 
       <!-- Lists (taxonomy) pane -->
       <div id="settings-pane-lists" class="${activeSub==='lists'?'':'d-none'}"></div>
+
+      <!-- Sessions pane — sessions-ui.js targets #tab-sessions. -->
+      <div id="tab-sessions" class="${activeSub==='sessions'?'':'d-none'}"></div>
     `;
   }
 
@@ -110,10 +115,16 @@
     document.getElementById('settings-pane-system').classList.toggle('d-none', name !== 'system');
     document.getElementById('tab-ambulances').classList.toggle('d-none', name !== 'ambulances');
     document.getElementById('settings-pane-lists').classList.toggle('d-none', name !== 'lists');
+    document.getElementById('tab-sessions').classList.toggle('d-none', name !== 'sessions');
     // Update sub-nav button visuals
     const btnStyle = 'border-radius:0;border:none;padding:8px 16px;min-height:40px;font-size:13px;font-weight:600;letter-spacing:0.02em';
-    ['system', 'ambulances', 'lists'].forEach(tab => {
-      const idMap = { system: 'btn-set-sub-system', ambulances: 'btn-set-sub-ambulances', lists: 'btn-set-sub-lists' };
+    const idMap = {
+      system:     'btn-set-sub-system',
+      ambulances: 'btn-set-sub-ambulances',
+      lists:      'btn-set-sub-lists',
+      sessions:   'btn-set-sub-sessions',
+    };
+    ['system', 'ambulances', 'lists', 'sessions'].forEach(tab => {
       const btn = document.getElementById(idMap[tab]);
       if (!btn) return;
       btn.className  = `fc-btn fc-btn-${name === tab ? 'primary' : 'ghost'}`;
@@ -128,10 +139,17 @@
       _listsInited = true;
       _initListsPane();
     }
+    if (name === 'sessions' && !_sessionsInited) {
+      _sessionsInited = true;
+      if (window.initSessionsTab) {
+        try { window.initSessionsTab(); } catch (e) { showToast('error', e.message || 'โหลด sessions ไม่สำเร็จ'); }
+      }
+    }
   }
 
   window.initSettingsTab = function () {
-    _listsInited = false;
+    _listsInited    = false;
+    _sessionsInited = false;
     const root = document.getElementById('tab-settings');
     root.innerHTML = _renderShell(_subTab);
     _renderSystemPane();
@@ -139,12 +157,19 @@
     document.getElementById('btn-set-sub-system').onclick     = () => _switchSubTab('system');
     document.getElementById('btn-set-sub-ambulances').onclick = () => _switchSubTab('ambulances');
     document.getElementById('btn-set-sub-lists').onclick      = () => _switchSubTab('lists');
+    document.getElementById('btn-set-sub-sessions').onclick   = () => _switchSubTab('sessions');
     if (_subTab === 'ambulances' && window.initAmbulancesTab) {
       try { window.initAmbulancesTab(); } catch (e) { showToast('error', e.message || 'โหลด ambulances ไม่สำเร็จ'); }
     }
     if (_subTab === 'lists') {
       _listsInited = true;
       _initListsPane();
+    }
+    if (_subTab === 'sessions') {
+      _sessionsInited = true;
+      if (window.initSessionsTab) {
+        try { window.initSessionsTab(); } catch (e) { showToast('error', e.message || 'โหลด sessions ไม่สำเร็จ'); }
+      }
     }
   };
 
