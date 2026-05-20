@@ -2205,3 +2205,50 @@ Non-blockers (can ship after critical fixes):
     4. Click "ยืนยันเปลี่ยน".
   - Expected: Toast (or inline error) shows `"SKU 'ITEM-B' มีอยู่แล้วในระบบ — กรุณาใช้ค่าอื่น"`. Item is NOT updated. No crash.
   - Expected: hero visible; CTA buttons 44px min-height; bottom nav unobstructed.
+
+---
+
+# Phase 0.7 — D14 Manage Lists (T224–T229)
+
+> Covers `feat(ui): D14 manage-lists settings sub-tab + shared/lookup-lists.js`
+> Files: `js/settings-ui.js`, `shared/lookup-lists.js`, `admin.html`
+
+- [ ] T224: "จัดการรายการ" sub-tab appears in Settings nav and activates pane.
+  - Steps:
+    1. Log in as Admin → admin.html → Settings tab.
+    2. Confirm three buttons visible: ระบบ / รถพยาบาล / จัดการรายการ.
+    3. Click "จัดการรายการ". Confirm the lists pane shows 4 sections: หมวดสินค้า / หมวดย่อยผ้า / รูปแบบตู้ / ขนาดถังออกซิเจน.
+    4. Refresh page — reload and navigate back to Settings. Confirm "จัดการรายการ" tab is remembered (localStorage key `settings_subtab`).
+  - Expected: pane renders; other two panes are hidden; localStorage = 'lists'.
+
+- [ ] T225: Add item to a lookup_lists kind (happy path).
+  - Pre-condition: `lookup_lists` table exists (migration applied).
+  - Steps:
+    1. Open "จัดการรายการ" → "หมวดย่อยผ้า". Click "เพิ่ม".
+    2. Fill Code = `TEST-XX` (no spaces), ชื่อ = `ทดสอบ`, ลำดับ = 99. Click "บันทึก".
+  - Expected: Modal closes, toast "เพิ่มรายการแล้ว", row appears in table. DB: `SELECT * FROM lookup_lists WHERE code='TEST-XX' AND kind='linen_subcategory';` returns 1 row.
+
+- [ ] T226: Edit name/sort_order/active; code field is locked.
+  - Steps:
+    1. Click "แก้ไข" on a lookup_lists row.
+    2. Confirm Code field is read-only (shown as plain text, not an `<input>`), with note "Code ไม่สามารถเปลี่ยนได้".
+    3. Change ชื่อ and uncheck active. Save.
+  - Expected: Toast "แก้ไขแล้ว". Table reflects updated name + inactive badge. DB updated.
+
+- [ ] T227: Delete blocked when usage > 0.
+  - Pre-condition: A lookup_lists code is referenced by at least one `stock_items.linen_subcategory` (or equivalent for other kinds).
+  - Steps:
+    1. Click "ลบ" on that row.
+  - Expected: Warning toast "ลบไม่ได้ — มี X รายการใช้ค่านี้อยู่ ให้เปลี่ยนเป็น 'ปิดใช้งาน' แทน". No confirm dialog shown. Row remains in table.
+
+- [ ] T228: Delete succeeds when usage = 0.
+  - Steps:
+    1. Click "ลบ" on a row with no references (e.g. the `TEST-XX` row from T225).
+    2. Confirm dialog appears. Click OK.
+  - Expected: Toast "ลบแล้ว". Row removed from table. DB: `SELECT count(*) FROM lookup_lists WHERE code='TEST-XX';` returns 0.
+
+- [ ] T229: Graceful degradation when lookup_lists table absent (pre-migration).
+  - Steps:
+    1. (Test in staging where migration not yet applied, OR temporarily rename table in SQL editor.)
+    2. Open "จัดการรายการ" → "หมวดย่อยผ้า" / "รูปแบบตู้" / "ขนาดถังออกซิเจน".
+  - Expected: Each kind section shows yellow alert "ตาราง lookup_lists ยังไม่ถูกสร้าง — รอ migration". "เพิ่ม" button is disabled. "หมวดสินค้า" section (stock_categories) still loads normally — no crash.
