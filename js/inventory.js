@@ -55,9 +55,10 @@
   let _activeSubview = 'items';
 
   // Phase 6 — LINEN mode state
-  let _linenMode       = false;   // true when category=LINEN + subview=items
-  let _linens          = [];      // v_linen_audit rows (LINEN mode)
-  let _activeSubcat    = 'all';   // linen sub-category filter (client-side)
+  let _linenMode          = false;   // true when category=LINEN + subview=items
+  let _linens             = [];      // merged rows for linen view (stock_items + audit overlay)
+  let _activeSubcat       = 'all';   // linen sub-category filter (client-side)
+  let _linenCategoryId    = null;    // cached UUID for LINEN category
 
   // Phase 0.5 — QR print selection
   let _invSelected     = new Set();  // Set of item IDs selected for bulk print
@@ -761,7 +762,28 @@
     }
   }
 
-  /** Load v_linen_audit rows and render the linen table. */
+  /**
+   * Resolve (and cache) the UUID for the LINEN stock_category.
+   * @returns {Promise<string|null>}
+   */
+  async function _getLinenCategoryId() {
+    if (_linenCategoryId) return _linenCategoryId;
+    const sb = getSupabaseClient();
+    const { data, error } = await sb
+      .from('stock_categories').select('id').eq('code', 'LINEN').single();
+    if (error || !data) return null;
+    _linenCategoryId = data.id;
+    return _linenCategoryId;
+  }
+
+  /**
+   * Load linen view (Option A):
+   *   1. Fetch ALL stock_items where category_id = LINEN (zero-stock included).
+   *   2. Fetch v_linen_audit to get count/discrepancy data.
+   *   3. Merge by item_id — items with no audit data show "—" for count columns.
+   *
+   * This ensures newly-created linen items (never received) always appear.
+   */
   async function _loadLinenAudit() {
     const tbody = document.getElementById('inv-tbody');
     if (tbody) {
@@ -777,15 +799,60 @@
       return;
     }
 
-    const { data, error } = await window.AppLinens.fetchLinenAudit();
-    if (error) {
+    // Step 1: base item list (all linen items, stocked or not)
+    const linenCatId = await _getLinenCategoryId();
+    if (!linenCatId) {
       if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">
-        โหลดข้อมูลผ้าไม่สำเร็จ — กรุณาลองใหม่
+        ไม่พบหมวด LINEN — ตรวจสอบตาราง stock_categories
       </td></tr>`;
-      _toast('error', 'โหลดข้อมูลผ้าไม่สำเร็จ');
       return;
     }
-    _linens = data || [];
+    const sb = getSupabaseClient();
+    const { data: itemRows, error: itemErr } = await sb
+      .from('stock_items')
+      .select('id,sku,name,linen_subcategory,active,stock_item_locations(qty)')
+      .eq('category_id', linenCatId)
+      .order('name');
+    if (itemErr) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">
+        โหลดรายการผ้าไม่สำเร็จ — กรุณาลองใหม่
+      </td></tr>`;
+      _toast('error', 'โหลดรายการผ้าไม่สำเร็จ');
+      return;
+    }
+
+    // Step 2: audit overlay (may be empty if v_linen_audit returns nothing yet)
+    const { data: auditRows } = await window.AppLinens.fetchLinenAudit();
+    // Build lookup: item_id → best audit row (pick highest qty if multiple locations)
+    const auditMap = {};
+    (auditRows || []).forEach((r) => {
+      const prev = auditMap[r.item_id];
+      if (!prev || (r.current_qty ?? 0) > (prev.current_qty ?? 0)) {
+        auditMap[r.item_id] = r;
+      }
+    });
+
+    // Step 3: merge
+    _linens = (itemRows || []).map((item) => {
+      const totalQty = (item.stock_item_locations || []).reduce((s, sil) => s + (sil.qty || 0), 0);
+      const audit    = auditMap[item.id];
+      return {
+        // base fields (always present)
+        item_id:           item.id,
+        sku:               item.sku,
+        item_name:         item.name,
+        linen_subcategory: item.linen_subcategory,
+        active:            item.active,
+        current_qty:       totalQty,
+        // audit overlay (null when no audit row exists)
+        location_name:     audit ? audit.location_name  : null,
+        counted_at:        audit ? audit.counted_at     : null,
+        counted_qty:       audit ? audit.counted_qty    : null,
+        delta:             audit ? audit.delta          : null,
+        abs_delta:         audit ? audit.abs_delta      : null,
+        is_discrepancy:    audit ? audit.is_discrepancy : false,
+      };
+    });
     _renderLinenAudit(_linens);
   }
 

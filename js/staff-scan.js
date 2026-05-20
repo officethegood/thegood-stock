@@ -780,9 +780,9 @@
     // ── End Phase 4 bag routing ─────────────────────────────────────────────
 
     // ── Phase 6: Cabinet LINEN routing ──────────────────────────────────────
-    // If the scanned location is type='cabinet', check for LINEN items.
+    // If the scanned location is type='storage' (or legacy 'cabinet'), check for LINEN items.
     // If found, show linen cabinet view. If no LINEN items, fall through to standard scan.
-    if (data.type === 'cabinet') {
+    if (['storage', 'cabinet'].includes(data.type)) {
       if (state.scanning) {
         window.AppScanner.stopScanning().catch(() => {});
         state.scanning = false;
@@ -853,8 +853,8 @@
         return;
       }
 
-      // Phase 6: if location is type='cabinet', check for LINEN items
-      if (locRes.data.type === 'cabinet') {
+      // Phase 6: if location is type='storage' (or legacy 'cabinet'), check for LINEN items
+      if (['storage', 'cabinet'].includes(locRes.data.type)) {
         const hasLinen = await _checkCabinetHasLinens(locRes.data.id);
         if (hasLinen) {
           _showLinenCabinetView(locRes.data);
