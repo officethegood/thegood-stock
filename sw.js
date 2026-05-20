@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.17.2';  // ล้างของในตำแหน่งนี้ — location edit modal can empty all stock at a location in one action (adjustment_loss per item, ledger preserved); prerequisite for deleting a location with stock
+const CACHE_VERSION = 'thegood-stock-v0.18.0';  // Rich Tree Cards — admin Locations Tree view rebuilt as type-coded indented rich cards with nested stock-item previews + rolled-up alert badges (supermarket-style storage browse)
 const STATIC_ASSETS = [
   './',
   './login.html',
