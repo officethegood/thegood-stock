@@ -1129,6 +1129,12 @@
           ? `<button type="button" class="btn btn-outline-danger" id="drawer-deactivate">ปิดใช้งาน</button>`
           : `<button type="button" class="btn btn-outline-success" id="drawer-reactivate">เปิดใช้งาน</button>`
         }
+        ${_isAdmin()
+          ? `<button type="button" class="btn btn-danger" id="drawer-delete" title="ลบถาวร — ใช้ได้เฉพาะสินค้าที่ยังไม่มีประวัติ">
+               <i class="bi bi-trash"></i> ลบถาวร
+             </button>`
+          : ''
+        }
       </div>
     `;
 
@@ -1181,6 +1187,62 @@
       close();
       reload();
     };
+
+    // Hard delete (Admin only) — guarded: only items with zero history.
+    const delBtn = document.getElementById('drawer-delete');
+    if (delBtn) delBtn.onclick = async () => {
+      const counts = await _checkItemDeletable(item.id);
+      const blocked = counts.movements > 0 || counts.locations > 0 || counts.lots > 0;
+      if (blocked) {
+        const parts = [];
+        if (counts.movements) parts.push(`ประวัติเคลื่อนไหว ${counts.movements} รายการ`);
+        if (counts.locations) parts.push(`สต็อกในตำแหน่ง ${counts.locations} แห่ง`);
+        if (counts.lots)      parts.push(`ล็อต ${counts.lots} รายการ`);
+        await _confirm(
+          `ลบถาวร "${item.name}" ไม่ได้ — สินค้านี้มี ${parts.join(' · ')}. ` +
+          `การลบถาวรจะทำลายประวัติ audit ระบบจึงอนุญาตเฉพาะสินค้าที่ยังไม่เคยใช้งาน. ` +
+          `กรุณาใช้ปุ่ม "ปิดใช้งาน" แทน`
+        );
+        return;
+      }
+      const ok = await _confirm(
+        `ลบถาวร "${item.name}" ? สินค้านี้ยังไม่มีประวัติการใช้งาน — ` +
+        `ลบได้ แต่การลบถาวรกู้คืนไม่ได้`
+      );
+      if (!ok) return;
+      const sb = getSupabaseClient();
+      const { error } = await sb.from('stock_items').delete().eq('id', item.id);
+      if (error) {
+        // 23503 = FK violation (a movement/lot was created in a race) → fall back to soft-delete advice
+        _toast('error', _friendly(error, 'ลบไม่สำเร็จ — อาจมีประวัติเกิดขึ้นใหม่ ลองปิดใช้งานแทน'));
+        return;
+      }
+      _toast('success', `ลบ "${item.name}" ถาวรแล้ว`);
+      close();
+      reload();
+    };
+  }
+
+  // Count history references for an item — used to decide if hard-delete is safe.
+  async function _checkItemDeletable(itemId) {
+    const sb = getSupabaseClient();
+    const headCount = (tbl, col) =>
+      sb.from(tbl).select(col, { count: 'exact', head: true }).eq('item_id', itemId);
+    try {
+      const [mv, sil, lots] = await Promise.all([
+        headCount('stock_movements', 'id'),
+        headCount('stock_item_locations', 'item_id'),
+        headCount('stock_lots', 'id'),
+      ]);
+      return {
+        movements: mv.count || 0,
+        locations: sil.count || 0,
+        lots:      lots.count || 0,
+      };
+    } catch (_) {
+      // On any query failure, be conservative — report as "has history" so delete is blocked.
+      return { movements: 1, locations: 0, lots: 0 };
+    }
   }
 
   // =========================================================================

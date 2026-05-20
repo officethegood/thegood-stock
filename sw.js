@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.15.3';  // Linen rows now clickable → open same item drawer as regular items (รับเข้า/ปรับยอด/ย้าย/แก้ไข/ปิดใช้งาน) — fixes action inconsistency between ผ้า view and normal inventory
+const CACHE_VERSION = 'thegood-stock-v0.15.4';  // Hard delete — Admin "ลบถาวร" button in item drawer, guarded: only items with zero movements/stock/lots can be deleted; items with history must use ปิดใช้งาน (soft delete)
 const STATIC_ASSETS = [
   './',
   './login.html',
