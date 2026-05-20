@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.15.4';  // Hard delete — Admin "ลบถาวร" button in item drawer, guarded: only items with zero movements/stock/lots can be deleted; items with history must use ปิดใช้งาน (soft delete)
+const CACHE_VERSION = 'thegood-stock-v0.15.5';  // Linen editability — item modal exposes หมวดย่อยผ้า select (incl. new ปลอกหมอน enum value); drawer gains พิมพ์ QR button (works for linen too); createItem whitelist fixed (was dropping tracks_lots + linen_subcategory)
 const STATIC_ASSETS = [
   './',
   './login.html',

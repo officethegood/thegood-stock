@@ -1125,6 +1125,9 @@
         <button type="button" class="btn btn-outline-secondary" id="drawer-edit">
           <i class="bi bi-pencil"></i> แก้ไข
         </button>
+        <button type="button" class="btn btn-outline-secondary" id="drawer-print">
+          <i class="bi bi-qr-code"></i> พิมพ์ QR
+        </button>
         ${item.active
           ? `<button type="button" class="btn btn-outline-danger" id="drawer-deactivate">ปิดใช้งาน</button>`
           : `<button type="button" class="btn btn-outline-success" id="drawer-reactivate">เปิดใช้งาน</button>`
@@ -1140,6 +1143,17 @@
 
     const close = () => modal.hide();
     document.getElementById('drawer-edit').onclick = () => { close(); openItemModal(item); };
+    // พิมพ์ QR — works for every item incl. linen (which has no row-level QR icon)
+    const printBtn = document.getElementById('drawer-print');
+    if (printBtn) printBtn.onclick = () => {
+      if (!window.QRPrint) { _toast('error', 'โมดูล QR ยังไม่โหลด — รีเฟรชหน้าใหม่'); return; }
+      window.QRPrint.single(item.sku, {
+        size:       '50x30',
+        label:      item.sku,
+        subtitle:   item.name,
+        entityType: 'item',
+      });
+    };
     document.getElementById('drawer-receive').onclick = () => { close(); openReceiveModal(item); };
     document.getElementById('drawer-loss').onclick = () => { close(); openAdjustModal('loss', item); };
     if (_isAdmin()) {
@@ -1350,6 +1364,20 @@
               <small class="text-muted">แจ้งเตือน Telegram เมื่อคงเหลือรวม ≤ ค่านี้ (0 = ไม่แจ้ง)</small>
             </div>
           </div>
+          <!-- Phase 6: linen sub-category — shown only when category = ผ้า (LINEN) -->
+          <div class="mb-2 d-none" id="if-linen-subcat-row">
+            <label class="form-label" for="if-linen-subcat">หมวดย่อยผ้า <span class="text-danger">*</span></label>
+            <select id="if-linen-subcat" class="form-select">
+              <option value="">— เลือกหมวดย่อย —</option>
+              <option value="sheet">ผ้าปูที่นอน</option>
+              <option value="blanket">ผ้าห่ม</option>
+              <option value="towel">ผ้าขนหนู</option>
+              <option value="gown">เสื้อกาวน์</option>
+              <option value="wipe">ผ้าเช็ดเครื่องมือ</option>
+              <option value="pillowcase">ปลอกหมอน</option>
+            </select>
+            <small class="text-muted">สินค้าหมวดผ้าต้องระบุหมวดย่อย</small>
+          </div>
           <!-- Phase 2: tracks_lots toggle (derived constraint #10) -->
           <div class="form-check form-switch mb-3 mt-3">
             <input class="form-check-input" type="checkbox" id="if-tracks-lots" name="tracks_lots"
@@ -1374,6 +1402,22 @@
     `);
     const modal = new bootstrap.Modal(modalEl);
 
+    // Phase 6: detect whether a category id is the LINEN category
+    const _isLinenCat = (catId) => {
+      const c = _categories.find((x) => x.id === catId);
+      return !!c && (c.code === 'LINEN' || c.name === 'ผ้า');
+    };
+    const subcatRow = modalEl.querySelector('#if-linen-subcat-row');
+    const subcatSel = modalEl.querySelector('#if-linen-subcat');
+    const catSel    = modalEl.querySelector('#if-category');
+    function _refreshSubcatRow() {
+      const show = _isLinenCat(catSel.value);
+      subcatRow.classList.toggle('d-none', !show);
+      subcatSel.required = show;
+      if (!show) subcatSel.value = '';
+    }
+    catSel.addEventListener('change', _refreshSubcatRow);
+
     if (isEdit) {
       modalEl.querySelector('#if-name').value       = existing.name || '';
       modalEl.querySelector('#if-sku').value        = existing.sku || '';
@@ -1384,7 +1428,10 @@
       modalEl.querySelector('#if-active').checked   = !!existing.active;
       // Phase 2: tracks_lots toggle
       modalEl.querySelector('#if-tracks-lots').checked = !!existing.tracks_lots;
+      // Phase 6: linen sub-category
+      if (existing.linen_subcategory) subcatSel.value = existing.linen_subcategory;
     }
+    _refreshSubcatRow();
 
     // Phase 2: warn when enabling tracks_lots on an item that already has stock (non-blocking)
     modalEl.querySelector('#if-tracks-lots').addEventListener('change', (ev) => {
@@ -1406,6 +1453,15 @@
       if (!name) { errEl.textContent = 'กรอกชื่อสินค้า'; errEl.classList.remove('d-none'); return; }
       if (!sku)  { errEl.textContent = 'กรอก SKU';      errEl.classList.remove('d-none'); return; }
 
+      // Phase 6: LINEN category requires a sub-category
+      const _catId = modalEl.querySelector('#if-category').value || null;
+      const _isLinen = _isLinenCat(_catId);
+      if (_isLinen && !subcatSel.value) {
+        errEl.textContent = 'สินค้าหมวดผ้าต้องเลือกหมวดย่อย';
+        errEl.classList.remove('d-none');
+        return;
+      }
+
       // D13 (T222, T223): SKU change confirmation in edit mode
       const skuChanged = isEdit && existing && sku !== (existing.sku || '');
       if (skuChanged) {
@@ -1417,12 +1473,15 @@
         name,
         sku,
         barcode:           modalEl.querySelector('#if-barcode').value.trim() || null,
-        category_id:       modalEl.querySelector('#if-category').value || null,
+        category_id:       _catId,
         unit:              modalEl.querySelector('#if-unit').value.trim() || 'ชิ้น',
         reorder_threshold: Math.max(0, parseInt(modalEl.querySelector('#if-threshold').value, 10) || 0),
         active:            modalEl.querySelector('#if-active').checked,
         // Phase 2: tracks_lots — defaults to false for new items
         tracks_lots:       !!(modalEl.querySelector('#if-tracks-lots').checked),
+        // Phase 6: linen sub-category — must be set for LINEN, NULL otherwise
+        // (DB trigger validate_linen_subcategory enforces this)
+        linen_subcategory: _isLinen ? (subcatSel.value || null) : null,
       };
 
       submitEl.disabled = true;

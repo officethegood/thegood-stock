@@ -62,14 +62,15 @@
   // =========================================================================
 
   const SUBCATEGORY_LABELS = {
-    sheet:   'ผ้าปูที่นอน',
-    blanket: 'ผ้าห่ม',
-    towel:   'ผ้าขนหนู',
-    gown:    'เสื้อกาวน์',
-    wipe:    'ผ้าเช็ดเครื่องมือ',
+    sheet:      'ผ้าปูที่นอน',
+    blanket:    'ผ้าห่ม',
+    towel:      'ผ้าขนหนู',
+    gown:       'เสื้อกาวน์',
+    wipe:       'ผ้าเช็ดเครื่องมือ',
+    pillowcase: 'ปลอกหมอน',
   };
 
-  const SUBCATEGORY_VALUES = ['sheet', 'blanket', 'towel', 'gown', 'wipe'];
+  const SUBCATEGORY_VALUES = ['sheet', 'blanket', 'towel', 'gown', 'wipe', 'pillowcase'];
 
   /**
    * Returns Thai display label for a linen_subcategory enum value.

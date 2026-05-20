@@ -165,6 +165,10 @@
   }
 
   async function _queryItemsView(sb, { search, category, activeOnly, limit }) {
+    // NOTE: v_stock_items_with_total was created pre-Phase-6 with `si.*` which
+    // froze its column list — it does NOT expose linen_subcategory. Do not add
+    // that column here or the query 42703-fails. The edit modal prefills
+    // linen_subcategory from getItem() (direct stock_items query) instead.
     let q = sb.from('v_stock_items_with_total')
       .select('id,sku,barcode,name,name_en,category_id,unit,reorder_threshold,tracks_lots,image_url,note,active,total_qty,created_at,updated_at');
     if (activeOnly) q = q.eq('active', true);
@@ -178,7 +182,7 @@
 
   async function _queryItemsFallback(sb, { search, category, activeOnly, limit }) {
     let q = sb.from('stock_items')
-      .select('id,sku,barcode,name,name_en,category_id,unit,reorder_threshold,tracks_lots,image_url,note,active,created_at,updated_at,stock_item_locations(qty)');
+      .select('id,sku,barcode,name,name_en,category_id,unit,reorder_threshold,tracks_lots,linen_subcategory,image_url,note,active,created_at,updated_at,stock_item_locations(qty)');
     if (activeOnly) q = q.eq('active', true);
     if (category)   q = q.eq('category_id', category);
     if (search) {
@@ -205,7 +209,7 @@
     return _safe(async () => {
       const sb = getSupabaseClient();
       const itemRes = await sb.from('stock_items')
-        .select('id,sku,barcode,name,name_en,category_id,unit,reorder_threshold,tracks_lots,tracks_serial,image_url,note,active,created_at,updated_at,created_by,updated_by')
+        .select('id,sku,barcode,name,name_en,category_id,unit,reorder_threshold,tracks_lots,tracks_serial,linen_subcategory,image_url,note,active,created_at,updated_at,created_by,updated_by')
         .eq('id', itemId).maybeSingle();
       if (itemRes.error) return itemRes;
       if (!itemRes.data) return { data: null, error: null };
@@ -303,6 +307,11 @@
         image_url:         itemData.image_url || null,
         note:              itemData.note || null,
         active:            itemData.active !== false,
+        // Phase 2: lot tracking — was missing from the whitelist (latent bug:
+        // new medication items created via the modal always got tracks_lots=false)
+        tracks_lots:       !!itemData.tracks_lots,
+        // Phase 6: linen sub-category — required by DB trigger for LINEN items
+        linen_subcategory: itemData.linen_subcategory || null,
       };
       return sb.from('stock_items').insert(payload).select().single();
     });
