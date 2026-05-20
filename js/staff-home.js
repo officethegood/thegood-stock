@@ -3,66 +3,30 @@
 (async function () {
   const ok = await window.ensureLoggedIn();
   if (!ok) return;
-  if (window.getUserRole() === 'Admin') {
-    const greet = document.getElementById('staff-greeting');
-    if (greet) greet.insertAdjacentHTML('beforeend',
-      ' <a href="./admin.html" class="ms-2 small">(ไปหน้า Admin)</a>');
-  }
 
   try { await window.loadSettings(); } catch {}
 
-  document.getElementById('user-name').textContent = window.getUserName();
-  document.getElementById('btn-logout').onclick    = () => window.handleLogout();
+  const nameEl = document.getElementById('user-name');
+  if (nameEl) nameEl.textContent = window.getUserName();
+  const name2El = document.getElementById('user-name-2');
+  if (name2El) name2El.textContent = window.getUserName();
 
-  document.getElementById('btn-view-loc').onclick = renderLocations;
-  document.getElementById('btn-view-amb').onclick = renderAmbulances;
+  const logoutBtn = document.getElementById('btn-logout');
+  if (logoutBtn) logoutBtn.onclick = () => window.handleLogout();
+
+  // Admin link in topbar (already in HTML markup, show if Admin role)
+  if (window.getUserRole() === 'Admin') {
+    const adminLink = document.getElementById('link-admin');
+    if (adminLink) adminLink.classList.remove('d-none');
+  }
+
+  // Wire secondary text-link triggers
+  const locBtn = document.getElementById('btn-view-loc');
+  if (locBtn) locBtn.onclick = renderLocations;
+  const ambBtn = document.getElementById('btn-view-amb');
+  if (ambBtn) ambBtn.onclick = renderAmbulances;
   const bagsBtn = document.getElementById('btn-view-bags');
   if (bagsBtn) bagsBtn.onclick = renderBags;
-
-  // Phase 0.7+ — Laundry quick-action buttons (Field Clinical card)
-  if (window.Laundry) {
-    const laundryCard = document.createElement('div');
-    laundryCard.className = 'fc-card fc-reveal fc-reveal-4';
-    laundryCard.style.cssText = 'margin-bottom:var(--fc-s4)';
-    laundryCard.innerHTML = `
-      <p class="fc-section-title" style="margin-bottom:var(--fc-s3)">ผ้าและของซัก</p>
-      <div style="display:flex;flex-wrap:wrap;gap:var(--fc-s3)">
-        <button class="fc-btn fc-btn-secondary" onclick="Laundry.openModal('fill_vehicle')" style="min-height:44px;font-size:14px">
-          <i class="bi bi-truck"></i> เติมรถ
-        </button>
-        <button class="fc-btn fc-btn-secondary" onclick="Laundry.openModal('mark_dirty')" style="min-height:44px;font-size:14px">
-          <i class="bi bi-droplet-half"></i> ใช้/เปื้อน +N
-        </button>
-        <button class="fc-btn fc-btn-secondary" onclick="Laundry.openModal('send_wash')" style="min-height:44px;font-size:14px">
-          <i class="bi bi-send"></i> ส่งซัก
-        </button>
-        <button class="fc-btn fc-btn-secondary" onclick="Laundry.openModal('receive_back')" style="min-height:44px;font-size:14px">
-          <i class="bi bi-box-arrow-in-down"></i> รับคืน
-        </button>
-      </div>`;
-    const detail = document.getElementById('staff-detail');
-    if (detail && detail.parentNode) {
-      detail.parentNode.insertBefore(laundryCard, detail);
-    }
-  }
-
-  // Phase 5 — ถังออกซิเจน scan link (separate page) — use FC button
-  const oxyLinkTarget = document.getElementById('staff-oxygen-link-wrap');
-  if (!oxyLinkTarget) {
-    const detail = document.getElementById('staff-detail');
-    if (detail) {
-      const wrap = document.createElement('div');
-      wrap.className = 'fc-reveal fc-reveal-4';
-      wrap.style.cssText = 'margin-bottom:var(--fc-s4)';
-      wrap.innerHTML = `
-        <a href="./staff-oxygen.html"
-           class="fc-btn fc-btn-secondary"
-           style="display:flex;justify-content:center;align-items:center;width:100%;min-height:52px;font-size:15px;font-weight:600;text-decoration:none">
-          <i class="bi bi-circle-square me-2"></i>สแกนถังออกซิเจน
-        </a>`;
-      detail.parentNode.insertBefore(wrap, detail);
-    }
-  }
 })();
 
 // Persisted view mode for staff locations: 'graph' (default) | 'table'

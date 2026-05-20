@@ -152,6 +152,9 @@ h1, h2, h3, .fc-display {
 .fc-btn-danger  { background: var(--fc-pulse-red); color: var(--fc-paper-elev); }
 .fc-btn-danger:hover { background: #c5303c; color: var(--fc-paper-elev); }
 .fc-btn-icon    { min-width: 56px; min-height: 56px; justify-content: center; padding: 0; }
+/* Inline text-style button — looks like a hyperlink, fits in a row of links */
+.fc-text-link   { background: none; border: none; padding: 0; cursor: pointer; font-size: 13px; color: var(--fc-vital-deep); text-decoration: underline; text-decoration-color: transparent; font-family: inherit; transition: text-decoration-color 0.15s; min-height: 44px; display: inline-flex; align-items: center; }
+.fc-text-link:hover { text-decoration-color: currentColor; }
 
 /* ---- Brand mark ---- */
 .fc-brand {
