@@ -9,7 +9,7 @@
 //   docs/superpowers/plans/2026-05-19-phase5-oxygen-plan.md Task B1
 //
 // Locked decisions:
-//   Q-Phase5-1: tank sizes 0.5Q/1Q/1.5Q/4Q/6Q (Layout-Stock-2026-O2), text col on oxygen_tanks.
+//   Q-Phase5-1: tank sizes 0.5Q/1.5Q/4.5Q/6Q (Layout-Stock-2026-O2), text col on oxygen_tanks.
 //   Q-Phase5-2: OXYGEN_REFILL_THRESHOLD default 5, configurable via settings.
 //   Q-Phase5-3: maintenance reason = free text in oxygen_movements.note.
 //   Q-Phase5-4: photo optional on all transitions, reuses PhotoCaptureModal.
@@ -87,9 +87,8 @@
    */
   const SIZE_LABELS = {
     '0.5Q': '0.5Q',
-    '1Q':   '1Q',
     '1.5Q': '1.5Q',
-    '4Q':   '4Q',
+    '4.5Q': '4.5Q',
     '6Q':   '6Q',
   };
 

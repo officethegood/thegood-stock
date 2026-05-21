@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.19.0';  // Oxygen inspection tracking — Admin edit-tank modal (rpc_update_oxygen_tank), clearer inspection-date labels + PSI field, overdue badge, daily Telegram alert cron for tanks due for hydrostatic test.
+const CACHE_VERSION = 'thegood-stock-v0.19.1';  // Oxygen tank sizes adjusted — removed 1Q, renamed 4Q to 4.5Q. Set is now 0.5Q/1.5Q/4.5Q/6Q (DB migration 20260521030000_tank_size_adjust.sql).
 const STATIC_ASSETS = [
   './',
   './login.html',
