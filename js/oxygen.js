@@ -72,6 +72,7 @@
   function _inspectionWarning(dateStr) {
     if (!dateStr) return '';
     const days = Math.floor((new Date(dateStr) - new Date()) / 86400000);
+    if (days < 0)   return ' <span class="badge bg-danger ms-1">เกินกำหนด</span>';
     if (days <= 30) return ' <span class="badge bg-danger ms-1">ตรวจด่วน</span>';
     if (days <= 90) return ' <span class="badge bg-warning text-dark ms-1">ใกล้ถึงกำหนด</span>';
     return '';
@@ -228,8 +229,14 @@
                 </select>
               </div>
               <div class="mb-3">
-                <label class="form-label" for="oxy-add-inspection">วันตรวจสอบครั้งถัดไป</label>
+                <label class="form-label" for="oxy-add-pressure">ค่าแรงดันล่าสุด (PSI)</label>
+                <input type="number" id="oxy-add-pressure" class="form-control"
+                       min="1" placeholder="เช่น 2000" autocomplete="off">
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="oxy-add-inspection">วันครบกำหนดทดสอบถัง (ครั้งถัดไป)</label>
                 <input type="date" id="oxy-add-inspection" class="form-control">
+                <div class="form-text">วันครบกำหนดส่งทดสอบสภาพ/แรงดันถังครั้งถัดไป — เว้นว่างได้</div>
               </div>
               <div class="mb-3">
                 <label class="form-label" for="oxy-add-notes">หมายเหตุ</label>
@@ -241,6 +248,52 @@
               <button type="button" id="oxy-add-save" class="btn btn-stock-primary" style="min-height:40px;">
                 บันทึก
               </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Edit tank modal (Admin only) -->
+      <div class="modal fade" id="oxy-edit-modal" tabindex="-1"
+           aria-labelledby="oxy-edit-modal-label">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="oxy-edit-modal-label">แก้ไขข้อมูลถัง</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+            </div>
+            <div class="modal-body">
+              <div id="oxy-edit-error" class="alert alert-danger d-none" role="alert"></div>
+              <div class="mb-3">
+                <label class="form-label" for="oxy-edit-serial">หมายเลขถัง (Serial)</label>
+                <input type="text" id="oxy-edit-serial" class="form-control" readonly disabled>
+                <div class="form-text">หมายเลขถังแก้ไขไม่ได้</div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="oxy-edit-size">ขนาดถัง <span class="text-danger">*</span></label>
+                <select id="oxy-edit-size" class="form-select" required>
+                  <option value="">— เลือกขนาด —</option>
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="oxy-edit-pressure">ค่าแรงดันล่าสุด (PSI)</label>
+                <input type="number" id="oxy-edit-pressure" class="form-control"
+                       min="1" placeholder="เช่น 2000" autocomplete="off">
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="oxy-edit-inspection">วันครบกำหนดทดสอบถัง (ครั้งถัดไป)</label>
+                <input type="date" id="oxy-edit-inspection" class="form-control">
+                <div class="form-text">วันครบกำหนดส่งทดสอบสภาพ/แรงดันถังครั้งถัดไป — เว้นว่างได้</div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="oxy-edit-notes">หมายเหตุ</label>
+                <textarea id="oxy-edit-notes" class="form-control" rows="2" maxlength="500"></textarea>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+              <button type="button" id="oxy-edit-save" class="btn btn-stock-primary"
+                      style="min-height:40px;">บันทึก</button>
             </div>
           </div>
         </div>
@@ -260,8 +313,12 @@
           </div>
         </div>
         ${_isAdmin() ? `
-          <div class="p-3 border-top">
-            <button type="button" id="oxy-btn-transition" class="btn btn-stock-primary w-100"
+          <div class="p-3 border-top d-grid gap-2">
+            <button type="button" id="oxy-btn-edit" class="btn btn-outline-secondary"
+                    style="min-height:44px;">
+              <i class="bi bi-pencil-square me-1"></i>แก้ไขข้อมูลถัง
+            </button>
+            <button type="button" id="oxy-btn-transition" class="btn btn-stock-primary"
                     style="min-height:44px;">
               <i class="bi bi-arrow-repeat me-1"></i>เปลี่ยนสถานะ
             </button>
@@ -453,7 +510,7 @@
     }
     const errEl = document.getElementById('oxy-add-error');
     if (errEl) { errEl.classList.add('d-none'); errEl.textContent = ''; }
-    ['oxy-add-serial','oxy-add-size','oxy-add-location','oxy-add-inspection','oxy-add-notes']
+    ['oxy-add-serial','oxy-add-size','oxy-add-location','oxy-add-inspection','oxy-add-notes','oxy-add-pressure']
       .forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
 
     const modalEl = document.getElementById('oxy-add-modal');
@@ -474,6 +531,7 @@
     const locationId = document.getElementById('oxy-add-location')?.value;
     const inspection = document.getElementById('oxy-add-inspection')?.value || null;
     const notes     = document.getElementById('oxy-add-notes')?.value.trim() || null;
+    const pressureRaw = document.getElementById('oxy-add-pressure')?.value;
     const errEl     = document.getElementById('oxy-add-error');
 
     function _showErr(msg) {
@@ -483,6 +541,10 @@
     if (!serial) { _showErr('กรุณาระบุหมายเลขถัง'); return; }
     if (!size)   { _showErr('กรุณาเลือกขนาดถัง'); return; }
     if (!locationId) { _showErr('กรุณาเลือกสถานที่จัดเก็บ'); return; }
+    const pressure = pressureRaw ? parseInt(pressureRaw, 10) : null;
+    if (pressure !== null && (!Number.isFinite(pressure) || pressure <= 0)) {
+      _showErr('ค่าแรงดันต้องเป็นตัวเลขมากกว่า 0'); return;
+    }
     if (errEl) errEl.classList.add('d-none');
 
     const saveBtn = document.getElementById('oxy-add-save');
@@ -497,6 +559,7 @@
         tank_size:           size,
         current_location_id: locationId,
         next_inspection_due: inspection,
+        last_pressure_psi:   pressure,
         notes,
       }).select().single();
 
@@ -538,6 +601,79 @@
   }
 
   // =========================================================================
+  // Edit-tank modal (Admin only)
+  // =========================================================================
+
+  async function _openEditModal(tankId) {
+    const sb = window.getSupabaseClient();
+    const { data: tank, error } = await sb.from('oxygen_tanks')
+      .select('id, serial, tank_size, last_pressure_psi, next_inspection_due, notes')
+      .eq('id', tankId).maybeSingle();
+    if (error || !tank) { _toast('error', 'โหลดข้อมูลถังไม่สำเร็จ'); return; }
+
+    document.getElementById('oxy-edit-serial').value     = tank.serial || '';
+    document.getElementById('oxy-edit-pressure').value   = tank.last_pressure_psi ?? '';
+    document.getElementById('oxy-edit-inspection').value = tank.next_inspection_due || '';
+    document.getElementById('oxy-edit-notes').value      = tank.notes || '';
+
+    const sizeEl = document.getElementById('oxy-edit-size');
+    if (sizeEl) await _fillLookupSelect(sizeEl, 'tank_size', tank.tank_size);
+
+    const errEl = document.getElementById('oxy-edit-error');
+    if (errEl) { errEl.classList.add('d-none'); errEl.textContent = ''; }
+
+    const modalEl = document.getElementById('oxy-edit-modal');
+    if (!modalEl) return;
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+
+    // Re-wire save button each open to avoid duplicate listeners.
+    const saveBtn = document.getElementById('oxy-edit-save');
+    const newSave = saveBtn.cloneNode(true);
+    saveBtn.parentNode.replaceChild(newSave, saveBtn);
+    newSave.addEventListener('click', () => _saveEditTank(tankId));
+  }
+
+  async function _saveEditTank(tankId) {
+    const errEl = document.getElementById('oxy-edit-error');
+    function _showErr(msg) {
+      if (errEl) { errEl.textContent = msg; errEl.classList.remove('d-none'); }
+    }
+
+    const size       = document.getElementById('oxy-edit-size')?.value;
+    const psiRaw     = document.getElementById('oxy-edit-pressure')?.value;
+    const inspection = document.getElementById('oxy-edit-inspection')?.value || null;
+    const notes      = document.getElementById('oxy-edit-notes')?.value.trim() || null;
+
+    if (!size) { _showErr('กรุณาเลือกขนาดถัง'); return; }
+    const psi = psiRaw ? parseInt(psiRaw, 10) : null;
+    if (psi !== null && (!Number.isFinite(psi) || psi <= 0)) {
+      _showErr('ค่าแรงดันต้องเป็นตัวเลขมากกว่า 0'); return;
+    }
+    if (errEl) errEl.classList.add('d-none');
+
+    const saveBtn = document.getElementById('oxy-edit-save');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'กำลังบันทึก…'; }
+
+    try {
+      await window.AppOxygen.updateTank({
+        tankId,
+        tankSize:          size,
+        nextInspectionDue: inspection,
+        lastPressurePsi:   psi,
+        notes,
+      });
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('oxy-edit-modal')).hide();
+      _toast('success', 'บันทึกการแก้ไขแล้ว');
+      if (_currentTankId === tankId) _renderDetailDrawer(tankId);
+      _updateListRow(tankId);
+    } catch (e) {
+      _showErr(e.message || 'บันทึกไม่สำเร็จ');
+    } finally {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'บันทึก'; }
+    }
+  }
+
+  // =========================================================================
   // Tank detail / history drawer
   // =========================================================================
 
@@ -562,6 +698,14 @@
       const newBtn = transBtn.cloneNode(true);
       transBtn.parentNode.replaceChild(newBtn, transBtn);
       newBtn.addEventListener('click', () => _openTransitionModal(tankId));
+    }
+
+    // Wire edit button
+    const editBtn = document.getElementById('oxy-btn-edit');
+    if (editBtn) {
+      const newEdit = editBtn.cloneNode(true);
+      editBtn.parentNode.replaceChild(newEdit, editBtn);
+      newEdit.addEventListener('click', () => _openEditModal(tankId));
     }
 
     await _renderDetailDrawer(tankId);

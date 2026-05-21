@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.18.8';  // Oxygen tank sizes replaced — placeholder small/medium/large → real cylinder Q-ratings 0.5Q/1Q/1.5Q/4Q/6Q (per customer doc Layout-Stock-2026-O2). Updated lookup_lists fallback in js/oxygen.js + SIZE_LABELS in shared/oxygen.js; DB seed migration 20260521000000_tank_size_q_ratings.sql.
+const CACHE_VERSION = 'thegood-stock-v0.19.0';  // Oxygen inspection tracking — Admin edit-tank modal (rpc_update_oxygen_tank), clearer inspection-date labels + PSI field, overdue badge, daily Telegram alert cron for tanks due for hydrostatic test.
 const STATIC_ASSETS = [
   './',
   './login.html',

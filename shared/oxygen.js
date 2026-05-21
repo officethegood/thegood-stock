@@ -122,6 +122,15 @@
     if (msg.includes('23505') || msg.includes('unique')) {
       return 'หมายเลขถังนี้มีอยู่แล้ว';
     }
+    if (msg.includes('เฉพาะผู้ดูแลระบบ')) {
+      return 'เฉพาะผู้ดูแลระบบเท่านั้นที่แก้ไขข้อมูลถังได้';
+    }
+    if (msg.includes('ขนาดถังไม่ถูกต้อง')) {
+      return 'ขนาดถังไม่ถูกต้อง กรุณาเลือกใหม่';
+    }
+    if (msg.includes('ค่าแรงดันต้องมากกว่า')) {
+      return 'ค่าแรงดันต้องเป็นตัวเลขมากกว่า 0';
+    }
     return null;
   }
 
@@ -250,6 +259,36 @@
   }
 
   /**
+   * Update an oxygen tank's mutable fields (Admin only).
+   * Calls the rpc_update_oxygen_tank SECURITY DEFINER function — status,
+   * location and refill columns CANNOT be changed through this path.
+   *
+   * @param {{
+   *   tankId:            string,
+   *   tankSize:          string,
+   *   nextInspectionDue: string|null,   // 'YYYY-MM-DD' or null
+   *   lastPressurePsi:   number|null,
+   *   notes:             string|null,
+   * }} opts
+   * @returns {Promise<{ data: object, error: null }>}
+   */
+  async function updateTank({ tankId, tankSize, nextInspectionDue, lastPressurePsi, notes }) {
+    if (!tankId)   throw new Error('[AppOxygen.updateTank] tankId is required');
+    if (!tankSize) throw new Error('[AppOxygen.updateTank] tankSize is required');
+
+    const sb = _sb();
+    const { data, error } = await sb.rpc('rpc_update_oxygen_tank', {
+      p_tank_id:             tankId,
+      p_tank_size:           tankSize,
+      p_next_inspection_due: nextInspectionDue || null,
+      p_last_pressure_psi:   (lastPressurePsi ?? null),
+      p_notes:               notes || null,
+    });
+    if (error) _throw(error);
+    return { data, error: null };
+  }
+
+  /**
    * Get counts of tanks grouped by status.
    * @returns {Promise<{ ready: number, on_board: number, refilling: number, maintenance: number, retired: number }>}
    */
@@ -317,6 +356,7 @@
     getTankBySerial,
     getTankHistory,
     logTransition,
+    updateTank,
     getTankStatusCounts,
     subscribeOxygenTanks,
 
