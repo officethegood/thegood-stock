@@ -69,4 +69,22 @@
   window.showToast    = showToast;
   window.showConfirm  = showConfirm;
   window.escapeHtml   = escapeHtml;
+
+  // =========================================================================
+  // Service-worker auto-update
+  // sw.js calls skipWaiting()+clients.claim(), so a freshly deployed version
+  // takes control of open pages as soon as the browser fetches the new sw.js
+  // (it does so on navigation). But the page is still running the OLD cached
+  // JS in memory — the cause of the recurring "stale cache" bugs. This
+  // listener reloads the page ONCE the moment a new SW takes control, so a
+  // deploy is picked up automatically — no manual hard-refresh / cache clear.
+  // =========================================================================
+  if ('serviceWorker' in navigator) {
+    let _swReloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (_swReloaded) return;          // guard — controllerchange can fire twice
+      _swReloaded = true;
+      window.location.reload();
+    });
+  }
 })();

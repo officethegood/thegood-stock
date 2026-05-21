@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.18.4';  // Live-audit fix — realtime double-subscribe on คลัง sub-tabs: subscribeInventory + subscribeOxygenTanks now drop any stale same-named channel before re-subscribing (was throwing "cannot add callbacks after subscribe()")
+const CACHE_VERSION = 'thegood-stock-v0.18.5';  // SW auto-update — shared/ui.js reloads the page once on controllerchange, so a new deploy is picked up automatically without manual hard-refresh / cache clear (ends the recurring stale-cache friction)
 const STATIC_ASSETS = [
   './',
   './login.html',
