@@ -854,6 +854,14 @@
     _mounted = true;
 
     _renderShell();
+    // Relocate every modal out of the tab pane to <body>. Bootstrap modals
+    // must not live inside a transformed ancestor (.fc-reveal animation) —
+    // the transform creates a stacking context that traps the modal behind
+    // the body-level .modal-backdrop. (Other tabs append modals to body
+    // directly; the oxygen shell renders them inline, so move them here.)
+    document.querySelectorAll('#tab-oxygen .modal').forEach((m) => {
+      document.body.appendChild(m);
+    });
     // D14: populate tank_size dropdown from lookup_lists
     const sizeEl = document.getElementById('oxy-add-size');
     if (sizeEl) _fillLookupSelect(sizeEl, 'tank_size', null);

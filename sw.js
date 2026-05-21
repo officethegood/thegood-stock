@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.18.5';  // SW auto-update — shared/ui.js reloads the page once on controllerchange, so a new deploy is picked up automatically without manual hard-refresh / cache clear (ends the recurring stale-cache friction)
+const CACHE_VERSION = 'thegood-stock-v0.18.6';  // Fix modal-behind-backdrop — fc-rise keyframe ended at translateY(0) which (with fill-mode both) left a permanent transform/stacking-context on .fc-reveal, trapping in-tab modals behind the backdrop. Keyframe now ends at transform:none; oxygen modals relocated to <body>.
 const STATIC_ASSETS = [
   './',
   './login.html',
