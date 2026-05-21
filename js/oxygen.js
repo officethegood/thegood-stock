@@ -83,6 +83,15 @@
   // Graceful fallback: if table missing keeps existing placeholder option.
   // currentValue that is no longer active is appended with "(ปิดใช้งาน)".
   // =========================================================================
+  // Hardcoded defaults — used when lookup_lists is empty/missing.
+  const _LOOKUP_FALLBACK = {
+    tank_size: [
+      { code: 'small',  name: 'เล็ก' },
+      { code: 'medium', name: 'กลาง' },
+      { code: 'large',  name: 'ใหญ่' },
+    ],
+  };
+
   async function _fillLookupSelect(selectEl, kind, currentValue) {
     let rows = [];
     try {
@@ -99,9 +108,10 @@
         rows = r.data || [];
       }
     } catch (e) {
-      console.warn('[D14] lookup_lists fetch failed for kind=' + kind, e);
-      return;
+      console.warn('[D14] lookup_lists fetch failed for kind=' + kind + ' — using fallback', e);
+      rows = [];
     }
+    if (!rows.length) rows = _LOOKUP_FALLBACK[kind] || [];
     if (!rows.length) return;
 
     const placeholder = selectEl.options[0];

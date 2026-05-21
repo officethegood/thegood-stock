@@ -89,6 +89,19 @@
    * @param {string} kind  — 'linen_subcategory' | 'storage_style' | 'tank_size'
    * @param {string|null} currentValue  — existing row value (edit mode), or null
    */
+  // Hardcoded defaults — used when lookup_lists is empty/missing so the
+  // dropdown is never left unusable (empty).
+  const _LOOKUP_FALLBACK = {
+    linen_subcategory: [
+      { code: 'sheet',      name: 'ผ้าปูที่นอน' },
+      { code: 'blanket',    name: 'ผ้าห่ม' },
+      { code: 'towel',      name: 'ผ้าขนหนู' },
+      { code: 'gown',       name: 'เสื้อกาวน์' },
+      { code: 'wipe',       name: 'ผ้าเช็ดเครื่องมือ' },
+      { code: 'pillowcase', name: 'ปลอกหมอน' },
+    ],
+  };
+
   async function _fillLookupSelect(selectEl, kind, currentValue) {
     let rows = [];
     try {
@@ -105,10 +118,11 @@
         rows = r.data || [];
       }
     } catch (e) {
-      // Migration not applied yet or network error — leave placeholder option intact
-      console.warn('[D14] lookup_lists fetch failed for kind=' + kind, e);
-      return;
+      console.warn('[D14] lookup_lists fetch failed for kind=' + kind + ' — using fallback', e);
+      rows = [];
     }
+    // Empty result OR fetch error → fall back to hardcoded defaults.
+    if (!rows.length) rows = _LOOKUP_FALLBACK[kind] || [];
     if (!rows.length) return;  // nothing to populate — leave placeholder
 
     // Keep first <option> (placeholder), replace the rest

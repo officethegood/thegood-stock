@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.18.0';  // Rich Tree Cards — admin Locations Tree view rebuilt as type-coded indented rich cards with nested stock-item previews + rolled-up alert badges (supermarket-style storage browse)
+const CACHE_VERSION = 'thegood-stock-v0.18.1';  // Fix D14 regression — lookup_lists dropdowns (storage_style/linen_subcategory/tank_size) now fall back to hardcoded defaults when the table is empty/missing, instead of rendering an unusable empty dropdown that blocked adding locations
 const STATIC_ASSETS = [
   './',
   './login.html',

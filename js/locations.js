@@ -702,6 +702,17 @@
   // Graceful fallback: if table missing keeps existing placeholder option.
   // currentValue that is no longer active is appended with "(ปิดใช้งาน)" so edit is safe.
   // =========================================================================
+  // Hardcoded defaults — used when lookup_lists is empty/missing so the
+  // form NEVER ends up with an unusable empty dropdown.
+  const _LOOKUP_FALLBACK = {
+    storage_style: [
+      { code: 'closed', name: 'ตู้ปิด / ลิ้นชัก' },
+      { code: 'open',   name: 'ชั้นเปิด' },
+      { code: 'mesh',   name: 'ตะแกรง' },
+      { code: 'drawer', name: 'ลิ้นชักหลายชั้น' },
+    ],
+  };
+
   async function _fillLookupSelect(selectEl, kind, currentValue) {
     let rows = [];
     try {
@@ -718,9 +729,11 @@
         rows = r.data || [];
       }
     } catch (e) {
-      console.warn('[D14] lookup_lists fetch failed for kind=' + kind, e);
-      return;
+      console.warn('[D14] lookup_lists fetch failed for kind=' + kind + ' — using fallback', e);
+      rows = [];
     }
+    // Empty result OR fetch error → fall back to hardcoded defaults.
+    if (!rows.length) rows = _LOOKUP_FALLBACK[kind] || [];
     if (!rows.length) return;
 
     const placeholder = selectEl.options[0];
