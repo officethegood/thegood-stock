@@ -116,7 +116,7 @@
 
     const placeholder = selectEl.options[0];
     selectEl.innerHTML = '';
-    selectEl.appendChild(placeholder);
+    if (placeholder) selectEl.appendChild(placeholder);
 
     const codes = new Set(rows.map((r) => r.code));
     rows.forEach((r) => {

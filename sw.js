@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.18.2';  // Audit fixes — js/warehouse-shell.js was missing from STATIC_ASSETS (offline-cache gap, broke คลัง tab offline); hardened inventory.js modal scaffold firstChild→firstElementChild
+const CACHE_VERSION = 'thegood-stock-v0.18.3';  // Static-audit fixes — hard-delete check now ignores qty=0 leftover sil rows; _fillLookupSelect guards missing placeholder; warehouse-shell won't mark a sub-tab initialized if its init fn is missing
 const STATIC_ASSETS = [
   './',
   './login.html',

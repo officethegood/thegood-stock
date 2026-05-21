@@ -128,7 +128,7 @@
     // Keep first <option> (placeholder), replace the rest
     const placeholder = selectEl.options[0];
     selectEl.innerHTML = '';
-    selectEl.appendChild(placeholder);
+    if (placeholder) selectEl.appendChild(placeholder);
 
     const codes = new Set(rows.map((r) => r.code));
     rows.forEach((r) => {
@@ -1316,7 +1316,12 @@
     try {
       const [mv, sil, lots] = await Promise.all([
         headCount('stock_movements', 'id'),
-        headCount('stock_item_locations', 'item_id'),
+        // Only count locations where the item still HAS stock — a leftover
+        // stock_item_locations row at qty=0 is not real history and must not
+        // block deleting an otherwise history-free item.
+        sb.from('stock_item_locations')
+          .select('item_id', { count: 'exact', head: true })
+          .eq('item_id', itemId).gt('qty', 0),
         headCount('stock_lots', 'id'),
       ]);
       return {

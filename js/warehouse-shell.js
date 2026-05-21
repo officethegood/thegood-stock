@@ -82,8 +82,15 @@
 
   function _runInit(name) {
     if (_initialized.has(name)) return;
+    const fnName = { inventory: 'initInventoryTab', oxygen: 'initOxygenTab', bags: 'initBagsTab' }[name];
+    // Don't mark a sub-tab "initialized" if its init function isn't loaded —
+    // otherwise a script-order regression leaves a permanently blank pane.
+    if (typeof window[fnName] !== 'function') {
+      console.error('warehouse: init function missing for', name, '(' + fnName + ')');
+      return;  // not added to _initialized → will retry on next switch
+    }
     _initialized.add(name);
-    try { _INITS[name](); } catch (e) { console.error('warehouse init failed for', name, e); }
+    try { window[fnName](); } catch (e) { console.error('warehouse init failed for', name, e); }
   }
 
   window.initWarehouseTab = function () {
