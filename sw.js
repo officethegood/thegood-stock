@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.18.6';  // Fix modal-behind-backdrop — fc-rise keyframe ended at translateY(0) which (with fill-mode both) left a permanent transform/stacking-context on .fc-reveal, trapping in-tab modals behind the backdrop. Keyframe now ends at transform:none; oxygen modals relocated to <body>.
+const CACHE_VERSION = 'thegood-stock-v0.18.7';  // Modal-behind-backdrop REAL fix — fc-rise reveal animation is now opacity-only (no transform at all). transform:none in a keyframe was still reported as a matrix by Chrome → still created a stacking context. Pure fade = zero stacking-context side effects; in-tab modals render correctly.
 const STATIC_ASSETS = [
   './',
   './login.html',

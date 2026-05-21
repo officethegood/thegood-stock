@@ -548,17 +548,19 @@ body .text-stock-accent       { color: var(--fc-vital) !important; }
   border-color: var(--fc-vital);
 }
 
-/* ---- Page-load staggered reveal ---- */
+/* ---- Page-load staggered reveal ----
+   IMPORTANT: opacity ONLY — no transform. A transform-based reveal (even
+   one that ends at translateY(0)/none) leaves the element under animation
+   control, and Chrome then reports a transform matrix via getComputedStyle.
+   ANY transform value other than the literal `none` creates a CSS stacking
+   context, which traps Bootstrap modals nested inside a tab BEHIND the
+   body-level .modal-backdrop. A pure opacity fade has no such side effect. */
 @keyframes fc-rise {
-  from { opacity: 0; transform: translateY(6px); }
-  /* End at `transform: none` — NOT translateY(0). With animation-fill-mode
-     `both`, translateY(0) persists as a real transform and creates a
-     permanent stacking context on every .fc-reveal element, which traps any
-     Bootstrap modal nested inside a tab behind the body-level backdrop. */
-  to   { opacity: 1; transform: none; }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 .fc-reveal {
-  animation: fc-rise 180ms cubic-bezier(.2,.7,.2,1) both;
+  animation: fc-rise 200ms ease both;
 }
 .fc-reveal-1 { animation-delay:   0ms; }
 .fc-reveal-2 { animation-delay: 100ms; }
