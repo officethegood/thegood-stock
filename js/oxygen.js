@@ -9,7 +9,7 @@
 //   docs/superpowers/plans/2026-05-19-phase5-oxygen-plan.md Task B2
 //
 // Decisions:
-//   Q-Phase5-1: 3 sizes (small/medium/large)
+//   Q-Phase5-1: tank sizes 0.5Q/1Q/1.5Q/4Q/6Q (per Layout-Stock-2026-O2)
 //   Q-Phase5-3: maintenance reason = free text in note field
 //   Q-Phase5-4: photo optional, uses window.PhotoCaptureModal.open() from shared/photo-capture.js (Phase 3)
 //   Q-Phase5-5: NO purchase_price / acquired_at
@@ -86,9 +86,11 @@
   // Hardcoded defaults — used when lookup_lists is empty/missing.
   const _LOOKUP_FALLBACK = {
     tank_size: [
-      { code: 'small',  name: 'เล็ก' },
-      { code: 'medium', name: 'กลาง' },
-      { code: 'large',  name: 'ใหญ่' },
+      { code: '0.5Q', name: '0.5Q' },
+      { code: '1Q',   name: '1Q'   },
+      { code: '1.5Q', name: '1.5Q' },
+      { code: '4Q',   name: '4Q'   },
+      { code: '6Q',   name: '6Q'   },
     ],
   };
 

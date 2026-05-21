@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.18.7';  // Modal-behind-backdrop REAL fix — fc-rise reveal animation is now opacity-only (no transform at all). transform:none in a keyframe was still reported as a matrix by Chrome → still created a stacking context. Pure fade = zero stacking-context side effects; in-tab modals render correctly.
+const CACHE_VERSION = 'thegood-stock-v0.18.8';  // Oxygen tank sizes replaced — placeholder small/medium/large → real cylinder Q-ratings 0.5Q/1Q/1.5Q/4Q/6Q (per customer doc Layout-Stock-2026-O2). Updated lookup_lists fallback in js/oxygen.js + SIZE_LABELS in shared/oxygen.js; DB seed migration 20260521000000_tank_size_q_ratings.sql.
 const STATIC_ASSETS = [
   './',
   './login.html',
