@@ -289,10 +289,16 @@
                 <textarea id="oxy-edit-notes" class="form-control" rows="2" maxlength="500"></textarea>
               </div>
             </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
-              <button type="button" id="oxy-edit-save" class="btn btn-stock-primary"
-                      style="min-height:40px;">บันทึก</button>
+            <div class="modal-footer justify-content-between">
+              <button type="button" id="oxy-edit-delete" class="btn btn-outline-danger"
+                      style="min-height:40px;">
+                <i class="bi bi-trash3 me-1"></i>ลบถัง
+              </button>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+                <button type="button" id="oxy-edit-save" class="btn btn-stock-primary"
+                        style="min-height:40px;">บันทึก</button>
+              </div>
             </div>
           </div>
         </div>
@@ -630,6 +636,14 @@
     const newSave = saveBtn.cloneNode(true);
     saveBtn.parentNode.replaceChild(newSave, saveBtn);
     newSave.addEventListener('click', () => _saveEditTank(tankId));
+
+    // Re-wire delete button each open to avoid duplicate listeners.
+    const delBtn = document.getElementById('oxy-edit-delete');
+    if (delBtn) {
+      const newDel = delBtn.cloneNode(true);
+      delBtn.parentNode.replaceChild(newDel, delBtn);
+      newDel.addEventListener('click', () => _deleteTank(tankId));
+    }
   }
 
   async function _saveEditTank(tankId) {
@@ -669,6 +683,37 @@
       _showErr(e.message || 'บันทึกไม่สำเร็จ');
     } finally {
       if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'บันทึก'; }
+    }
+  }
+
+  // Permanently delete a tank (Admin only) — guarded: the RPC rejects any tank
+  // with operational history, so only never-used "added by mistake" tanks can
+  // be removed. The edit modal is closed before the confirm dialog so the
+  // confirm is the only modal on screen (no modal-over-modal stacking).
+  async function _deleteTank(tankId) {
+    const serial = document.getElementById('oxy-edit-serial')?.value || 'นี้';
+
+    const editModalEl = document.getElementById('oxy-edit-modal');
+    await new Promise((resolve) => {
+      if (!editModalEl) { resolve(); return; }
+      editModalEl.addEventListener('hidden.bs.modal', resolve, { once: true });
+      bootstrap.Modal.getOrCreateInstance(editModalEl).hide();
+    });
+
+    const ok = await window.showConfirm(
+      `ลบถัง ${serial} ออกจากระบบถาวร? ลบได้เฉพาะถังที่ยังไม่เคยใช้งาน และกู้คืนไม่ได้`
+    );
+    if (!ok) return;
+
+    try {
+      await window.AppOxygen.deleteTank({ tankId });
+      const drawer = document.getElementById('oxy-detail-drawer');
+      if (drawer) bootstrap.Offcanvas.getOrCreateInstance(drawer).hide();
+      if (_currentTankId === tankId) _currentTankId = null;
+      _toast('success', `ลบถัง ${serial} แล้ว`);
+      _loadList();
+    } catch (e) {
+      _toast('error', e.message || 'ลบถังไม่สำเร็จ');
     }
   }
 

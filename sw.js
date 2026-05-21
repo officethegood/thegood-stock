@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.19.1';  // Oxygen tank sizes adjusted — removed 1Q, renamed 4Q to 4.5Q. Set is now 0.5Q/1.5Q/4.5Q/6Q (DB migration 20260521030000_tank_size_adjust.sql).
+const CACHE_VERSION = 'thegood-stock-v0.20.0';  // Oxygen tank delete — guarded hard-delete via rpc_delete_oxygen_tank + "ลบถัง" button in the edit modal (DB migration 20260521060000_rpc_delete_oxygen_tank.sql).
 const STATIC_ASSETS = [
   './',
   './login.html',

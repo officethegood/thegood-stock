@@ -121,6 +121,9 @@
     if (msg.includes('23505') || msg.includes('unique')) {
       return 'หมายเลขถังนี้มีอยู่แล้ว';
     }
+    if (msg.includes('ที่ลบถังได้')) {
+      return 'เฉพาะผู้ดูแลระบบเท่านั้นที่ลบถังได้';
+    }
     if (msg.includes('เฉพาะผู้ดูแลระบบ')) {
       return 'เฉพาะผู้ดูแลระบบเท่านั้นที่แก้ไขข้อมูลถังได้';
     }
@@ -288,6 +291,27 @@
   }
 
   /**
+   * Permanently delete an oxygen tank (Admin only).
+   * Calls the rpc_delete_oxygen_tank SECURITY DEFINER function, which deletes
+   * the tank's initial-placement movement row(s) and the tank itself in one
+   * transaction. The RPC rejects any tank that has operational history — those
+   * must be retired, not deleted — and throws a localised Thai error.
+   *
+   * @param {{ tankId: string }} opts
+   * @returns {Promise<{ error: null }>}
+   */
+  async function deleteTank({ tankId }) {
+    if (!tankId) throw new Error('[AppOxygen.deleteTank] tankId is required');
+
+    const sb = _sb();
+    const { error } = await sb.rpc('rpc_delete_oxygen_tank', {
+      p_tank_id: tankId,
+    });
+    if (error) _throw(error);
+    return { error: null };
+  }
+
+  /**
    * Get counts of tanks grouped by status.
    * @returns {Promise<{ ready: number, on_board: number, refilling: number, maintenance: number, retired: number }>}
    */
@@ -356,6 +380,7 @@
     getTankHistory,
     logTransition,
     updateTank,
+    deleteTank,
     getTankStatusCounts,
     subscribeOxygenTanks,
 
