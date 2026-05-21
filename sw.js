@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.18.3';  // Static-audit fixes — hard-delete check now ignores qty=0 leftover sil rows; _fillLookupSelect guards missing placeholder; warehouse-shell won't mark a sub-tab initialized if its init fn is missing
+const CACHE_VERSION = 'thegood-stock-v0.18.4';  // Live-audit fix — realtime double-subscribe on คลัง sub-tabs: subscribeInventory + subscribeOxygenTanks now drop any stale same-named channel before re-subscribing (was throwing "cannot add callbacks after subscribe()")
 const STATIC_ASSETS = [
   './',
   './login.html',

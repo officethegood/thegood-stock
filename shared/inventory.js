@@ -498,6 +498,15 @@
    */
   function subscribeInventory(onChange) {
     const sb = getSupabaseClient();
+    // Defensive: drop any stale channel of the same name first. Supabase
+    // returns the EXISTING channel for a repeated channel(name) call, and
+    // calling .on() on an already-subscribed channel throws
+    // "cannot add postgres_changes callbacks ... after subscribe()".
+    try {
+      (sb.getChannels() || [])
+        .filter((c) => c && c.topic === 'realtime:inv:phase1')
+        .forEach((c) => sb.removeChannel(c));
+    } catch { /* ignore */ }
     const ch = sb.channel('inv:phase1')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_items' },          (p) => onChange('stock_items', p))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_item_locations' }, (p) => onChange('stock_item_locations', p))

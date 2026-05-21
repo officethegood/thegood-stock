@@ -285,6 +285,14 @@
    */
   function subscribeOxygenTanks(onChange) {
     const sb = _sb();
+    // Defensive: drop any stale channel of the same name first — calling
+    // channel(name) twice returns the existing already-subscribed channel,
+    // and a subsequent .on() throws "cannot add callbacks after subscribe()".
+    try {
+      (sb.getChannels() || [])
+        .filter((c) => c && c.topic === 'realtime:oxygen-tanks-realtime')
+        .forEach((c) => sb.removeChannel(c));
+    } catch { /* ignore */ }
     const channel = sb
       .channel('oxygen-tanks-realtime')
       .on('postgres_changes',
