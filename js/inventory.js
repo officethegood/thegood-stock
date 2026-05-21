@@ -2240,7 +2240,7 @@
         </div>
       </div>
     `.trim();
-    const el = wrap.firstChild;
+    const el = wrap.firstElementChild;  // firstElementChild — robust even if leading whitespace creeps in
     document.body.appendChild(el);
     el.addEventListener('hidden.bs.modal', () => { try { el.remove(); } catch {} });
     return el;

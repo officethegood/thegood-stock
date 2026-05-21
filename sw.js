@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.18.1';  // Fix D14 regression — lookup_lists dropdowns (storage_style/linen_subcategory/tank_size) now fall back to hardcoded defaults when the table is empty/missing, instead of rendering an unusable empty dropdown that blocked adding locations
+const CACHE_VERSION = 'thegood-stock-v0.18.2';  // Audit fixes — js/warehouse-shell.js was missing from STATIC_ASSETS (offline-cache gap, broke คลัง tab offline); hardened inventory.js modal scaffold firstChild→firstElementChild
 const STATIC_ASSETS = [
   './',
   './login.html',
@@ -47,6 +47,7 @@ const STATIC_ASSETS = [
   './js/staff-scan.js',
   './shared/oxygen.js',
   './js/oxygen.js',
+  './js/warehouse-shell.js',
   './js/staff-oxygen.js',
   './staff-oxygen.html',
   './vendor/qrcode.min.js',
