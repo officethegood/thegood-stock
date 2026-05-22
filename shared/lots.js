@@ -129,7 +129,10 @@
 
   /**
    * Create a new lot (Admin receive flow).
-   * initial current_qty = received_qty (trigger will adjust on movements).
+   * initial current_qty = 0 — the caller posts the lot's `receive` movement
+   * right after, and the apply_movement_to_lot_qty trigger raises current_qty
+   * to received_qty. The movement ledger is the single source of truth; if the
+   * INSERT also seeded received_qty the receive movement would double-count.
    *
    * @param {{ item_id, lot_number, expiry_date, received_qty, supplier?, note? }} lot
    * @returns {Promise<{ data: object, error: object|null }>}
@@ -143,7 +146,7 @@
           lot_number:   lot.lot_number,
           expiry_date:  lot.expiry_date,
           received_qty: lot.received_qty,
-          current_qty:  lot.received_qty,   // initial balance
+          current_qty:  0,   // ledger-driven — the receive movement sets it
           supplier:     lot.supplier  || null,
           note:         lot.note      || null,
         })
@@ -153,27 +156,19 @@
   }
 
   /**
-   * Mark a lot as recalled (Admin action).
-   * Server-side: RLS sl_update allows Admin only; three audit columns set here.
+   * Recall a lot (Admin action) AND remove its stock.
+   * Calls the rpc_recall_lot SECURITY DEFINER function, which posts an
+   * adjustment_loss movement per location to zero the lot out, then sets
+   * status='recalled' with audit columns — all in one transaction. A plain
+   * status update would leave the recalled units still counted as on-hand.
    *
-   * @param {string} lotId      - UUID
-   * @param {string} reason     - Required recall reason (validated on caller side)
-   * @param {string} recalledBy - Current admin username
-   * @returns {Promise<{ data: object, error: object|null }>}
+   * @param {string} lotId  - UUID
+   * @param {string} reason - Required recall reason (validated on caller side)
+   * @returns {Promise<{ data: null, error: object|null }>}
    */
-  async function recallLot(lotId, reason, recalledBy) {
+  async function recallLot(lotId, reason) {
     return _safe(() =>
-      _sb()
-        .from('stock_lots')
-        .update({
-          status:          'recalled',
-          recalled_reason: reason,
-          recalled_by:     recalledBy,
-          recalled_at:     new Date().toISOString(),
-        })
-        .eq('id', lotId)
-        .select('id,status,recalled_at,recalled_reason')
-        .single()
+      _sb().rpc('rpc_recall_lot', { p_lot_id: lotId, p_reason: reason })
     );
   }
 

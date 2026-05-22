@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.20.3';  // ปรับยอด/ของหาย modal now requires a lot for lot-tracked items (pick location -> lot -> set that lot qty); DB trigger check_lot_status now also requires lot_id on adjustment_gain (migration 20260522010000_lot_required_on_adjustment_gain.sql).
+const CACHE_VERSION = 'thegood-stock-v0.20.4';  // Lot/expiry flow structural fix — stock_lots.current_qty maintenance restored (apply_movement_to_lot_qty), recall now removes the lot's stock via rpc_recall_lot, adjustment_loss permitted on recalled/expired lots so bad stock can be written off (migrations 20260522020000/030000/040000).
 const STATIC_ASSETS = [
   './',
   './login.html',

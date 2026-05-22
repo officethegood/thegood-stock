@@ -330,11 +330,7 @@
       confirmBtn.disabled = true;
       confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>กำลังบันทึก…';
 
-      const { data, error } = await window.AppLots.recallLot(
-        lotId,
-        reason,
-        _getUsername()
-      );
+      const { error } = await window.AppLots.recallLot(lotId, reason);
 
       confirmBtn.disabled = false;
       confirmBtn.innerHTML = 'ยืนยัน เรียกคืน';
@@ -349,15 +345,9 @@
       _toast('success', `เรียกคืนล็อต ${_esc(lot.lot_number)} แล้ว`);
       modal.hide();
 
-      // Update row in-place instead of full reload (faster UX)
-      const lotInList = _allLots.find((l) => l.id === lotId);
-      if (lotInList) {
-        lotInList.status          = 'recalled';
-        lotInList.recalled_reason = reason;
-        lotInList.recalled_by     = _getUsername();
-        lotInList.recalled_at     = data ? data.recalled_at : new Date().toISOString();
-      }
-      _applyFiltersAndRender();
+      // rpc_recall_lot also removed the lot's stock (posts adjustment_loss
+      // movements) — full reload so current_qty and totals reflect it.
+      _loadLots();
     });
 
     modalEl.addEventListener('hidden.bs.modal', () => {
