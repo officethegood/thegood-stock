@@ -2093,13 +2093,16 @@
   // =========================================================================
   async function openAdjustModal(kind, prefillItem) {
     // kind: 'loss' (any role — damage report, delta-down)
-    //     | 'gain' (Admin only — now a SET-ABSOLUTE "ปรับยอด/นับใหม่": pick a
-    //               location where the item already has stock, type the new
-    //               total (0 allowed = reset), system posts the gain/loss delta)
+    //     | 'gain' (Admin only — SET-ABSOLUTE "ปรับยอด/นับใหม่")
+    // For lot-tracked items the adjustment targets a specific (location, lot):
+    // the DB trigger check_lot_status requires lot_id on every adjustment of a
+    // tracks_lots item, so the modal must collect a lot. Non-lot items keep the
+    // simpler location-total behaviour.
     if (kind === 'gain' && !_isAdmin()) { _toast('error', 'เฉพาะ Admin เท่านั้น'); return; }
     await _ensureLocations();
 
-    const isSet = (kind === 'gain');  // gain modal = set-absolute count
+    const isSet      = (kind === 'gain');  // gain modal = set-absolute count
+    const tracksLots = !!prefillItem.tracks_lots;
 
     // Only locations where THIS item currently has stock (qty > 0).
     const { rows: stockRows } = await _fetchLocationBreakdown(prefillItem.id);
@@ -2112,6 +2115,11 @@
         : 'สินค้านี้ยังไม่มีสต็อกที่ใด — ไม่มีอะไรให้บันทึกของหาย');
       return;
     }
+
+    // Lot-tracked items: per-location lot quantities for the lot picker.
+    const lotsByLocation = tracksLots
+      ? await _fetchItemLocationLots(prefillItem.id)
+      : {};
 
     const title   = isSet ? 'ปรับยอด (ตั้งค่ายอดใหม่)' : 'ของหาย / ชำรุด';
     const iconCls = isSet ? 'bi-pencil-square' : 'bi-exclamation-triangle';
@@ -2144,8 +2152,17 @@
               <option value="">— เลือก —</option>
               ${locOptions}
             </select>
-            <div id="af-current" class="form-text text-muted" style="font-size:12px;"></div>
           </div>
+          ${tracksLots ? `
+          <div class="mb-2">
+            <label class="form-label" for="af-lot">ล็อต * <span class="text-muted small">(ล็อตในตำแหน่งที่เลือก)</span></label>
+            <select id="af-lot" class="form-select" required>
+              <option value="">— เลือกสถานที่ก่อน —</option>
+            </select>
+            <div id="af-lot-empty" class="form-text text-danger d-none"></div>
+          </div>
+          ` : ''}
+          <div id="af-current" class="form-text text-muted mb-1" style="font-size:12px;"></div>
           <div class="row g-2">
             <div class="col-12 col-sm-4 mb-2">
               <label class="form-label" for="af-qty">${_esc(qtyLabel)}</label>
@@ -2168,33 +2185,82 @@
     `);
     const modal = new bootstrap.Modal(modalEl);
 
-    // Show current qty when a location is picked; in set mode, pre-fill the new-total field
-    const locSel  = modalEl.querySelector('#af-location');
-    const curEl   = modalEl.querySelector('#af-current');
-    const qtyEl   = modalEl.querySelector('#af-qty');
-    locSel.addEventListener('change', () => {
-      const cur = qtyByLoc[locSel.value];
+    const locSel     = modalEl.querySelector('#af-location');
+    const lotSel     = modalEl.querySelector('#af-lot');        // null for non-lot items
+    const lotEmptyEl = modalEl.querySelector('#af-lot-empty');
+    const curEl      = modalEl.querySelector('#af-current');
+    const qtyEl      = modalEl.querySelector('#af-qty');
+
+    // The qty the adjustment operates on: a specific lot's qty at the chosen
+    // location (lot-tracked items) or the location total (non-lot items).
+    function _currentBase() {
+      if (tracksLots) {
+        if (!lotSel || !lotSel.value) return null;
+        const lot = (lotsByLocation[locSel.value] || [])
+          .find((l) => l.lot_id === lotSel.value);
+        return lot ? lot.qty : null;
+      }
+      const v = qtyByLoc[locSel.value];
+      return (v == null) ? null : v;
+    }
+
+    function _refreshCurrent() {
+      const cur = _currentBase();
       if (cur == null) { curEl.textContent = ''; return; }
-      curEl.textContent = `ยอดปัจจุบันที่นี่: ${cur} ${prefillItem.unit || 'ชิ้น'}`;
+      curEl.textContent = `ยอดปัจจุบัน${tracksLots ? 'ของล็อตนี้' : 'ที่นี่'}: ${cur} ${prefillItem.unit || 'ชิ้น'}`;
       if (isSet && !qtyEl.value) qtyEl.value = cur;  // convenient starting point
+    }
+
+    // When the location changes, repopulate the lot picker (lot-tracked items).
+    locSel.addEventListener('change', () => {
+      if (tracksLots && lotSel) {
+        qtyEl.value = '';
+        const locLots = lotsByLocation[locSel.value] || [];
+        if (!locSel.value) {
+          lotSel.innerHTML = '<option value="">— เลือกสถานที่ก่อน —</option>';
+          lotEmptyEl.classList.add('d-none');
+        } else if (locLots.length === 0) {
+          lotSel.innerHTML = '<option value="">— ไม่มีล็อตในตำแหน่งนี้ —</option>';
+          lotEmptyEl.textContent = 'ตำแหน่งนี้มีของที่ไม่ผูกล็อต — ปรับยอดผ่านล็อตไม่ได้';
+          lotEmptyEl.classList.remove('d-none');
+        } else {
+          lotSel.innerHTML = '<option value="">— เลือกล็อต —</option>' +
+            locLots.map((l) => {
+              const exp = l.expiry_date
+                ? new Date(l.expiry_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
+                : '';
+              return `<option value="${_esc(l.lot_id)}">${_esc(l.lot_number)} — มี ${l.qty}${exp ? ' · หมดอายุ ' + _esc(exp) : ''}</option>`;
+            }).join('');
+          lotEmptyEl.classList.add('d-none');
+        }
+        lotSel.value = '';
+      }
+      _refreshCurrent();
     });
+
+    if (lotSel) {
+      lotSel.addEventListener('change', () => { qtyEl.value = ''; _refreshCurrent(); });
+    }
 
     modalEl.querySelector('#inv-adjust-form').onsubmit = async (ev) => {
       ev.preventDefault();
       const errEl = modalEl.querySelector('#af-error');
       errEl.classList.add('d-none'); errEl.textContent = '';
+      function _showErr(msg) { errEl.textContent = msg; errEl.classList.remove('d-none'); }
 
       const locId = locSel.value;
+      const lotId = (tracksLots && lotSel) ? lotSel.value : null;
       const qty   = parseInt(qtyEl.value, 10);
       const note  = modalEl.querySelector('#af-note').value.trim();
       const minOk = isSet ? (qty >= 0) : (qty >= 1);
-      if (!locId || !Number.isFinite(qty) || !minOk || !note) {
-        errEl.textContent = 'กรอกข้อมูลไม่ครบ';
-        errEl.classList.remove('d-none');
-        return;
-      }
 
-      const current = qtyByLoc[locId] ?? 0;
+      if (!locId)               { _showErr('กรุณาเลือกสถานที่'); return; }
+      if (tracksLots && !lotId) { _showErr('กรุณาเลือกล็อต'); return; }
+      if (!Number.isFinite(qty) || !minOk || !note) { _showErr('กรอกข้อมูลไม่ครบ'); return; }
+
+      const current = _currentBase();
+      if (current == null) { _showErr('ไม่พบยอดปัจจุบัน — เลือกสถานที่/ล็อตใหม่'); return; }
+
       let opKind, opQty;  // opKind: 'gain'|'loss', opQty: positive delta
       if (isSet) {
         // Set-absolute: compute the delta to reach the target qty
@@ -2209,8 +2275,7 @@
       } else {
         // Loss: delta-down. Cannot lose more than is present.
         if (qty > current) {
-          errEl.textContent = `ของหายได้ไม่เกินยอดที่มี (${current})`;
-          errEl.classList.remove('d-none');
+          _showErr(`ของหายได้ไม่เกินยอดที่มี (${current})`);
           return;
         }
         opKind = 'loss';
@@ -2223,15 +2288,14 @@
 
       const clientRefId = crypto.randomUUID ? crypto.randomUUID() : window.AppInventory._uuid();
       const r = opKind === 'loss'
-        ? await window.AppInventory.adjustmentLoss(prefillItem.id, locId, opQty, note, clientRefId)
-        : await window.AppInventory.adjustmentGain(prefillItem.id, locId, opQty, note, clientRefId);
+        ? await window.AppInventory.adjustmentLoss(prefillItem.id, locId, opQty, note, clientRefId, lotId)
+        : await window.AppInventory.adjustmentGain(prefillItem.id, locId, opQty, note, clientRefId, lotId);
 
       submitEl.disabled = false;
       submitEl.textContent = 'บันทึก';
 
       if (r.error) {
-        errEl.textContent = _friendly(r.error, 'บันทึกไม่สำเร็จ');
-        errEl.classList.remove('d-none');
+        _showErr(_friendly(r.error, 'บันทึกไม่สำเร็จ'));
         return;
       }
       if (r.data && r.data.replay) {

@@ -365,9 +365,11 @@
    * @param {string} [args.note]
    * @param {string} [args.reason]
    * @param {string} [args.clientRefId]              UUID for idempotency; auto-generated if omitted
+   * @param {string} [args.lotId]                    stock_lots.id — required by the DB trigger for
+   *                                                 tracks_lots items; null for non-lot items
    * @returns {Promise<{ data: { movement: object|null, replay: boolean, client_ref_id: string }|null, error: any }>}
    */
-  async function _postMovement({ itemId, locationId, movement_type, qty, note, reason, clientRefId }) {
+  async function _postMovement({ itemId, locationId, movement_type, qty, note, reason, clientRefId, lotId }) {
     return _safe(async () => {
       const sb = getSupabaseClient();
       const refId = clientRefId || _uuid();
@@ -387,6 +389,7 @@
         qty_delta,
         reason:        reason || null,
         note:          note   || null,
+        lot_id:        lotId  || null,
       };
 
       const r = await sb.from('stock_movements').insert(row).select().single();
@@ -439,8 +442,8 @@
    * @param {string} [clientRefId]
    * @returns {Promise<{ data: object|null, error: any }>}
    */
-  async function adjustmentLoss(itemId, locationId, qty, note, clientRefId) {
-    return _postMovement({ itemId, locationId, movement_type: 'adjustment_loss', qty, note, clientRefId });
+  async function adjustmentLoss(itemId, locationId, qty, note, clientRefId, lotId) {
+    return _postMovement({ itemId, locationId, movement_type: 'adjustment_loss', qty, note, clientRefId, lotId });
   }
 
   /**
@@ -452,9 +455,9 @@
    * @param {string} [clientRefId]
    * @returns {Promise<{ data: object|null, error: any }>}
    */
-  async function adjustmentGain(itemId, locationId, qty, note, clientRefId) {
+  async function adjustmentGain(itemId, locationId, qty, note, clientRefId, lotId) {
     if (!_isAdmin()) return { data: null, error: { code: '42501', message: 'admin_only' } };
-    return _postMovement({ itemId, locationId, movement_type: 'adjustment_gain', qty, note, clientRefId });
+    return _postMovement({ itemId, locationId, movement_type: 'adjustment_gain', qty, note, clientRefId, lotId });
   }
 
   // PHASE 1 — transfer() intentionally omitted (Q1, PM Pex 2026-05-18).

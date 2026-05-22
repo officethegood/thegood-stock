@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.20.2';  // Item drawer now shows lots per actual location (v_item_location_lots from stock_movements) instead of repeating the whole item lot list under every location; unlotted remainder shown as "ไม่ระบุล็อต" (DB migration 20260522000000_v_item_location_lots.sql).
+const CACHE_VERSION = 'thegood-stock-v0.20.3';  // ปรับยอด/ของหาย modal now requires a lot for lot-tracked items (pick location -> lot -> set that lot qty); DB trigger check_lot_status now also requires lot_id on adjustment_gain (migration 20260522010000_lot_required_on_adjustment_gain.sql).
 const STATIC_ASSETS = [
   './',
   './login.html',
