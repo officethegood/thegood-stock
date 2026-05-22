@@ -1866,12 +1866,15 @@
         return;
       }
       const { data, error } = await window.AppLots.fetchAllLots(itemId);
-      if (error || !data || !data.length) {
-        sel.innerHTML = '<option value="">ยังไม่มีล็อต — สร้างล็อตใหม่</option>';
+      // Only ACTIVE lots may be topped up. A recalled / expired / depleted lot
+      // is dead — adding stock to it would resurrect untrackable inventory.
+      const activeLots = (data || []).filter((lot) => lot.status === 'active');
+      if (error || !activeLots.length) {
+        sel.innerHTML = '<option value="">ยังไม่มีล็อตที่ใช้งานอยู่ — ใช้แท็บ "ล็อตใหม่"</option>';
         return;
       }
       sel.innerHTML = '<option value="">— เลือกล็อต —</option>' +
-        data.map((lot) => {
+        activeLots.map((lot) => {
           const badge = window.AppLots.getLotBadge(lot);
           return `<option value="${_esc(lot.id)}">${_esc(lot.lot_number)} — หมดอายุ ${window.AppLots.formatThaiDate(lot.expiry_date)} (${badge.label})</option>`;
         }).join('');
