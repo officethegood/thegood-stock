@@ -1777,6 +1777,16 @@ input[type="time"] { font-variant-numeric: tabular-nums; }
   padding: var(--fc-s3) var(--fc-s5);
 }
 
+/* The receive / add-item / adjust modals wrap header+body+footer in a <form>.
+   modal-dialog-scrollable needs those three to be flex children of
+   .modal-content; a <form> box in between breaks that layout, so modal-body
+   never scrolls and the footer (save button) is clipped by .modal-content's
+   overflow:hidden once the body grows tall. display:contents removes the
+   form's layout box while keeping form submission intact. */
+.modal-content > form {
+  display: contents;
+}
+
 /* Card title — Mitr */
 .card-title, .card-header h5, .card-header h6 {
   font-family: var(--fc-font-display);

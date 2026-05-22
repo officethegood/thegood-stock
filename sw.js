@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.20.0';  // Oxygen tank delete — guarded hard-delete via rpc_delete_oxygen_tank + "ลบถัง" button in the edit modal (DB migration 20260521060000_rpc_delete_oxygen_tank.sql).
+const CACHE_VERSION = 'thegood-stock-v0.20.1';  // Fix clipped modal footer — receive/add-item/adjust modals wrap their content in a <form> which broke modal-dialog-scrollable; .modal-content > form now uses display:contents so the save button is no longer cut off.
 const STATIC_ASSETS = [
   './',
   './login.html',
