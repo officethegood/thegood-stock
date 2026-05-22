@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.20.1';  // Fix clipped modal footer — receive/add-item/adjust modals wrap their content in a <form> which broke modal-dialog-scrollable; .modal-content > form now uses display:contents so the save button is no longer cut off.
+const CACHE_VERSION = 'thegood-stock-v0.20.2';  // Item drawer now shows lots per actual location (v_item_location_lots from stock_movements) instead of repeating the whole item lot list under every location; unlotted remainder shown as "ไม่ระบุล็อต" (DB migration 20260522000000_v_item_location_lots.sql).
 const STATIC_ASSETS = [
   './',
   './login.html',

@@ -1047,16 +1047,24 @@
     return { rows: silRows, pathMap };
   }
 
-  // D12: Fetch lots for a lot-tracked item (FEFO display — expiry ASC)
-  async function _fetchLotsForItem(itemId) {
+  // Fetch per-location lot quantities for a lot-tracked item, grouped by
+  // location_id. Source: v_item_location_lots (SUM of stock_movements.qty_delta
+  // per item/location/lot). Returns { [location_id]: [lotRow, …] } with lots
+  // within each location ordered FEFO (soonest expiry first).
+  async function _fetchItemLocationLots(itemId) {
     const sb = getSupabaseClient();
     const { data, error } = await sb
-      .from('v_lots_with_remaining')
-      .select('id, lot_number, expiry_date, current_qty, days_until_expiry')
+      .from('v_item_location_lots')
+      .select('location_id, lot_id, lot_number, expiry_date, qty, days_until_expiry')
       .eq('item_id', itemId)
       .order('expiry_date', { ascending: true, nullsFirst: false });
-    if (error || !data) return [];
-    return data;
+    if (error || !data) return {};
+    const byLocation = {};
+    for (const row of data) {
+      if (!byLocation[row.location_id]) byLocation[row.location_id] = [];
+      byLocation[row.location_id].push(row);
+    }
+    return byLocation;
   }
 
   async function openItemDetailDrawer(itemId) {
@@ -1079,10 +1087,10 @@
     const { item, total_qty } = r.data;
     const low = (item.reorder_threshold || 0) > 0 && total_qty <= item.reorder_threshold;
 
-    // D12: Fetch multi-location breakdown + (if lot-tracked) lots
-    const [{ rows: silRows, pathMap }, lots] = await Promise.all([
+    // Fetch multi-location breakdown + (if lot-tracked) per-location lots
+    const [{ rows: silRows, pathMap }, lotsByLocation] = await Promise.all([
       _fetchLocationBreakdown(item.id),
-      item.tracks_lots ? _fetchLotsForItem(item.id) : Promise.resolve([]),
+      item.tracks_lots ? _fetchItemLocationLots(item.id) : Promise.resolve({}),
     ]);
 
     // D12: Build location breakdown HTML
@@ -1105,21 +1113,33 @@
           ? new Date(sil.last_movement_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
           : '';
 
-        // D12: lot sub-list for lot-tracked items (all lots shown at item level, FEFO)
+        // Per-location lot sub-list. Lots are matched to THIS location via
+        // v_item_location_lots; the unlotted remainder (the location's qty
+        // minus the sum of its lot rows) is shown as a separate
+        // "ไม่ระบุล็อต" line so the two numbers always reconcile.
         let lotSubHtml = '';
-        if (item.tracks_lots && lots.length > 0) {
-          const lotItems = lots.map((lot) => {
+        if (item.tracks_lots) {
+          const locLots = lotsByLocation[sil.location_id] || [];
+          let lottedSum = 0;
+          const lotItems = locLots.map((lot) => {
+            lottedSum += (lot.qty || 0);
             const expLabel = lot.expiry_date
               ? new Date(lot.expiry_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
               : 'ไม่มีวันหมดอายุ';
             const urgentClass = (lot.days_until_expiry !== null && lot.days_until_expiry <= 30) ? 'text-danger' : 'text-muted';
             return `<li class="py-0 ${urgentClass}">
               <code class="fc-mono small">${_esc(lot.lot_number)}</code>
-              <span class="ms-1 small">${lot.current_qty} ชิ้น</span>
+              <span class="ms-1 small">${lot.qty} ชิ้น</span>
               <span class="ms-1 small">· หมดอายุ ${_esc(expLabel)}</span>
             </li>`;
           }).join('');
-          lotSubHtml = `<ul class="list-unstyled ms-3 mb-0 mt-1">${lotItems}</ul>`;
+          const unlotted = (sil.qty || 0) - lottedSum;
+          const unlottedItem = unlotted > 0
+            ? `<li class="py-0 text-muted fst-italic"><span class="small">ไม่ระบุล็อต ${unlotted} ชิ้น</span></li>`
+            : '';
+          if (lotItems || unlottedItem) {
+            lotSubHtml = `<ul class="list-unstyled ms-3 mb-0 mt-1">${lotItems}${unlottedItem}</ul>`;
+          }
         }
 
         return `
