@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.20.5';  // "เพิ่มให้ล็อตเดิม" dropdown in the receive modal now lists only ACTIVE lots — recalled/expired/depleted lots can no longer be topped up.
+const CACHE_VERSION = 'thegood-stock-v0.20.6';  // Fix staff QR-print page — the ถังออกซิเจน tab queried a non-existent oxygen_tanks.name column ("column oxygen_tanks.name does not exist"); now selects serial + tank_size.
 const STATIC_ASSETS = [
   './',
   './login.html',

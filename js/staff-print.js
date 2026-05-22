@@ -205,6 +205,8 @@
   }
 
   function _rowName(row) {
+    // oxygen_tanks has no `name` column — use tank_size as the label.
+    if (_activeTab === 'tanks') return row.tank_size || '';
     return row.name || '';
   }
 
@@ -296,10 +298,11 @@
         // Orphaned zones (parent_id null or parent not in list) appended at end
         zones.filter((z) => !_bagMap[z.parent_id]).forEach((z) => data.push(z));
       } else if (tab === 'tanks') {
-        // oxygen_tanks — show serial + name
+        // oxygen_tanks — serial is the code, tank_size is the label.
+        // (oxygen_tanks has NO `name` column — selecting it 500s the query.)
         const { data: rows, error } = await sb
           .from('oxygen_tanks')
-          .select('id,serial,name')
+          .select('id,serial,tank_size')
           .order('serial');
         if (error) throw error;
         data = rows || [];
@@ -375,7 +378,7 @@
       }
 
       // Subtitle passed to QRPrint (enriched for bin/zone)
-      let printSubtitle = row.name || '';
+      let printSubtitle = _rowName(row);
       if (isBin && _pathMap[row.id]) {
         printSubtitle = (row.name || '') + ' • ' + _pathMap[row.id];
       } else if (isZone && parentBag) {
