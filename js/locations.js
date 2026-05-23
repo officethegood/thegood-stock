@@ -1208,6 +1208,36 @@
     renderTree();
   }
 
+  // Count rows that hold an FK to this location, so a blocked delete can
+  // tell the user exactly what is referencing it (not just a bare "23503").
+  // Returns null on query failure so the caller can fall back to the
+  // generic message.
+  async function _checkLocationRefs(locationId) {
+    const sb = getSupabaseClient();
+    const head = (tbl, col) => sb.from(tbl).select(col, { count: 'exact', head: true });
+    try {
+      const [silReal, silZombie, movements, tanks, oxMv, loans] = await Promise.all([
+        head('stock_item_locations', 'item_id').eq('location_id', locationId).gt('qty', 0),
+        head('stock_item_locations', 'item_id').eq('location_id', locationId).eq('qty', 0),
+        head('stock_movements',      'id'     ).eq('location_id', locationId),
+        head('oxygen_tanks',         'id'     ).eq('current_location_id', locationId),
+        head('oxygen_movements',     'id'     ).or(
+          `from_location_id.eq.${locationId},to_location_id.eq.${locationId}`),
+        head('stock_loans',          'id'     ).eq('location_id_from', locationId),
+      ]);
+      return {
+        silReal:   silReal.count   || 0,
+        silZombie: silZombie.count || 0,
+        movements: movements.count || 0,
+        tanks:     tanks.count     || 0,
+        oxMv:      oxMv.count      || 0,
+        loans:     loans.count     || 0,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   async function handleDelete(id) {
     const loc    = _all.find((x) => x.id === id);
     const count  = childCount(id);
@@ -1224,7 +1254,23 @@
     const sb = getSupabaseClient();
     const { error } = await sb.from('locations').delete().eq('id', id);
     if (error) {
-      if (error.code === '23503') showToast('error', 'ลบไม่ได้ เนื่องจากมีข้อมูลอ้างอิง');
+      if (error.code === '23503') {
+        const refs = await _checkLocationRefs(id);
+        const parts = [];
+        if (refs) {
+          if (refs.silReal)   parts.push(`มีของเก็บอยู่ ${refs.silReal} รายการสินค้า`);
+          if (refs.silZombie) parts.push(`มีแถวว่างเก่าค้าง ${refs.silZombie} แถว (qty=0)`);
+          if (refs.movements) parts.push(`มีประวัติเคลื่อนไหว ${refs.movements} รายการ`);
+          if (refs.tanks)     parts.push(`มีถังออกซิเจนอยู่ ${refs.tanks} ถัง`);
+          if (refs.oxMv)      parts.push(`มีประวัติถัง O2 ${refs.oxMv} รายการ`);
+          if (refs.loans)     parts.push(`มีรายการยืม ${refs.loans} รายการ`);
+        }
+        const detail = parts.length
+          ? `ลบไม่ได้ — ${parts.join(' · ')}` +
+            (refs && refs.movements ? ' — ใช้ "ปิดใช้งาน" แทน' : '')
+          : 'ลบไม่ได้ เนื่องจากมีข้อมูลอ้างอิง';
+        showToast('error', detail);
+      }
       else showToast('error', error.message || 'ลบไม่สำเร็จ');
       return;
     }

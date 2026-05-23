@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.20.7';  // staff-oxygen scanner: startScanning was called with positional args (video, callback) but the helper takes an options object {videoElement, onScan, onError} — the destructure left videoElement undefined and the function early-exited silently, so the camera never opened.
+const CACHE_VERSION = 'thegood-stock-v0.20.8';  // Locations delete now reports the specific FK references blocking the delete (stock rows, movements, oxygen tanks, loans) instead of a generic "ลบไม่ได้ เนื่องจากมีข้อมูลอ้างอิง" toast.
 const STATIC_ASSETS = [
   './',
   './login.html',
