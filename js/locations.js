@@ -1239,39 +1239,52 @@
   }
 
   async function handleDelete(id) {
-    const loc    = _all.find((x) => x.id === id);
-    const count  = childCount(id);
+    const loc   = _all.find((x) => x.id === id);
+    const name  = loc ? `"${loc.code} — ${loc.name}"` : 'รายการนี้';
+    const count = childCount(id);
 
     if (count > 0) {
       showToast('error', `ลบไม่ได้ — มี location ลูกอยู่ ${count} รายการ (ลบลูกก่อน)`);
       return;
     }
 
-    const name = loc ? `"${loc.code} — ${loc.name}"` : 'รายการนี้';
-    const ok = await showConfirm(`ลบ ${name}?`);
+    // Pre-check referrers so the user can see WHY a delete will fail (real
+    // stock / tanks / loans) BEFORE confirming, and what history will be
+    // destroyed if they proceed.
+    const refs = await _checkLocationRefs(id);
+
+    // Hard blockers — items / tanks / loans still here.
+    const blockers = [];
+    if (refs) {
+      if (refs.silReal) blockers.push(`มีของเก็บอยู่ ${refs.silReal} รายการสินค้า (ย้ายออกก่อน)`);
+      if (refs.tanks)   blockers.push(`มีถังออกซิเจน ${refs.tanks} ถัง (ย้ายถังออกก่อน)`);
+      if (refs.loans)   blockers.push(`มีรายการยืม ${refs.loans} รายการอ้างอิง (ใช้ "ปิดใช้งาน" แทน)`);
+    }
+    if (blockers.length) {
+      showToast('error', `ลบไม่ได้ — ${blockers.join(' · ')}`);
+      return;
+    }
+
+    // History impact — purge will destroy these. Show in the confirm.
+    const impact = [];
+    if (refs) {
+      if (refs.movements) impact.push(`ประวัติเคลื่อนไหว ${refs.movements} รายการ`);
+      if (refs.oxMv)      impact.push(`ประวัติถัง O2 ${refs.oxMv} รายการ`);
+      if (refs.silZombie) impact.push(`แถว qty=0 อีก ${refs.silZombie} แถว`);
+    }
+    const msg = impact.length
+      ? `ลบ ${name}? — จะลบ ${impact.join(' · ')} ทิ้งด้วย (กู้คืนไม่ได้)`
+      : `ลบ ${name}?`;
+    const ok = await showConfirm(msg);
     if (!ok) return;
 
+    // The locations table has RESTRICT FKs and stock_movements is append-only
+    // (no client DELETE policy) — a plain DELETE 23503s. Go through the
+    // SECURITY DEFINER RPC which re-checks the guards and purges history.
     const sb = getSupabaseClient();
-    const { error } = await sb.from('locations').delete().eq('id', id);
+    const { error } = await sb.rpc('rpc_delete_location', { p_location_id: id });
     if (error) {
-      if (error.code === '23503') {
-        const refs = await _checkLocationRefs(id);
-        const parts = [];
-        if (refs) {
-          if (refs.silReal)   parts.push(`มีของเก็บอยู่ ${refs.silReal} รายการสินค้า`);
-          if (refs.silZombie) parts.push(`มีแถวว่างเก่าค้าง ${refs.silZombie} แถว (qty=0)`);
-          if (refs.movements) parts.push(`มีประวัติเคลื่อนไหว ${refs.movements} รายการ`);
-          if (refs.tanks)     parts.push(`มีถังออกซิเจนอยู่ ${refs.tanks} ถัง`);
-          if (refs.oxMv)      parts.push(`มีประวัติถัง O2 ${refs.oxMv} รายการ`);
-          if (refs.loans)     parts.push(`มีรายการยืม ${refs.loans} รายการ`);
-        }
-        const detail = parts.length
-          ? `ลบไม่ได้ — ${parts.join(' · ')}` +
-            (refs && refs.movements ? ' — ใช้ "ปิดใช้งาน" แทน' : '')
-          : 'ลบไม่ได้ เนื่องจากมีข้อมูลอ้างอิง';
-        showToast('error', detail);
-      }
-      else showToast('error', error.message || 'ลบไม่สำเร็จ');
+      showToast('error', error.message || 'ลบไม่สำเร็จ');
       return;
     }
     _expanded.delete(id);

@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.20.8';  // Locations delete now reports the specific FK references blocking the delete (stock rows, movements, oxygen tanks, loans) instead of a generic "ลบไม่ได้ เนื่องจากมีข้อมูลอ้างอิง" toast.
+const CACHE_VERSION = 'thegood-stock-v0.20.9';  // Locations delete now goes through rpc_delete_location — for a leaf location with only history (no real stock / no tanks / no loans), the FE confirms with the movement-count and the RPC purges movements + zombie sil rows + the location atomically. Items / tanks / loans still block the delete.
 const STATIC_ASSETS = [
   './',
   './login.html',
