@@ -187,10 +187,17 @@
     startBtn?.addEventListener('click', async () => {
       if (!window.AppScanner) { _toast('error', 'ไม่พบ AppScanner'); return; }
       try {
-        await window.AppScanner.startScanning(video, async (code) => {
-          await window.AppScanner.stopScanning();
-          gate.style.display = 'flex';
-          await _lookupSerial(code);
+        await window.AppScanner.startScanning({
+          videoElement: video,
+          onScan: async (code) => {
+            await window.AppScanner.stopScanning();
+            gate.style.display = 'flex';
+            await _lookupSerial(code);
+          },
+          onError: (msg) => {
+            if (gate) gate.style.display = 'flex';
+            _toast('error', 'สแกนล้มเหลว: ' + (msg || ''));
+          },
         });
         if (gate) gate.style.display = 'none';
       } catch (e) {

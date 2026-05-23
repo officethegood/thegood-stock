@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.20.6';  // Fix staff QR-print page — the ถังออกซิเจน tab queried a non-existent oxygen_tanks.name column ("column oxygen_tanks.name does not exist"); now selects serial + tank_size.
+const CACHE_VERSION = 'thegood-stock-v0.20.7';  // staff-oxygen scanner: startScanning was called with positional args (video, callback) but the helper takes an options object {videoElement, onScan, onError} — the destructure left videoElement undefined and the function early-exited silently, so the camera never opened.
 const STATIC_ASSETS = [
   './',
   './login.html',
