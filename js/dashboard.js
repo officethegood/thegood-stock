@@ -166,12 +166,9 @@
             </div>
           </div>
         </div>
-      </div>
-
-      <!-- H. Phase 5 — Oxygen tank status panel -->
-      <div class="row g-3 mt-1">
-        <div class="col-12">
-          <div class="card" id="dash-panel-oxygen" aria-busy="true">
+        <!-- H. Oxygen — paired with bags so both stay above the fold (col-md-6 + col-md-6 fills the row). -->
+        <div class="col-12 col-md-6">
+          <div class="card h-100" id="dash-panel-oxygen" aria-busy="true">
             <div class="card-header d-flex justify-content-between align-items-center">
               <span><i class="bi bi-circle-square"></i> สถานะถังออกซิเจน</span>
               <small class="text-muted" id="dash-oxygen-updated">—</small>
@@ -185,8 +182,7 @@
         </div>
       </div>
 
-      <!-- I. Phase 6 — Linen "นับผ้าวันนี้" summary panel (S-6.16) -->
-      <!-- Low priority per task brief; tap → Inventory tab filtered to LINEN -->
+      <!-- I+J. Linen panels paired — "นับผ้าวันนี้" (left) and "สถานะผ้า" (right) so both stay above the fold. -->
       <div class="row g-3 mt-1">
         <div class="col-12 col-md-6">
           <div class="card h-100" id="dash-panel-linens" aria-busy="true">
@@ -202,9 +198,22 @@
             </div>
           </div>
         </div>
+        <!-- id "dash-linen-state-row" lives on this col now (was on the row) so hiding it on empty data only collapses the linen-state side, not "นับผ้าวันนี้" too. -->
+        <div class="col-12 col-md-6" id="dash-linen-state-row">
+          <div class="card h-100" id="dash-panel-linen-state" aria-busy="true">
+            <div class="card-header">
+              <span><i class="bi bi-basket"></i> สถานะผ้า</span>
+            </div>
+            <div id="dash-linen-state-body" class="card-body">
+              <div class="text-center text-muted py-3">
+                <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด…
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <!-- K. Phase 0.7+ — Laundry quick-action buttons (admin) -->
+      <!-- K. Phase 0.7+ — Laundry quick-action buttons (admin) — moved below the linen status row -->
       ${window.Laundry ? `
       <div class="row g-3 mt-1">
         <div class="col-12">
@@ -229,22 +238,6 @@
           </div>
         </div>
       </div>` : ''}
-
-      <!-- J. Phase 0.7+ — Linen state summary from v_linen_state_summary -->
-      <div class="row g-3 mt-1" id="dash-linen-state-row">
-        <div class="col-12">
-          <div class="card" id="dash-panel-linen-state" aria-busy="true">
-            <div class="card-header">
-              <span><i class="bi bi-basket"></i> สถานะผ้า</span>
-            </div>
-            <div id="dash-linen-state-body" class="card-body">
-              <div class="text-center text-muted py-3">
-                <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด…
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
 
       <!-- F. Legacy Phase 0 status block, collapsed by default (ops continuity per task brief option) -->
       <div class="card mt-3 border-stock-accent">
@@ -1431,7 +1424,7 @@
   window.AppDashboardTab = {
     init,
     teardown,
-    reloadPanels: () => { _loadPanelStock(); _loadPanelLow(); _loadPanelExpiry(); _loadPanelLoans(); _loadPanelBags(); _loadPanelOxygen(); _loadPanelLinenState(); },
+    reloadPanels: () => { _loadPanelStock(); _loadPanelLow(); _loadPanelExpiry(); _loadPanelLoans(); _loadPanelBags(); _loadPanelOxygen(); _loadPanelLinens(); _loadPanelLinenState(); },
   };
 
   // admin-shell.js expects window.initDashboardTab — shim (matches Phase 0 contract)

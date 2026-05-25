@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.20.9';  // Locations delete now goes through rpc_delete_location — for a leaf location with only history (no real stock / no tanks / no loans), the FE confirms with the movement-count and the RPC purges movements + zombie sil rows + the location atomically. Items / tanks / loans still block the delete.
+const CACHE_VERSION = 'thegood-stock-v0.20.10';  // Dashboard layout: bags+oxygen and linens+linen-state are now each paired side-by-side (col-md-6 + col-md-6) instead of solo rows — the oxygen + linen status panels were two full screen-heights below the fold before this. Laundry quick-action toolbar moved below them. _loadPanelLinens added to reloadPanels so the linen-audit summary refreshes on realtime updates.
 const STATIC_ASSETS = [
   './',
   './login.html',
