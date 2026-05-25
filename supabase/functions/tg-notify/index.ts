@@ -52,11 +52,25 @@ Deno.serve(async (req: Request) => {
   try { body = await req.json(); }
   catch { return json({ error: 'invalid_json' }, 400); }
 
-  const { event_type, entity_type, entity_id, dedupe_key, message, payload } = body;
+  const { event_type, entity_type, entity_id, dedupe_key, message, payload, chat_id } = body;
   if (!event_type || !dedupe_key || !message) return json({ error: 'missing_fields' }, 400);
 
   const { data: enabledRow } = await sb.from('settings').select('value').eq('key', 'NOTIFY_TELEGRAM_ENABLED').maybeSingle();
   if (enabledRow?.value !== 'true') return json({ ok: true, sent: false, reason: 'disabled' });
+
+  // Resolve the destination chat — caller-supplied wins, else this project's
+  // settings.NOTIFY_TELEGRAM_CHAT_ID. Without one we must NOT fall through to
+  // the shared proxy worker's own settings (a different Supabase project) —
+  // that's how alerts ended up in the wrong Telegram group. Refuse instead.
+  let effective_chat_id: string | null =
+    (typeof chat_id === 'string' && chat_id.trim()) ? chat_id.trim() : null;
+  if (!effective_chat_id) {
+    const { data: chatRow } = await sb.from('settings').select('value').eq('key', 'NOTIFY_TELEGRAM_CHAT_ID').maybeSingle();
+    effective_chat_id = (chatRow?.value || '').trim() || null;
+  }
+  if (!effective_chat_id) {
+    return json({ ok: true, sent: false, reason: 'no_chat_id_configured' });
+  }
 
   const { data: windowRow } = await sb.from('settings').select('value').eq('key', 'LOW_STOCK_DEDUPE_HOURS').maybeSingle();
   const hours = Number(windowRow?.value ?? 24);
@@ -81,6 +95,7 @@ Deno.serve(async (req: Request) => {
         alert_type: event_type,
         message,
         deep_link:  '',
+        chat_id:    effective_chat_id,  // pin destination — worker honours this
       }),
     });
     if (!r.ok) { success = false; errMsg = `worker_${r.status}`; }
