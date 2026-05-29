@@ -321,14 +321,27 @@
     }
 
     const cards = allowed.map((toStatus) => {
-      const label = window.AppOxygen.STATUS_LABELS[toStatus] || toStatus;
-      const badge = _statusBadge(toStatus);
+      // Use action-verb label (e.g. "ขึ้นรถ") instead of status noun
+      // ("ประจำรถ") — must match Telegram trigger vocab so users see the
+      // same word in the UI and the notification (BUG-2026-05-29: vocab
+      // mismatch caused operator inversion).
+      const trans      = window.AppOxygen.getTransitionLabel(currentStatus, toStatus);
+      const statusName = window.AppOxygen.STATUS_LABELS[toStatus] || toStatus;
+      const badge      = _statusBadge(toStatus);
       return `
         <div class="oxy-choice-card" data-to-status="${_esc(toStatus)}"
              role="button" tabindex="0"
-             aria-label="เปลี่ยนเป็น ${_esc(label)}">
-          ${badge}
-          <span class="choice-label">${_esc(label)}</span>
+             aria-label="${_esc(trans.verb)} — ${_esc(trans.subtitle)}">
+          <div class="choice-verb" style="font-size:1.15rem; font-weight:700;">
+            ${_esc(trans.emoji)} ${_esc(trans.verb)}
+          </div>
+          <div class="choice-subtitle text-muted small mt-1">
+            ${_esc(trans.subtitle)}
+          </div>
+          <div class="choice-status-row mt-2 small">
+            <span class="text-muted">สถานะใหม่:</span> ${badge}
+            <span class="text-muted">(${_esc(statusName)})</span>
+          </div>
         </div>
       `;
     }).join('');
@@ -385,15 +398,24 @@
       <option value="${_esc(loc.id)}">${_esc(loc.name)} (${_esc(loc.code)})</option>
     `).join('');
 
-    const toLabel = window.AppOxygen.STATUS_LABELS[state.toStatus] || state.toStatus;
+    const trans = window.AppOxygen.getTransitionLabel(state.tank.status, state.toStatus);
+    // Location prompt tailored to the actual action — "ขึ้นรถ" → pick the
+    // ambulance; "คืนถัง" → pick the storage room. Avoids the generic
+    // wording that let users pick the wrong location class.
+    const locPrompt = state.toStatus === 'on_board'
+      ? 'รถพยาบาลคันไหน?'
+      : (state.toStatus === 'ready'
+          ? 'ห้องเก็บไหน?'
+          : 'สถานที่ (ไม่บังคับ — เว้นว่างเพื่อคงสถานที่เดิม)');
     app.innerHTML = `
       <div class="mb-2 small text-muted">
-        กำลังเปลี่ยนเป็น: ${_statusBadge(state.toStatus)}
+        กำลัง: <strong>${_esc(trans.emoji)} ${_esc(trans.verb)}</strong>
+        <span class="ms-1">(${_statusBadge(state.toStatus)})</span>
       </div>
       <div class="card mb-3">
         <div class="card-body">
           <label class="form-label" for="oxy-loc-select">
-            สถานที่ (ไม่บังคับ — เว้นว่างเพื่อคงสถานที่เดิม)
+            ${_esc(locPrompt)}
           </label>
           <select id="oxy-loc-select" class="form-select" style="min-height:48px;">
             <option value="">— คงสถานที่เดิม —</option>
@@ -536,8 +558,7 @@
   // =========================================================================
 
   function _renderStep7(app) {
-    const fromLabel = window.AppOxygen.STATUS_LABELS[state.tank.status] || state.tank.status;
-    const toLabel   = window.AppOxygen.STATUS_LABELS[state.toStatus]    || state.toStatus;
+    const trans = window.AppOxygen.getTransitionLabel(state.tank.status, state.toStatus);
 
     const locName = state.toLocationId
       ? (state.locations.find((l) => l.id === state.toLocationId)?.name || state.toLocationId)
@@ -554,7 +575,12 @@
                 <td><strong><code>${_esc(state.tank.serial)}</code></strong></td>
               </tr>
               <tr>
-                <td class="text-muted small">การเปลี่ยนแปลง</td>
+                <td class="text-muted small">การกระทำ</td>
+                <td><strong>${_esc(trans.emoji)} ${_esc(trans.verb)}</strong>
+                    <span class="text-muted small">— ${_esc(trans.subtitle)}</span></td>
+              </tr>
+              <tr>
+                <td class="text-muted small">การเปลี่ยนสถานะ</td>
                 <td>${_statusBadge(state.tank.status)} → ${_statusBadge(state.toStatus)}</td>
               </tr>
               <tr>
@@ -614,17 +640,16 @@
       });
 
       // Show success overlay
-      const newStatusLabel = window.AppOxygen.STATUS_LABELS[state.toStatus] || state.toStatus;
+      const successTrans = window.AppOxygen.getTransitionLabel(state.tank.status, state.toStatus);
       const app = document.getElementById('oxygen-scan-app');
       // Sync dots to completed
       _syncDots(8);
       app.innerHTML = `
         <div class="oxy-success-overlay">
           <div class="ok-icon"><i class="bi bi-check-circle-fill"></i></div>
-          <div class="ok-main">บันทึกสำเร็จ</div>
+          <div class="ok-main">${_esc(successTrans.emoji)} ${_esc(successTrans.verb)} สำเร็จ</div>
           <div class="ok-detail">
-            ถัง <strong>${_esc(state.tank.serial)}</strong>
-            เปลี่ยนเป็น ${_esc(newStatusLabel)} แล้ว
+            ถัง <strong>${_esc(state.tank.serial)}</strong> — ${_esc(successTrans.subtitle)}
           </div>
         </div>
         <div class="text-center mt-4">

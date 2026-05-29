@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.20.10';  // Dashboard layout: bags+oxygen and linens+linen-state are now each paired side-by-side (col-md-6 + col-md-6) instead of solo rows — the oxygen + linen status panels were two full screen-heights below the fold before this. Laundry quick-action toolbar moved below them. _loadPanelLinens added to reloadPanels so the linen-audit summary refreshes on realtime updates.
+const CACHE_VERSION = 'thegood-stock-v0.20.11';  // Oxygen wizard vocab fix: staff-oxygen step 3 card now shows action verb ("🚐 ขึ้นรถ") + subtitle instead of status noun ("ประจำรถ"), matching the Telegram trigger vocab so operators no longer invert the action. New TRANSITION_LABELS map in shared/oxygen.js is single source synced to notify trigger. Admin oxygen modal option also reads "🚐 ขึ้นรถ — เป็น ประจำรถ". Step 4 location prompt now adaptive ("รถพยาบาลคันไหน?" / "ห้องเก็บไหน?").
 const STATIC_ASSETS = [
   './',
   './login.html',

@@ -888,10 +888,12 @@
         <div class="mb-3">
           <label class="form-label" for="oxy-trans-to-status">สถานะใหม่ <span class="text-danger">*</span></label>
           <select id="oxy-trans-to-status" class="form-select" required>
-            <option value="">— เลือกสถานะ —</option>
-            ${allowedToStatuses.map((s) => `
-              <option value="${_esc(s)}">${_esc(window.AppOxygen.STATUS_LABELS[s] || s)}</option>
-            `).join('')}
+            <option value="">— เลือกการกระทำ —</option>
+            ${allowedToStatuses.map((s) => {
+              const t = window.AppOxygen.getTransitionLabel(tank.status, s);
+              const name = window.AppOxygen.STATUS_LABELS[s] || s;
+              return `<option value="${_esc(s)}">${_esc(t.emoji)} ${_esc(t.verb)} — เป็น ${_esc(name)}</option>`;
+            }).join('')}
           </select>
         </div>
 

@@ -92,6 +92,50 @@
     '6Q':   '6Q',
   };
 
+  /**
+   * Action-verb labels per state transition.
+   * MUST stay in sync with notify_oxygen_movement_to_tg() trigger
+   * (supabase/migrations/20260525020000_fix_notify_emojis.sql §2)
+   * so Telegram notifications and FE wizard cards share vocabulary.
+   *
+   * Status names ("ประจำรถ"/"พร้อมใช้") describe a STATE; users picking a
+   * card need to know the ACTION — hence verbs like "ขึ้นรถ"/"คืนถัง".
+   * Vocab mismatch caused operator inversion (Telegram showed "คืนถัง"
+   * when staff thought they were doing "ขึ้นรถ").
+   */
+  const TRANSITION_LABELS = {
+    'null→ready':         { emoji: '🆕',  verb: 'รับถังใหม่',  subtitle: 'ลงทะเบียนถังเข้าระบบ' },
+    'ready→on_board':     { emoji: '🚐',  verb: 'ขึ้นรถ',      subtitle: 'ติดถังขึ้นรถพยาบาล' },
+    'on_board→ready':     { emoji: '🏠',  verb: 'คืนถัง',      subtitle: 'นำถังกลับเข้าห้องเก็บ' },
+    'on_board→refilling': { emoji: '⛽',  verb: 'ส่งเติม',     subtitle: 'ถังหมด ส่งไปเติม' },
+    'refilling→ready':    { emoji: '✅',  verb: 'เติมเสร็จ',   subtitle: 'เติมเสร็จ พร้อมใช้' },
+    'maintenance→ready':  { emoji: '🛠️', verb: 'ซ่อมเสร็จ',   subtitle: 'ซ่อมเสร็จ พร้อมใช้' },
+  };
+
+  /**
+   * Fallback per to_status — matches trigger's broad branches
+   * (any → maintenance, any → retired).
+   */
+  const TRANSITION_FALLBACK_BY_TO = {
+    maintenance: { emoji: '🔧', verb: 'ส่งซ่อม',   subtitle: 'ส่งถังไปซ่อมบำรุง' },
+    retired:     { emoji: '⛔', verb: 'ปลดระวาง',  subtitle: 'ปลดถังออกจากระบบ (ไม่สามารถย้อนได้)' },
+  };
+
+  /**
+   * Look up the action-verb label for a (fromStatus, toStatus) transition.
+   * Falls back to status name when no verb is defined.
+   *
+   * @param {string|null} fromStatus
+   * @param {string}      toStatus
+   * @returns {{ emoji: string, verb: string, subtitle: string }}
+   */
+  function getTransitionLabel(fromStatus, toStatus) {
+    const key = `${fromStatus === null || fromStatus === undefined ? 'null' : fromStatus}→${toStatus}`;
+    if (TRANSITION_LABELS[key]) return TRANSITION_LABELS[key];
+    if (TRANSITION_FALLBACK_BY_TO[toStatus]) return TRANSITION_FALLBACK_BY_TO[toStatus];
+    return { emoji: '🔄', verb: STATUS_LABELS[toStatus] || toStatus, subtitle: '' };
+  }
+
   // =========================================================================
   // Error handling
   // =========================================================================
@@ -386,6 +430,7 @@
 
     // State machine helpers
     getAllowedTransitions,
+    getTransitionLabel,
 
     // Constants
     ALLOWED_TRANSITIONS,
@@ -394,6 +439,7 @@
     STATUS_LABELS,
     STATUS_BADGE_CLASS,
     SIZE_LABELS,
+    TRANSITION_LABELS,
     STATE_MACHINE_ERROR,
   };
 
