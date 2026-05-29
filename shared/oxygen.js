@@ -29,11 +29,12 @@
    * Retired has no transitions (terminal state).
    */
   const ALLOWED_TRANSITIONS = {
-    null:        ['ready'],                    // initial placement — Admin only
-    ready:       ['on_board'],
-    on_board:    ['ready', 'refilling'],
-    refilling:   ['ready'],                    // Admin only — server enforces
-    maintenance: ['ready'],                    // Admin only — server enforces
+    null:            ['ready'],                       // initial placement — Admin only
+    ready:           ['on_board'],
+    on_board:        ['ready', 'awaiting_refill', 'refilling'],
+    awaiting_refill: ['refilling', 'ready'],          // ready is Admin-only (cancel) — see staff map
+    refilling:       ['ready'],                       // Admin only — server enforces
+    maintenance:     ['ready'],                       // Admin only — server enforces
     // retired: [] — terminal state, no transitions allowed
   };
 
@@ -53,19 +54,21 @@
    * All others require Admin.
    */
   const STAFF_ALLOWED_TRANSITIONS = {
-    ready:    ['on_board'],
-    on_board: ['ready', 'refilling'],
+    ready:           ['on_board'],
+    on_board:        ['ready', 'awaiting_refill', 'refilling'],
+    awaiting_refill: ['refilling'],   // NOT ready — awaiting_refill→ready is the Admin cancel
   };
 
   /**
    * Thai display labels for each status enum value.
    */
   const STATUS_LABELS = {
-    ready:       'พร้อมใช้',
-    on_board:    'ประจำรถ',
-    refilling:   'รอเติม',
-    maintenance: 'ซ่อมบำรุง',
-    retired:     'ปลดระวาง',
+    ready:           'พร้อมใช้',
+    on_board:        'ประจำรถ',
+    awaiting_refill: 'รอส่งเติม',   // off truck, staged at base, waiting to be batch-sent
+    refilling:       'กำลังเติม',   // at the vendor being refilled (was 'รอเติม')
+    maintenance:     'ซ่อมบำรุง',
+    retired:         'ปลดระวาง',
   };
 
   /**
@@ -73,11 +76,12 @@
    * bg-orange requires the custom CSS variable defined in Phase 0 shared/styles.css.
    */
   const STATUS_BADGE_CLASS = {
-    ready:       'badge bg-success',
-    on_board:    'badge bg-primary',
-    refilling:   'badge bg-warning text-dark',
-    maintenance: 'badge bg-orange text-white',
-    retired:     'badge bg-secondary',
+    ready:           'badge bg-success',
+    on_board:        'badge bg-primary',
+    awaiting_refill: 'badge bg-warning text-dark',   // amber — needs action (send to vendor)
+    refilling:       'badge bg-info text-dark',       // cyan — in progress at vendor
+    maintenance:     'badge bg-orange text-white',
+    retired:         'badge bg-secondary',
   };
 
   /**
@@ -104,12 +108,15 @@
    * when staff thought they were doing "ขึ้นรถ").
    */
   const TRANSITION_LABELS = {
-    'null→ready':         { emoji: '🆕',  verb: 'รับถังใหม่',  subtitle: 'ลงทะเบียนถังเข้าระบบ' },
-    'ready→on_board':     { emoji: '🚐',  verb: 'ขึ้นรถ',      subtitle: 'ติดถังขึ้นรถพยาบาล' },
-    'on_board→ready':     { emoji: '🏠',  verb: 'คืนถัง',      subtitle: 'นำถังกลับเข้าห้องเก็บ' },
-    'on_board→refilling': { emoji: '⛽',  verb: 'ส่งเติม',     subtitle: 'ถังหมด ส่งไปเติม' },
-    'refilling→ready':    { emoji: '✅',  verb: 'เติมเสร็จ',   subtitle: 'เติมเสร็จ พร้อมใช้' },
-    'maintenance→ready':  { emoji: '🛠️', verb: 'ซ่อมเสร็จ',   subtitle: 'ซ่อมเสร็จ พร้อมใช้' },
+    'null→ready':                { emoji: '🆕',  verb: 'รับถังใหม่',   subtitle: 'ลงทะเบียนถังเข้าระบบ' },
+    'ready→on_board':            { emoji: '🚐',  verb: 'ขึ้นรถ',       subtitle: 'ติดถังขึ้นรถพยาบาล' },
+    'on_board→ready':            { emoji: '🏠',  verb: 'คืนถัง',       subtitle: 'นำถังกลับเข้าห้องเก็บ' },
+    'on_board→awaiting_refill':  { emoji: '⬇️', verb: 'ลงรอเติม',     subtitle: 'นำถังลงจากรถ มากองรอที่ฐาน' },
+    'on_board→refilling':        { emoji: '⛽',  verb: 'ส่งเติม',      subtitle: 'ถังหมดบนรถ ส่งร้านเลย' },
+    'awaiting_refill→refilling': { emoji: '🚚',  verb: 'ส่งร้าน',      subtitle: 'ส่งถังกองรอไปเติมที่ร้าน' },
+    'awaiting_refill→ready':     { emoji: '↩️', verb: 'ยกเลิกรอเติม', subtitle: 'ถังยังมีแก๊ส ไม่ต้องเติม' },
+    'refilling→ready':           { emoji: '✅',  verb: 'เติมเสร็จ',    subtitle: 'เติมเสร็จ พร้อมใช้' },
+    'maintenance→ready':         { emoji: '🛠️', verb: 'ซ่อมเสร็จ',    subtitle: 'ซ่อมเสร็จ พร้อมใช้' },
   };
 
   /**
@@ -357,7 +364,7 @@
 
   /**
    * Get counts of tanks grouped by status.
-   * @returns {Promise<{ ready: number, on_board: number, refilling: number, maintenance: number, retired: number }>}
+   * @returns {Promise<{ ready: number, on_board: number, awaiting_refill: number, refilling: number, maintenance: number, retired: number }>}
    */
   async function getTankStatusCounts() {
     const sb = _sb();
@@ -367,7 +374,7 @@
 
     if (error) _throw(error);
 
-    const counts = { ready: 0, on_board: 0, refilling: 0, maintenance: 0, retired: 0 };
+    const counts = { ready: 0, on_board: 0, awaiting_refill: 0, refilling: 0, maintenance: 0, retired: 0 };
     for (const row of (data || [])) {
       if (counts[row.status] !== undefined) counts[row.status]++;
     }

@@ -363,7 +363,7 @@
       const activate = () => {
         state.toStatus = card.dataset.toStatus;
         // Step 4 needed when transition changes location context
-        const needsLoc = ['on_board', 'ready', 'maintenance'].includes(state.toStatus);
+        const needsLoc = ['on_board', 'ready', 'awaiting_refill', 'refilling', 'maintenance'].includes(state.toStatus);
         _goStep(needsLoc ? 4 : 5);
       };
       card.addEventListener('click', activate);
@@ -402,11 +402,14 @@
     // Location prompt tailored to the actual action — "ขึ้นรถ" → pick the
     // ambulance; "คืนถัง" → pick the storage room. Avoids the generic
     // wording that let users pick the wrong location class.
-    const locPrompt = state.toStatus === 'on_board'
-      ? 'รถพยาบาลคันไหน?'
-      : (state.toStatus === 'ready'
-          ? 'ห้องเก็บไหน?'
-          : 'สถานที่ (ไม่บังคับ — เว้นว่างเพื่อคงสถานที่เดิม)');
+    const _locPrompts = {
+      on_board:        'รถพยาบาลคันไหน?',
+      ready:           'ห้องเก็บไหน?',
+      awaiting_refill: 'วางที่กองรอไหน?',
+      refilling:       'ส่งร้านไหน?',
+    };
+    const locPrompt = _locPrompts[state.toStatus]
+      || 'สถานที่ (ไม่บังคับ — เว้นว่างเพื่อคงสถานที่เดิม)';
     app.innerHTML = `
       <div class="mb-2 small text-muted">
         กำลัง: <strong>${_esc(trans.emoji)} ${_esc(trans.verb)}</strong>

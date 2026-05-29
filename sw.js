@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.20.11';  // Oxygen wizard vocab fix: staff-oxygen step 3 card now shows action verb ("🚐 ขึ้นรถ") + subtitle instead of status noun ("ประจำรถ"), matching the Telegram trigger vocab so operators no longer invert the action. New TRANSITION_LABELS map in shared/oxygen.js is single source synced to notify trigger. Admin oxygen modal option also reads "🚐 ขึ้นรถ — เป็น ประจำรถ". Step 4 location prompt now adaptive ("รถพยาบาลคันไหน?" / "ห้องเก็บไหน?").
+const CACHE_VERSION = 'thegood-stock-v0.20.12';  // Oxygen awaiting_refill state: new 6th status between on_board and refilling. Pipeline on_board → awaiting_refill (ลงรอเติม, staff) → refilling (ส่งร้าน, staff) → ready. refilling relabelled "กำลังเติม" + recoloured cyan. Refill-batch alert now fires/counts on awaiting_refill. shared/oxygen.js transition maps + labels + counts, dashboard 6-status row + alert, staff/admin wizards location prompts updated. Backfill: existing refilling tanks → awaiting_refill (migration 20260529010100).
 const STATIC_ASSETS = [
   './',
   './login.html',

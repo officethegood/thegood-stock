@@ -1079,16 +1079,18 @@
       ) || 5;
 
       const statusRows = [
-        { key: 'ready',       label: window.AppOxygen.STATUS_LABELS.ready,       badgeCls: 'bg-success' },
-        { key: 'on_board',    label: window.AppOxygen.STATUS_LABELS.on_board,     badgeCls: 'bg-primary' },
-        { key: 'refilling',   label: window.AppOxygen.STATUS_LABELS.refilling,    badgeCls: 'bg-warning text-dark' },
-        { key: 'maintenance', label: window.AppOxygen.STATUS_LABELS.maintenance,  badgeCls: 'bg-orange text-white' },
-        { key: 'retired',     label: window.AppOxygen.STATUS_LABELS.retired,      badgeCls: 'bg-secondary' },
+        { key: 'ready',           label: window.AppOxygen.STATUS_LABELS.ready,           badgeCls: 'bg-success' },
+        { key: 'on_board',        label: window.AppOxygen.STATUS_LABELS.on_board,         badgeCls: 'bg-primary' },
+        { key: 'awaiting_refill', label: window.AppOxygen.STATUS_LABELS.awaiting_refill,  badgeCls: 'bg-warning text-dark' },
+        { key: 'refilling',       label: window.AppOxygen.STATUS_LABELS.refilling,        badgeCls: 'bg-info text-dark' },
+        { key: 'maintenance',     label: window.AppOxygen.STATUS_LABELS.maintenance,      badgeCls: 'bg-orange text-white' },
+        { key: 'retired',         label: window.AppOxygen.STATUS_LABELS.retired,          badgeCls: 'bg-secondary' },
       ];
 
       const total = Object.values(counts).reduce((a, b) => a + b, 0);
-      const refillingCount = counts.refilling || 0;
-      const showAlert = refillingCount >= threshold;
+      // Alert fires on tanks staged at base waiting to be batch-sent to the vendor.
+      const awaitingCount = counts.awaiting_refill || 0;
+      const showAlert = awaitingCount >= threshold;
 
       const badgesHtml = statusRows.map((r) => `
         <div class="col-auto">
@@ -1103,7 +1105,7 @@
         ${showAlert ? `
           <div class="alert alert-warning m-3 py-2 mb-0 d-flex align-items-center gap-2" role="alert">
             <i class="bi bi-exclamation-triangle-fill"></i>
-            <span>ถังรอเติม <strong>${refillingCount}</strong> ถัง — ถึงเกณฑ์แจ้งเตือน (≥${threshold} ถัง)</span>
+            <span>ถังรอส่งเติม <strong>${awaitingCount}</strong> ถัง — ถึงเกณฑ์ (≥${threshold} ถัง) รวบส่งร้านได้แล้ว</span>
           </div>
         ` : ''}
         <div class="p-3">

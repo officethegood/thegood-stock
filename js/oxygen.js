@@ -937,7 +937,7 @@
       const toStatus = e.target.value;
       const locWrap   = document.getElementById('oxy-trans-location-wrap');
       const retireWarn = document.getElementById('oxy-trans-retire-warn');
-      const needsLoc = ['on_board', 'ready', 'maintenance'].includes(toStatus);
+      const needsLoc = ['on_board', 'ready', 'awaiting_refill', 'refilling', 'maintenance'].includes(toStatus);
       locWrap?.classList.toggle('d-none', !needsLoc);
       retireWarn?.classList.toggle('d-none', toStatus !== 'retired');
       if (saveBtn) saveBtn.classList.toggle('d-none', !toStatus);
