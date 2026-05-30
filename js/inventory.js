@@ -2374,6 +2374,49 @@
   }
 
   // =========================================================================
+  // Phase 6.1 — Linen "page" mode (dedicated ผ้า sub-tab under คลัง).
+  // The ผ้า sub-tab reuses THIS module's pane, locked to the LINEN category:
+  // category dropdown hidden, audit table + sub-category pills + discrepancy
+  // banner shown. Driven by warehouse-shell.js (enter on ผ้า, exit on สินค้า).
+  // =========================================================================
+
+  function _categoryDropdownCol() {
+    const sel = document.getElementById('inv-category');
+    return sel ? (sel.closest('[class*="col-"]') || sel.parentElement) : null;
+  }
+
+  /** Enter locked linen mode: this pane becomes the ผ้า page. Idempotent. */
+  function enterLinenView() {
+    if (_linenMode) return;            // already the ผ้า page
+    _activateSubview('items');
+    _linenMode    = true;
+    _activeSubcat = 'all';
+    // Reflect ผ้า in the (now hidden) category dropdown for state consistency.
+    const sel = document.getElementById('inv-category');
+    if (sel) {
+      const opt = Array.from(sel.options).find((o) => o.dataset.code === 'LINEN');
+      if (opt) { sel.value = opt.value; _filters.category = opt.value; }
+    }
+    const col = _categoryDropdownCol();
+    if (col) col.classList.add('d-none');   // lock — it IS the ผ้า page
+    _toggleLinenUI(true);
+    reload();
+  }
+
+  /** Leave linen mode back to the normal สินค้า list. Idempotent. */
+  function exitLinenView() {
+    if (!_linenMode) return;           // already normal
+    _linenMode    = false;
+    _activeSubcat = 'all';
+    const sel = document.getElementById('inv-category');
+    if (sel) { sel.value = ''; _filters.category = ''; }
+    const col = _categoryDropdownCol();
+    if (col) col.classList.remove('d-none');
+    _toggleLinenUI(false);
+    reload();
+  }
+
+  // =========================================================================
   // Public namespace
   // =========================================================================
   window.AppInventoryTab = {
@@ -2387,6 +2430,9 @@
     // Phase 2: sub-view activation (used by dashboard drill-down)
     activateSubview: _activateSubview,
     openLotsSubview: (filter) => _activateSubview('lots', { lotsFilter: filter }),
+    // Phase 6.1: linen "page" mode (ผ้า sub-tab under คลัง)
+    enterLinenView,
+    exitLinenView,
   };
 
   // admin-shell.js expects window.initInventoryTab — shim wrapper.

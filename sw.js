@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.20.13';  // Fix dashboard deep-links broken by the 8→5 tab redesign: 8 "ดูทั้งหมด/goto" handlers clicked stale [data-tab=inventory|oxygen|bags] pills that no longer exist (those are now sub-tabs under คลัง/warehouse). New _gotoWarehouseSub(subKey) helper activates the warehouse tab then clicks #btn-wh-sub-<key>. Restores oxygen + linen + bags + inventory(lots/low-stock/sku) deep-links from the dashboard.
+const CACHE_VERSION = 'thegood-stock-v0.20.14';  // Dedicated "ผ้า" page: new 4th warehouse sub-tab (สินค้า │ ผ้า │ ถังออกซิเจน │ ALS Bags). ผ้า rides on the inventory pane locked to the LINEN category — category dropdown hidden, audit table + sub-category pills + discrepancy banner shown, full receive/edit/count available. AppInventoryTab.enterLinenView/exitLinenView drive the mode; warehouse-shell.js routes inventory+linen to the shared pane. Dashboard linen "ดูทั้งหมด/ดูรายละเอียด → ผ้า" links now open the ผ้า page directly.
 const STATIC_ASSETS = [
   './',
   './login.html',

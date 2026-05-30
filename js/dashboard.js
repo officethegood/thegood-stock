@@ -1220,16 +1220,16 @@
           </div>
         </div>`;
 
-      // Wire "ดูรายละเอียด" link → navigate to คลัง → สินค้า (linen lives there)
+      // Wire "ดูรายละเอียด → ผ้า" link → navigate to คลัง → ผ้า page directly
       document.getElementById('dash-linens-goto')?.addEventListener('click', (ev) => {
         ev.preventDefault();
-        _gotoWarehouseSub('inventory');
+        _gotoWarehouseSub('linen');
       });
 
       // Wire header link
       document.getElementById('dash-linens-all-link')?.addEventListener('click', (ev) => {
         ev.preventDefault();
-        _gotoWarehouseSub('inventory');
+        _gotoWarehouseSub('linen');
       });
 
     } catch (e) {
