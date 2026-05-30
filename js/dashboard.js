@@ -670,6 +670,35 @@
   }
 
   /**
+   * Activate the "คลัง" (warehouse) top-level tab, then switch to one of its
+   * sub-tabs: 'inventory' | 'oxygen' | 'bags'.
+   *
+   * After the 8→5 tab redesign these three are NO LONGER top-level [data-tab]
+   * pills — they live inside the warehouse sub-nav (js/warehouse-shell.js,
+   * buttons #btn-wh-sub-<key>). Every dashboard deep-link that used to do
+   * `querySelector('[data-tab="inventory|oxygen|bags"]').click()` silently
+   * did nothing because those elements were removed. This helper restores the
+   * navigation; callers that need the sub-view's DOM keep polling as before.
+   *
+   * @param {string} subKey  'inventory' | 'oxygen' | 'bags'
+   */
+  function _gotoWarehouseSub(subKey) {
+    document.querySelector('[data-tab="warehouse"]')?.click();
+    const clickSub = () => {
+      const b = document.getElementById('btn-wh-sub-' + subKey);
+      if (b) { b.click(); return true; }
+      return false;
+    };
+    // The warehouse shell renders its sub-tab buttons synchronously on
+    // activation, but retry briefly in case tab activation is deferred.
+    if (!clickSub()) {
+      let tries = 0;
+      const tick = () => { if (!clickSub() && ++tries < 15) setTimeout(tick, 60); };
+      setTimeout(tick, 30);
+    }
+  }
+
+  /**
    * Switch to loans tab and pre-apply a status filter.
    * Polls for AppLoansTab.setFilter (lazy-init tab).
    *
@@ -704,8 +733,7 @@
   function _gotoInventoryLots(filter) {
     try { location.hash = `#inventory?lotsFilter=${filter}`; } catch { /* ignore */ }
 
-    const invBtn = document.querySelector('[data-tab="inventory"]');
-    if (invBtn) invBtn.click();
+    _gotoWarehouseSub('inventory');
 
     // Poll for AppInventoryTab to be ready (lazy-init tab)
     let tries = 0;
@@ -725,8 +753,8 @@
   /**
    * Switch to admin Inventory tab and toggle low-stock-only filter on.
    *
-   * Strategy (per task constraint "DO NOT modify js/* other than dashboard.js"):
-   *   1. Click the [data-tab="inventory"] nav-pill — admin-shell.js handles tab activation.
+   * Strategy:
+   *   1. _gotoWarehouseSub('inventory') — activate คลัง tab + its inventory sub-tab.
    *   2. After tab init runs, find #inv-low-only checkbox (set by js/inventory.js _renderShell)
    *      and toggle it on if not already. Use a polling retry up to 600ms because the
    *      Inventory tab is lazy-init and async (_ensureCategories + reload).
@@ -736,8 +764,7 @@
   function _gotoInventoryLowStock() {
     try { location.hash = '#inventory?lowStockOnly=1'; } catch { /* ignore */ }
 
-    const invBtn = document.querySelector('[data-tab="inventory"]');
-    if (invBtn) invBtn.click();
+    _gotoWarehouseSub('inventory');
 
     // Poll for the inventory checkbox up to ~600ms (10 × 60ms)
     let tries = 0;
@@ -765,8 +792,7 @@
   function _gotoInventoryItem(sku) {
     try { location.hash = `#inventory?sku=${encodeURIComponent(sku)}`; } catch { /* ignore */ }
 
-    const invBtn = document.querySelector('[data-tab="inventory"]');
-    if (invBtn) invBtn.click();
+    _gotoWarehouseSub('inventory');
 
     if (!sku) return;
 
@@ -969,7 +995,7 @@
     if (allLink) {
       allLink.addEventListener('click', (ev) => {
         ev.preventDefault();
-        document.querySelector('[data-tab="bags"]')?.click();
+        _gotoWarehouseSub('bags');
       });
     }
 
@@ -1026,8 +1052,7 @@
       body.querySelectorAll('.dash-bags-filter-link').forEach((a) => {
         a.addEventListener('click', (ev) => {
           ev.preventDefault();
-          const tabBtn = document.querySelector('[data-tab="bags"]');
-          tabBtn?.click();
+          _gotoWarehouseSub('bags');
           // Pass filter after tab init (may be async)
           setTimeout(() => window.AppBagsTab?.setFilter?.(a.dataset.level), 200);
         });
@@ -1118,11 +1143,10 @@
         </div>
       `;
 
-      // Wire "ดูทั้งหมด →" to switch to the oxygen tab
+      // Wire "ดูทั้งหมด →" to switch to the oxygen sub-tab under คลัง
       document.getElementById('dash-oxygen-goto')?.addEventListener('click', (ev) => {
         ev.preventDefault();
-        const oxyBtn = document.querySelector('[data-tab="oxygen"]');
-        if (oxyBtn) oxyBtn.click();
+        _gotoWarehouseSub('oxygen');
       });
 
       card?.setAttribute('aria-busy', 'false');
@@ -1196,18 +1220,16 @@
           </div>
         </div>`;
 
-      // Wire "ดูรายละเอียด" link → navigate to Inventory tab + LINEN filter
+      // Wire "ดูรายละเอียด" link → navigate to คลัง → สินค้า (linen lives there)
       document.getElementById('dash-linens-goto')?.addEventListener('click', (ev) => {
         ev.preventDefault();
-        const invBtn = document.querySelector('[data-tab="inventory"]');
-        if (invBtn) invBtn.click();
+        _gotoWarehouseSub('inventory');
       });
 
       // Wire header link
       document.getElementById('dash-linens-all-link')?.addEventListener('click', (ev) => {
         ev.preventDefault();
-        const invBtn = document.querySelector('[data-tab="inventory"]');
-        if (invBtn) invBtn.click();
+        _gotoWarehouseSub('inventory');
       });
 
     } catch (e) {

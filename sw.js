@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.20.12';  // Oxygen awaiting_refill state: new 6th status between on_board and refilling. Pipeline on_board → awaiting_refill (ลงรอเติม, staff) → refilling (ส่งร้าน, staff) → ready. refilling relabelled "กำลังเติม" + recoloured cyan. Refill-batch alert now fires/counts on awaiting_refill. shared/oxygen.js transition maps + labels + counts, dashboard 6-status row + alert, staff/admin wizards location prompts updated. Backfill: existing refilling tanks → awaiting_refill (migration 20260529010100).
+const CACHE_VERSION = 'thegood-stock-v0.20.13';  // Fix dashboard deep-links broken by the 8→5 tab redesign: 8 "ดูทั้งหมด/goto" handlers clicked stale [data-tab=inventory|oxygen|bags] pills that no longer exist (those are now sub-tabs under คลัง/warehouse). New _gotoWarehouseSub(subKey) helper activates the warehouse tab then clicks #btn-wh-sub-<key>. Restores oxygen + linen + bags + inventory(lots/low-stock/sku) deep-links from the dashboard.
 const STATIC_ASSETS = [
   './',
   './login.html',
