@@ -482,8 +482,13 @@
         .select('id,movement_type,qty_delta,qty_after,reason,note,performed_at,performed_by,performed_role,client_ref_id,stock_items(sku,name,unit),locations(code,name,type)')
         .order('performed_at', { ascending: false })
         .limit(opts.limit ?? 50);
-      if (opts.itemId)     q = q.eq('item_id',     opts.itemId);
-      if (opts.locationId) q = q.eq('location_id', opts.locationId);
+      if (opts.itemId)       q = q.eq('item_id',       opts.itemId);
+      if (opts.locationId)   q = q.eq('location_id',   opts.locationId);
+      if (opts.movementType) q = q.eq('movement_type', opts.movementType);
+      // dateFrom/dateTo are 'YYYY-MM-DD' (Bangkok calendar dates). Compare on
+      // performed_at; dateTo is inclusive of the whole day.
+      if (opts.dateFrom)     q = q.gte('performed_at', opts.dateFrom + 'T00:00:00+07:00');
+      if (opts.dateTo)       q = q.lte('performed_at', opts.dateTo   + 'T23:59:59+07:00');
       return q;
     });
   }

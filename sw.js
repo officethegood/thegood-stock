@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.20.14';  // Dedicated "ผ้า" page: new 4th warehouse sub-tab (สินค้า │ ผ้า │ ถังออกซิเจน │ ALS Bags). ผ้า rides on the inventory pane locked to the LINEN category — category dropdown hidden, audit table + sub-category pills + discrepancy banner shown, full receive/edit/count available. AppInventoryTab.enterLinenView/exitLinenView drive the mode; warehouse-shell.js routes inventory+linen to the shared pane. Dashboard linen "ดูทั้งหมด/ดูรายละเอียด → ผ้า" links now open the ผ้า page directly.
+const CACHE_VERSION = 'thegood-stock-v0.20.15';  // New "ประวัติ" page: 5th warehouse sub-tab — filterable log of stock_movements (all types) via AppInventory.listRecentMovements (extended with movementType/locationId/dateFrom/dateTo). js/inventory-history.js renders filter bar (ชนิด/สถานที่/ช่วงวันที่/ค้นหาสินค้า) + table + load-more. warehouse-shell.js adds the 5th sub-tab with its own #tab-history pane.
 const STATIC_ASSETS = [
   './',
   './login.html',
@@ -47,6 +47,7 @@ const STATIC_ASSETS = [
   './js/staff-scan.js',
   './shared/oxygen.js',
   './js/oxygen.js',
+  './js/inventory-history.js',
   './js/warehouse-shell.js',
   './js/staff-oxygen.js',
   './staff-oxygen.html',

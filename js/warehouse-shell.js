@@ -10,15 +10,16 @@
 // duplicate module) while still presenting a dedicated ผ้า page.
 
 (function () {
-  // All four selectable sub-tabs (order = display order).
-  const _SUBTABS = ['inventory', 'linen', 'oxygen', 'bags'];
+  // All selectable sub-tabs (order = display order).
+  const _SUBTABS = ['inventory', 'linen', 'oxygen', 'bags', 'history'];
   // Actual DOM panes. 'linen' has none — it shares the inventory pane.
-  const _PANES   = ['inventory', 'oxygen', 'bags'];
+  const _PANES   = ['inventory', 'oxygen', 'bags', 'history'];
   const _LABELS  = [
-    { key: 'inventory', icon: 'bi-box-seam',     label: 'สินค้า' },
-    { key: 'linen',     icon: 'bi-basket',        label: 'ผ้า' },
-    { key: 'oxygen',    icon: 'bi-circle-square',  label: 'ถังออกซิเจน' },
-    { key: 'bags',      icon: 'bi-bag-heart',       label: 'ALS Bags' },
+    { key: 'inventory', icon: 'bi-box-seam',      label: 'สินค้า' },
+    { key: 'linen',     icon: 'bi-basket',         label: 'ผ้า' },
+    { key: 'oxygen',    icon: 'bi-circle-square',   label: 'ถังออกซิเจน' },
+    { key: 'bags',      icon: 'bi-bag-heart',        label: 'ALS Bags' },
+    { key: 'history',   icon: 'bi-clock-history',    label: 'ประวัติ' },
   ];
 
   // Which DOM pane backs a sub-tab. 'linen' rides on the inventory pane.
@@ -59,6 +60,7 @@
       <div id="tab-inventory" class="${activePane === 'inventory' ? '' : 'd-none'}"></div>
       <div id="tab-oxygen"    class="${activePane === 'oxygen'    ? '' : 'd-none'}"></div>
       <div id="tab-bags"      class="${activePane === 'bags'      ? '' : 'd-none'}"></div>
+      <div id="tab-history"   class="${activePane === 'history'   ? '' : 'd-none'}"></div>
     `;
 
     _LABELS.forEach(t => {
@@ -125,7 +127,7 @@
   // oxygen / bags — plain one-time init (inventory handled by _ensureInventory).
   function _runInit(name) {
     if (_initialized.has(name)) return;
-    const fnName = { oxygen: 'initOxygenTab', bags: 'initBagsTab' }[name];
+    const fnName = { oxygen: 'initOxygenTab', bags: 'initBagsTab', history: 'initInventoryHistory' }[name];
     // Don't mark a sub-tab "initialized" if its init function isn't loaded —
     // otherwise a script-order regression leaves a permanently blank pane.
     if (typeof window[fnName] !== 'function') {
