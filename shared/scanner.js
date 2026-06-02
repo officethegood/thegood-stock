@@ -192,7 +192,21 @@
 
     await _h5q.start(
       { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 250, height: 250 } },
+      {
+        fps: 10,
+        // Adaptive scan box — sized to the ACTUAL viewfinder, never the other
+        // way round. A fixed 250×250 box overflowed short, landscape-ish
+        // viewfinders (e.g. the O2 scan stage: aspect-ratio 4/3, max-height
+        // 42vh → ~292px tall on an iPhone). When qrbox exceeds the rendered
+        // video, html5-qrcode mis-places the scan region and never decodes —
+        // which is why iOS (BarcodeDetector absent → this fallback) failed on
+        // the O2 page while taller stages and Android (native path) were fine.
+        // 75% of the smaller edge always fits and stays centred.
+        qrbox: (vfWidth, vfHeight) => {
+          const edge = Math.max(140, Math.floor(Math.min(vfWidth, vfHeight) * 0.75));
+          return { width: edge, height: edge };
+        },
+      },
       (text, result) => {
         if (!_active) return;
         const fmt = result?.result?.format?.formatName || 'unknown';

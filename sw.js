@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.20.15';  // New "ประวัติ" page: 5th warehouse sub-tab — filterable log of stock_movements (all types) via AppInventory.listRecentMovements (extended with movementType/locationId/dateFrom/dateTo). js/inventory-history.js renders filter bar (ชนิด/สถานที่/ช่วงวันที่/ค้นหาสินค้า) + table + load-more. warehouse-shell.js adds the 5th sub-tab with its own #tab-history pane.
+const CACHE_VERSION = 'thegood-stock-v0.20.16';  // Fix iOS O2 scan: html5-qrcode fallback (used when BarcodeDetector is absent → iOS Safari) had a fixed 250×250 qrbox that overflowed the short O2 scan stage (aspect 4/3, max-height 42vh) → scan region mis-placed, never decoded. Android uses the native BarcodeDetector path (no qrbox), so it worked; taller stages (staff-scan 3/4) also fit. shared/scanner.js now sizes qrbox adaptively to 75% of the smaller viewfinder edge so it always fits.
 const STATIC_ASSETS = [
   './',
   './login.html',
