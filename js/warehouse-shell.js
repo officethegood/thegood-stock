@@ -102,22 +102,31 @@
     }
   }
 
-  // Ensure the inventory pane is initialized, then apply the requested mode.
+  // Ensure the inventory pane is initialized, THEN apply the requested mode.
   // mode: 'linen' → enterLinenView() | 'normal' → exitLinenView().
+  //
+  // Caches the init() promise rather than flipping a flag up-front: a deep-link
+  // (_gotoWarehouseSub clicks the warehouse tab → renders the default sub-tab →
+  // then synchronously clicks another sub-tab button) can call this twice before
+  // the first init resolves. Both callers must await the SAME init and only
+  // enter/exit linen mode once the DOM (#inv-category, thead, subviews) exists —
+  // otherwise enterLinenView/exitLinenView run against a half-built pane.
+  let _invInitPromise = null;
   async function _ensureInventory(mode) {
-    if (!_initialized.has('inventory')) {
+    if (!_invInitPromise) {
       if (typeof window.initInventoryTab !== 'function') {
         console.error('warehouse: initInventoryTab missing');
         return;
       }
-      _initialized.add('inventory');
-      try {
-        await window.initInventoryTab();
-      } catch (e) {
-        console.error('warehouse: inventory init failed', e);
-        _initialized.delete('inventory');   // allow retry on next switch
-        return;
-      }
+      _invInitPromise = Promise.resolve()
+        .then(() => window.initInventoryTab())
+        .catch((e) => { _invInitPromise = null; throw e; });   // allow retry
+    }
+    try {
+      await _invInitPromise;
+    } catch (e) {
+      console.error('warehouse: inventory init failed', e);
+      return;
     }
     const fn = mode === 'linen' ? 'enterLinenView' : 'exitLinenView';
     try { window.AppInventoryTab && window.AppInventoryTab[fn] && window.AppInventoryTab[fn](); }

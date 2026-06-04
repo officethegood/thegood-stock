@@ -482,7 +482,10 @@
       _goStep(6);
     });
     document.getElementById('oxy-step5-back')?.addEventListener('click', () => {
-      const needsLoc = ['on_board', 'ready', 'maintenance'].includes(state.toStatus);
+      // MUST match the forward needsLoc in _renderStep3 (~line 366), else "back"
+      // skips the location step the user just came from for awaiting_refill /
+      // refilling transitions and silently drops the picked location.
+      const needsLoc = ['on_board', 'ready', 'awaiting_refill', 'refilling', 'maintenance'].includes(state.toStatus);
       _goStep(needsLoc ? 4 : 3);
     });
   }

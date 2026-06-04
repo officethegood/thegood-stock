@@ -488,7 +488,7 @@
       // dateFrom/dateTo are 'YYYY-MM-DD' (Bangkok calendar dates). Compare on
       // performed_at; dateTo is inclusive of the whole day.
       if (opts.dateFrom)     q = q.gte('performed_at', opts.dateFrom + 'T00:00:00+07:00');
-      if (opts.dateTo)       q = q.lte('performed_at', opts.dateTo   + 'T23:59:59+07:00');
+      if (opts.dateTo)       q = q.lte('performed_at', opts.dateTo   + 'T23:59:59.999999+07:00');
       return q;
     });
   }

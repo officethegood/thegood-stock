@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.20.17';  // Fix staff-scan toast flood: the camera re-decodes the same code every frame and onScanResult re-fired the lookup; a code that fails (unknown / item-not-found) left state unchanged, so one unrecognised QR spammed dozens of "ไม่พบสินค้านี้" toasts (and a just-scanned item barcode re-fired as a bogus location lookup). Added a per-code 2.5s cooldown in onScanResult (different codes still process instantly); cleared on resetFlow so a deliberate re-scan works.
+const CACHE_VERSION = 'thegood-stock-v0.20.18';  // Bug-audit fixes: (HIGH) staff-oxygen step-5 "back" needsLoc now matches step-3 forward (5 statuses incl awaiting_refill/refilling) so back-nav no longer skips the location step / drops the picked location; (MED) warehouse-shell _ensureInventory caches the init() promise instead of flipping a flag up-front, so a first-open deep-link can't run enterLinenView/exitLinenView against a half-built inventory pane; (LOW) listRecentMovements dateTo upper bound now microsecond-inclusive. Companion DB migration 20260601010000 fixes check_oxygen_refill_batch pg_net body back to jsonb.
 const STATIC_ASSETS = [
   './',
   './login.html',
