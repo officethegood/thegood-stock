@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.20.16';  // Fix iOS O2 scan: html5-qrcode fallback (used when BarcodeDetector is absent → iOS Safari) had a fixed 250×250 qrbox that overflowed the short O2 scan stage (aspect 4/3, max-height 42vh) → scan region mis-placed, never decoded. Android uses the native BarcodeDetector path (no qrbox), so it worked; taller stages (staff-scan 3/4) also fit. shared/scanner.js now sizes qrbox adaptively to 75% of the smaller viewfinder edge so it always fits.
+const CACHE_VERSION = 'thegood-stock-v0.20.17';  // Fix staff-scan toast flood: the camera re-decodes the same code every frame and onScanResult re-fired the lookup; a code that fails (unknown / item-not-found) left state unchanged, so one unrecognised QR spammed dozens of "ไม่พบสินค้านี้" toasts (and a just-scanned item barcode re-fired as a bogus location lookup). Added a per-code 2.5s cooldown in onScanResult (different codes still process instantly); cleared on resetFlow so a deliberate re-scan works.
 const STATIC_ASSETS = [
   './',
   './login.html',

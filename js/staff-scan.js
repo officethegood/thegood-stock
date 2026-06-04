@@ -648,11 +648,26 @@
    * appropriate step handler based on `state.name`.
    * @param {string} text
    */
+  // Per-code cooldown to stop the camera re-decoding the SAME code every frame
+  // from flooding the screen. A code that fails lookup leaves state unchanged,
+  // so without this a single unrecognised QR spams dozens of "ไม่พบสินค้านี้"
+  // toasts (and a just-scanned item barcode re-fires as a bogus location scan).
+  // A DIFFERENT code is always processed immediately.
+  let _lastScanText = null;
+  let _lastScanAt   = 0;
+  const SCAN_COOLDOWN_MS = 2500;
+
   async function onScanResult(text) {
     if (!text) return;
     // Ignore scans during transitional / non-scan states so we don't double-fire.
     // Phase 2: also ignore during LOT_* states (lot picker uses tap, not scan).
     if (!['IDLE','ITEM_SCANNED'].includes(state.name)) return;
+
+    // Dedupe rapid repeats of the same code (see note above).
+    const _now = Date.now();
+    if (text === _lastScanText && (_now - _lastScanAt) < SCAN_COOLDOWN_MS) return;
+    _lastScanText = text;
+    _lastScanAt   = _now;
 
     const parsed = window.AppScanner.parseScanResult(text);
     if (parsed.type === 'unknown') {
@@ -1012,6 +1027,11 @@
   // =========================================================================
 
   function resetFlow() {
+    // Clear the scan dedupe so a deliberate "สแกนใหม่" can re-read the same
+    // code immediately (the cooldown only guards against per-frame floods).
+    _lastScanText = null;
+    _lastScanAt   = 0;
+
     // Phase 0.7: Remove transfer option panel if present
     const xferPanel = document.getElementById('scan-transfer-option');
     if (xferPanel) try { xferPanel.remove(); } catch { /* ignore */ }
