@@ -113,10 +113,46 @@
   }
 
   // =========================================================================
+  // On-screen diagnostic (opt-in) — append ?scandebug=1 to the URL to show a
+  // small live readout (scan path, library status, camera dims, decode events,
+  // errors). Lets a tester on a device we can't reach (e.g. iOS) report the
+  // exact failure mode from a single screenshot. No-op without the flag.
+  // =========================================================================
+
+  function _dbgOn() {
+    try { return /[?&]scandebug=1/.test(location.search) || localStorage.getItem('scandebug') === '1'; }
+    catch { return false; }
+  }
+
+  function _dbg(msg) {
+    if (!_dbgOn()) return;
+    try {
+      let box = document.getElementById('__scandbg');
+      if (!box) {
+        box = document.createElement('div');
+        box.id = '__scandbg';
+        box.style.cssText =
+          'position:fixed;left:4px;bottom:4px;z-index:2147483647;max-width:96vw;max-height:45vh;'
+          + 'overflow:auto;background:rgba(0,0,0,.85);color:#3f6;'
+          + 'font:11px/1.45 ui-monospace,Menlo,monospace;padding:6px 8px;border-radius:6px;'
+          + 'white-space:pre-wrap;pointer-events:none;';
+        (document.body || document.documentElement).appendChild(box);
+        box.__lines = [];
+      }
+      const d = new Date();
+      const ts = String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
+      box.__lines.push(ts + ' ' + msg);
+      if (box.__lines.length > 16) box.__lines.shift();
+      box.textContent = box.__lines.join('\n');
+    } catch { /* ignore */ }
+  }
+
+  // =========================================================================
   // Native BarcodeDetector path
   // =========================================================================
 
   async function _startNative(videoEl, formats, onScan, onError) {
+    _dbg('path=NATIVE (BarcodeDetector)');
     const detector = new window.BarcodeDetector({ formats });
 
     _stream = await navigator.mediaDevices.getUserMedia({
@@ -128,6 +164,7 @@
     videoEl.setAttribute('playsinline', 'true');  // iOS Safari
     videoEl.muted = true;
     await videoEl.play();
+    _dbg('native: camera ok ' + (videoEl.videoWidth || '?') + 'x' + (videoEl.videoHeight || '?'));
 
     // Throttle: don't run detect() on every animation frame — every ~150 ms is plenty.
     let lastRun = 0;
@@ -161,7 +198,9 @@
   // =========================================================================
 
   async function _startFallback(videoEl, formats, onScan, onError) {
+    _dbg('path=FALLBACK (html5-qrcode) — loading lib…');
     await _loadHtml5Qrcode();
+    _dbg('fallback: lib ' + (typeof window.Html5Qrcode === 'function' ? 'loaded' : 'MISSING'));
 
     // html5-qrcode renders into a <div>, not a <video>. We replace the caller's video element
     // with a wrapper div, then put it back on stop().
@@ -199,31 +238,30 @@
 
     _h5q = new window.Html5Qrcode(_h5qWrapId, formatsEnum && formatsEnum.length ? { formatsToSupport: formatsEnum } : undefined);
 
+    // NO qrbox → html5-qrcode scans the FULL video frame. A bounded qrbox (fixed
+    // OR adaptive) couples decoding to the rendered video geometry, and on iOS
+    // Safari the O2 stage produced a scan region that never matched the visible
+    // frame, so the camera previewed but never decoded. Full-frame scanning
+    // removes that entire failure class — the code is detected wherever it sits
+    // in view. Each page draws its own visual guide frame anyway.
+    let _scanErrTicks = 0;
     await _h5q.start(
       { facingMode: 'environment' },
-      {
-        fps: 10,
-        // Adaptive scan box — sized to the ACTUAL viewfinder, never the other
-        // way round. A fixed 250×250 box overflowed short, landscape-ish
-        // viewfinders (e.g. the O2 scan stage: aspect-ratio 4/3, max-height
-        // 42vh → ~292px tall on an iPhone). When qrbox exceeds the rendered
-        // video, html5-qrcode mis-places the scan region and never decodes —
-        // which is why iOS (BarcodeDetector absent → this fallback) failed on
-        // the O2 page while taller stages and Android (native path) were fine.
-        // 75% of the smaller edge always fits and stays centred.
-        qrbox: (vfWidth, vfHeight) => {
-          const edge = Math.max(140, Math.floor(Math.min(vfWidth, vfHeight) * 0.75));
-          return { width: edge, height: edge };
-        },
-      },
+      { fps: 10 },
       (text, result) => {
         if (!_active) return;
         const fmt = result?.result?.format?.formatName || 'unknown';
+        _dbg('DECODED: ' + String(text).slice(0, 40));
         try { onScan(text, String(fmt).toLowerCase()); }
         catch (cbErr) { onError?.(cbErr?.message || String(cbErr)); }
       },
-      () => { /* per-frame failures silenced; html5-qrcode is noisy */ },
+      () => {
+        // Per-frame "not found" is normal and very noisy — but its firing proves
+        // the decode loop is alive. Emit a sparse heartbeat for the diagnostic.
+        if ((++_scanErrTicks % 30) === 0) _dbg('fallback: scanning… (' + _scanErrTicks + ' frames, no code yet)');
+      },
     );
+    _dbg('fallback: h5q.start ok (full-frame)');
   }
 
   // =========================================================================
@@ -261,6 +299,8 @@
 
     _active = true;
     const fmts = (formats && formats.length) ? formats : DEFAULT_FORMATS;
+    _dbg('startScanning · BarcodeDetector=' + (typeof window.BarcodeDetector !== 'undefined')
+      + ' · UA=' + (navigator.userAgent || '').slice(0, 28));
 
     try {
       if (hasNativeDetector()) {
@@ -270,6 +310,7 @@
       }
     } catch (e) {
       _active = false;
+      _dbg('ERROR: ' + (e && (e.name || '') + ' ' + (e.message || e)));
       const msg = _friendlyCameraError(e);
       onError?.(msg);
       // Best-effort cleanup if we partially started.
