@@ -1,6 +1,6 @@
 // sw.js — cache-first for static, network-first for API. No background sync in Phase 0.
 
-const CACHE_VERSION = 'thegood-stock-v0.20.18';  // Bug-audit fixes: (HIGH) staff-oxygen step-5 "back" needsLoc now matches step-3 forward (5 statuses incl awaiting_refill/refilling) so back-nav no longer skips the location step / drops the picked location; (MED) warehouse-shell _ensureInventory caches the init() promise instead of flipping a flag up-front, so a first-open deep-link can't run enterLinenView/exitLinenView against a half-built inventory pane; (LOW) listRecentMovements dateTo upper bound now microsecond-inclusive. Companion DB migration 20260601010000 fixes check_oxygen_refill_batch pg_net body back to jsonb.
+const CACHE_VERSION = 'thegood-stock-v0.20.19';  // REAL fix for iOS O2 scan (the qrbox change in v0.20.16 addressed the wrong angle): the html5-qrcode fallback copied the caller's <video> height onto its wrapper div. staff-oxygen's video uses inline height:100% (to fill its fixed aspect-ratio stage for the native path), so the wrapper got height:100% — which, resolved against an aspect-ratio parent on iOS Safari, makes html5-qrcode mis-size its scan canvas (camera shows but never decodes). staff-scan's video height comes from a CSS class (inline style empty → 'auto'), so it worked. shared/scanner.js now always sizes the wrapper height:auto (min 240px), decoupling the fallback from the caller's native-path video styling.
 const STATIC_ASSETS = [
   './',
   './login.html',

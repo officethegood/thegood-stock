@@ -169,7 +169,16 @@
     _h5qWrapId = 'h5q-' + Math.random().toString(36).slice(2, 9);
     wrap.id = _h5qWrapId;
     wrap.style.width  = videoEl.style.width  || '100%';
-    wrap.style.height = videoEl.style.height || 'auto';
+    // Do NOT inherit the caller's video height: pages size their <video> for the
+    // NATIVE path (e.g. staff-oxygen uses inline height:100% to fill a fixed,
+    // aspect-ratio stage). Copying a PERCENTAGE height onto this wrapper breaks
+    // html5-qrcode on iOS Safari — a % height resolved against an aspect-ratio
+    // parent makes html5-qrcode mis-size its scan canvas, so the camera shows
+    // but never decodes (staff-oxygen failed on iOS; staff-scan, whose video
+    // height comes from a CSS class so style.height is empty → 'auto', worked).
+    // html5-qrcode wants a width-defined container with natural height.
+    wrap.style.height    = 'auto';
+    wrap.style.minHeight = '240px';   // guard against a 0-height measure before camera layout
     wrap.dataset.h5qReplaces = 'true';
     _videoEl = videoEl;
     videoEl.replaceWith(wrap);
