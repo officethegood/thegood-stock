@@ -940,7 +940,11 @@
       const needsLoc = ['on_board', 'ready', 'awaiting_refill', 'refilling', 'maintenance'].includes(toStatus);
       locWrap?.classList.toggle('d-none', !needsLoc);
       retireWarn?.classList.toggle('d-none', toStatus !== 'retired');
-      if (saveBtn) saveBtn.classList.toggle('d-none', !toStatus);
+      // Re-query the LIVE button: the original `saveBtn` node is cloned+replaced
+      // below (to drop stale click listeners), so the closure-captured reference
+      // points at a detached node. Toggling it would leave the real (visible)
+      // button stuck on d-none → no ยืนยัน button ever appears. (BUG-2026-06-01)
+      document.getElementById('oxy-transition-save')?.classList.toggle('d-none', !toStatus);
     });
 
     // Wire photo capture button
