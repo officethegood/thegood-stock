@@ -200,7 +200,7 @@
       <!-- Add tank modal -->
       <div class="modal fade" id="oxy-add-modal" tabindex="-1"
            aria-labelledby="oxy-add-modal-label">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
           <div class="modal-content">
             <div class="modal-header">
               <h5 class="modal-title" id="oxy-add-modal-label">เพิ่มถังออกซิเจน</h5>
@@ -255,7 +255,7 @@
       <!-- Edit tank modal (Admin only) -->
       <div class="modal fade" id="oxy-edit-modal" tabindex="-1"
            aria-labelledby="oxy-edit-modal-label">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
           <div class="modal-content">
             <div class="modal-header">
               <h5 class="modal-title" id="oxy-edit-modal-label">แก้ไขข้อมูลถัง</h5>
@@ -334,7 +334,7 @@
       <!-- Log transition modal (Admin only) -->
       <div class="modal fade" id="oxy-transition-modal" tabindex="-1"
            aria-labelledby="oxy-transition-label">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
           <div class="modal-content">
             <div class="modal-header">
               <h5 class="modal-title" id="oxy-transition-label">เปลี่ยนสถานะถัง</h5>
