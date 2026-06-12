@@ -217,6 +217,13 @@
                       style="min-height:36px;min-width:44px;">
                 ดูรายละเอียด
               </button>
+              ${lot.status === 'active'
+                ? `<button type="button" class="btn btn-sm btn-outline-primary lot-edit-btn"
+                           data-lot-id="${_esc(lot.id)}"
+                           style="min-height:36px;min-width:44px;">
+                     <i class="bi bi-pencil"></i> แก้ไข
+                   </button>`
+                : ''}
             </div>
           </td>
         </tr>
@@ -248,6 +255,11 @@
     // Wire recall buttons
     tbody.querySelectorAll('.lot-recall-btn').forEach((btn) => {
       btn.addEventListener('click', () => _openRecallModal(btn.dataset.lotId));
+    });
+
+    // Wire edit buttons (fix a mis-keyed lot number / expiry date)
+    tbody.querySelectorAll('.lot-edit-btn').forEach((btn) => {
+      btn.addEventListener('click', () => _openEditLotModal(btn.dataset.lotId));
     });
 
     // Wire detail expand buttons
@@ -356,6 +368,109 @@
 
     modal.show();
     setTimeout(() => { try { reasonEl.focus(); } catch {} }, 300);
+  }
+
+  // =========================================================================
+  // Edit-lot modal — fix a mis-keyed lot number / expiry date (Admin).
+  // Only metadata; qty is ledger-driven and never edited here.
+  // =========================================================================
+
+  function _openEditLotModal(lotId) {
+    const lot = _allLots.find((l) => l.id === lotId);
+    if (!lot) return;
+
+    const old = document.getElementById('lot-edit-modal');
+    if (old) old.remove();
+
+    const item = lot.stock_items || {};
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      <div class="modal fade" id="lot-edit-modal" tabindex="-1" aria-labelledby="edit-modal-title">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="edit-modal-title">
+                <i class="bi bi-pencil-square"></i> แก้ไขล็อตยา
+              </h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+            </div>
+            <div class="modal-body">
+              <p class="mb-2"><strong>${_esc(item.name || '—')}</strong></p>
+              <div class="alert alert-info small py-2">
+                แก้ได้เฉพาะ <strong>หมายเลขล็อต</strong> และ <strong>วันหมดอายุ</strong> —
+                จำนวนคงเหลือมาจากการรับเข้า/เบิก แก้ที่นี่ไม่ได้
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="edit-lot-number">หมายเลขล็อต <span class="text-danger">*</span></label>
+                <input type="text" id="edit-lot-number" class="form-control"
+                       value="${_esc(lot.lot_number || '')}" maxlength="100"
+                       required aria-required="true">
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="edit-lot-expiry">วันหมดอายุ</label>
+                <input type="date" id="edit-lot-expiry" class="form-control"
+                       value="${_esc(lot.expiry_date || '')}">
+                <div class="form-text">เว้นว่างได้ถ้าล็อตนี้ไม่มีวันหมดอายุ</div>
+              </div>
+              <div id="edit-api-error" class="alert alert-danger d-none" role="alert" aria-live="polite"></div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+              <button type="button" class="btn btn-stock-primary" id="edit-confirm-btn" style="min-height:44px;">
+                บันทึก
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    const modalEl = wrap.firstElementChild;
+    document.body.appendChild(modalEl);
+
+    const modal      = new bootstrap.Modal(modalEl);
+    const numEl      = modalEl.querySelector('#edit-lot-number');
+    const expEl      = modalEl.querySelector('#edit-lot-expiry');
+    const errorEl    = modalEl.querySelector('#edit-api-error');
+    const confirmBtn = modalEl.querySelector('#edit-confirm-btn');
+
+    confirmBtn.addEventListener('click', async () => {
+      const lotNumber = numEl.value.trim();
+      if (!lotNumber) {
+        numEl.classList.add('is-invalid');
+        numEl.focus();
+        return;
+      }
+      numEl.classList.remove('is-invalid');
+      errorEl.classList.add('d-none');
+      errorEl.textContent = '';
+
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>กำลังบันทึก…';
+
+      const { error } = await window.AppLots.updateLot(lotId, {
+        lot_number:  lotNumber,
+        expiry_date: expEl.value || null,
+      });
+
+      confirmBtn.disabled = false;
+      confirmBtn.innerHTML = 'บันทึก';
+
+      if (error) {
+        errorEl.textContent = (error.message || 'บันทึกไม่สำเร็จ');
+        errorEl.classList.remove('d-none');
+        return;
+      }
+
+      _toast('success', `แก้ไขล็อต ${_esc(lotNumber)} แล้ว`);
+      modal.hide();
+      _loadLots();
+    });
+
+    modalEl.addEventListener('hidden.bs.modal', () => {
+      try { modalEl.remove(); } catch { /* ignore */ }
+    });
+
+    modal.show();
+    setTimeout(() => { try { numEl.focus(); } catch {} }, 300);
   }
 
   // =========================================================================

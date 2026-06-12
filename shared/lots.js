@@ -156,6 +156,31 @@
   }
 
   /**
+   * Edit a mis-keyed lot's metadata (Admin). ONLY lot_number + expiry_date are
+   * editable — qty columns are ledger-driven (see createLot) and must never be
+   * hand-edited, so they are deliberately not in the payload. RLS sl_update
+   * already restricts UPDATE to Admin. Lets a user fix a wrong expiry/lot number
+   * without the destructive "issue everything out and re-add" workaround.
+   *
+   * @param {string} lotId
+   * @param {{ lot_number: string, expiry_date: string|null }} fields
+   * @returns {Promise<{ data: object, error: object|null }>}
+   */
+  async function updateLot(lotId, fields) {
+    return _safe(() =>
+      _sb()
+        .from('stock_lots')
+        .update({
+          lot_number:  fields.lot_number,
+          expiry_date: fields.expiry_date || null,
+        })
+        .eq('id', lotId)
+        .select('id,lot_number,expiry_date')
+        .single()
+    );
+  }
+
+  /**
    * Recall a lot (Admin action) AND remove its stock.
    * Calls the rpc_recall_lot SECURITY DEFINER function, which posts an
    * adjustment_loss movement per location to zero the lot out, then sets
@@ -467,6 +492,7 @@
     fetchAllLots,
     fetchAllLotsForAdmin,
     createLot,
+    updateLot,
     recallLot,
     // Sort / bucket
     sortFEFO,
