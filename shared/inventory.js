@@ -164,6 +164,25 @@
     return err?.code === '42P01' || err?.code === 'PGRST205' || /v_stock_items_with_total/.test(err?.message || '');
   }
 
+  // Apply a free-text search as an AND of per-word ilikes, each OR-ed across
+  // name / name_en / sku / barcode. Tokenising on whitespace means:
+  //   - word order doesn't matter ("Sterile 1000" == "1000 Sterile")
+  //   - "1000 ml" matches a stored "...1000ml" (each token is a substring) and
+  //     vice-versa, fixing the spacing mismatches users hit
+  //   - name_en is now searched (e.g. "Perskindol" stored only in the EN name)
+  // The old single `ilike '%<whole string incl. spaces>%'` only matched a
+  // contiguous run, so any spacing/word-order/extra-token difference returned 0.
+  // Each supabase-js .or() group is combined with AND, which is exactly the
+  // "every word must appear somewhere" semantics we want.
+  function _applySearch(q, search) {
+    const tokens = String(search).split(/\s+/).map(_orSafe).filter(Boolean);
+    for (const t of tokens) {
+      const like = `%${t}%`;
+      q = q.or(`name.ilike.${like},name_en.ilike.${like},sku.ilike.${like},barcode.ilike.${like}`);
+    }
+    return q;
+  }
+
   async function _queryItemsView(sb, { search, category, activeOnly, limit }) {
     // NOTE: v_stock_items_with_total was created pre-Phase-6 with `si.*` which
     // froze its column list — it does NOT expose linen_subcategory. Do not add
@@ -173,10 +192,7 @@
       .select('id,sku,barcode,name,name_en,category_id,unit,reorder_threshold,tracks_lots,image_url,note,active,total_qty,created_at,updated_at');
     if (activeOnly) q = q.eq('active', true);
     if (category)   q = q.eq('category_id', category);
-    if (search) {
-      const like = `%${_orSafe(search)}%`;
-      q = q.or(`name.ilike.${like},sku.ilike.${like},barcode.ilike.${like}`);
-    }
+    if (search) q = _applySearch(q, search);
     return q.order('name').limit(limit);
   }
 
@@ -185,10 +201,7 @@
       .select('id,sku,barcode,name,name_en,category_id,unit,reorder_threshold,tracks_lots,linen_subcategory,image_url,note,active,created_at,updated_at,stock_item_locations(qty)');
     if (activeOnly) q = q.eq('active', true);
     if (category)   q = q.eq('category_id', category);
-    if (search) {
-      const like = `%${_orSafe(search)}%`;
-      q = q.or(`name.ilike.${like},sku.ilike.${like},barcode.ilike.${like}`);
-    }
+    if (search) q = _applySearch(q, search);
     const r = await q.order('name').limit(limit);
     if (r.error) return r;
     const data = (r.data || []).map((row) => {
@@ -242,7 +255,7 @@
       // Phase 1.1 B5: use ilike for partial barcode/SKU matching (EAN-13 variants, partial scan).
       const like = `%${v}%`;
       const r = await sb.from('stock_items')
-        .select('id,sku,barcode,name,name_en,category_id,unit,reorder_threshold,active')
+        .select('id,sku,barcode,name,name_en,category_id,unit,reorder_threshold,tracks_lots,active')
         .or(`barcode.ilike.${like},sku.ilike.${like}`)
         .eq('active', true)
         .limit(1);
