@@ -23,9 +23,26 @@
   }
 
   function isLoggedIn()        { return !!localStorage.getItem(K_ACCESS); }
-  function getUserRole()       { return getUserMeta()?.role     || 'Employee'; }
-  function getUserName()       { return getUserMeta()?.name     || 'Unknown'; }
-  function getUserUsername()   { return getUserMeta()?.username || ''; }
+
+  // Decode the signed access-token payload. The JWT carries user_role / name /
+  // username and is the AUTHORITATIVE source — pt_user_meta is only a cache.
+  // If that cache is ever missing (e.g. a token refresh repopulates the tokens
+  // but not the meta, or site data is partially cleared) reading role from the
+  // cache alone silently downgrades an Admin to 'Employee' and bounces them to
+  // 403 even though their token says Admin. So fall back to the JWT.
+  function _jwtPayload() {
+    try {
+      const t = localStorage.getItem(K_ACCESS);
+      if (!t) return null;
+      const b64 = t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      // decodeURIComponent(escape(atob())) decodes UTF-8 (Thai name) correctly.
+      return JSON.parse(decodeURIComponent(escape(atob(b64))));
+    } catch { return null; }
+  }
+
+  function getUserRole()       { return getUserMeta()?.role     || _jwtPayload()?.user_role || 'Employee'; }
+  function getUserName()       { return getUserMeta()?.name     || _jwtPayload()?.name     || 'Unknown'; }
+  function getUserUsername()   { return getUserMeta()?.username || _jwtPayload()?.username || ''; }
 
   // ===== Login form glue =====
   async function handleLogin(e) {
