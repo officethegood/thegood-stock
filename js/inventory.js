@@ -1866,9 +1866,20 @@
         return;
       }
       const { data, error } = await window.AppLots.fetchAllLots(itemId);
-      // Only ACTIVE lots may be topped up. A recalled / expired / depleted lot
-      // is dead — adding stock to it would resurrect untrackable inventory.
-      const activeLots = (data || []).filter((lot) => lot.status === 'active');
+      // Top-up allowed for ACTIVE lots and non-expired DEPLETED lots.
+      // Depleted must be included — the lot number is UNIQUE per item
+      // (uq_lot_per_item), so when a fully-issued lot's batch comes back the
+      // "ล็อตใหม่" tab hits 23505 (M-47 → "use this tab") while this list used
+      // to hide the depleted lot → deadlock: the same lot number could never be
+      // received again. Receiving into a depleted lot re-activates it
+      // (migration 20260703010000). Recalled/expired stay excluded — those are
+      // dead for safety reasons, and a depleted lot past its expiry date is
+      // excluded too (it would come back as expired stock).
+      const _today = new Date(); _today.setHours(0, 0, 0, 0);
+      const activeLots = (data || []).filter((lot) =>
+        lot.status === 'active'
+        || (lot.status === 'depleted'
+            && (!lot.expiry_date || new Date(lot.expiry_date) >= _today)));
       if (error || !activeLots.length) {
         sel.innerHTML = '<option value="">ยังไม่มีล็อตที่ใช้งานอยู่ — ใช้แท็บ "ล็อตใหม่"</option>';
         return;

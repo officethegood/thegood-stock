@@ -110,10 +110,18 @@
    */
   async function _fetchLots(itemId) {
     const sb = _sb();
+    // Column is current_qty — stock_lots has NO remaining_qty column (that name
+    // belongs to the v_lots_with_remaining view). Querying the wrong column made
+    // this SELECT error on every call and the catch-all `return []` swallowed it,
+    // so the transfer modal showed "— ไม่มีล็อต —" for EVERY lot-tracked item and
+    // the "ต้องเลือกล็อตก่อนย้าย" gate made moving them impossible.
+    // status=active only: transfer_out of an expired/recalled lot is blocked by
+    // the check_lot_status trigger anyway — don't offer lots that would fail.
     const r = await sb.from('stock_lots')
       .select('id,lot_number,expiry_date')
       .eq('item_id', itemId)
-      .gt('remaining_qty', 0)
+      .eq('status', 'active')
+      .gt('current_qty', 0)
       .order('expiry_date', { ascending: true, nullsFirst: false });
     if (r.error) return [];
     return r.data || [];

@@ -342,7 +342,7 @@
       confirmBtn.disabled = true;
       confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>กำลังบันทึก…';
 
-      const { error } = await window.AppLots.recallLot(lotId, reason);
+      const { data, error } = await window.AppLots.recallLot(lotId, reason);
 
       confirmBtn.disabled = false;
       confirmBtn.innerHTML = 'ยืนยัน เรียกคืน';
@@ -353,8 +353,17 @@
         return;
       }
 
-      // M-88: success toast
-      _toast('success', `เรียกคืนล็อต ${_esc(lot.lot_number)} แล้ว`);
+      // M-88: success toast. rpc_recall_lot v2 (20260703010100) returns
+      // { removed, unaccounted } — unaccounted > 0 means the lot ledger said
+      // more units than the locations actually held (legacy lot-less
+      // outflows); the recall still completed but the admin must hand-count.
+      const unaccounted = Number(data?.unaccounted || 0);
+      if (unaccounted > 0) {
+        _toast('warning',
+          `เรียกคืนล็อต ${_esc(lot.lot_number)} แล้ว — แต่มี ${unaccounted} หน่วยที่ยอดในตำแหน่งไม่พอให้ตัด (ข้อมูลเก่าไม่ผูกล็อต) กรุณาตรวจนับของจริง`);
+      } else {
+        _toast('success', `เรียกคืนล็อต ${_esc(lot.lot_number)} แล้ว`);
+      }
       modal.hide();
 
       // rpc_recall_lot also removed the lot's stock (posts adjustment_loss
