@@ -601,21 +601,11 @@
         </div>`;
     }
 
-    let cleanLocSection;
-    if (cleanLocs.length === 1) {
-      cleanLocSection = `<input type="hidden" id="lnd-rb-clean" value="${_esc(cleanLocs[0].id)}">
-        <div class="small text-muted mb-2">รับเข้าที่: ${_esc(cleanLocs[0].name)}</div>`;
-    } else {
-      cleanLocSection = `
-        <div class="mb-3">
-          <label class="form-label">ที่เก็บผ้าสะอาด (clean location)</label>
-          ${_selectHtml('lnd-rb-clean', cleanLocs.map((l) => ({ value: l.id, label: l.name })), '— เลือก clean location —')}
-        </div>`;
-    }
+    // clean location is chosen per-row (each linen type goes to its own box)
 
     document.getElementById('laundry-modal-body').innerHTML = `
       ${extLocSection}
-      ${cleanLocSection}
+      <div class="small text-muted mb-2">เลือกกล่องที่เก็บผ้าสะอาดได้ทีละรายการ (default = กล่องที่ผ้านั้นเก็บอยู่ตอนนี้)</div>
       <div id="lnd-rb-load-btn-wrap" class="mb-3">
         <button class="btn btn-outline-secondary btn-sm" id="lnd-rb-load">โหลดรายการที่ส่งซัก</button>
       </div>
@@ -642,7 +632,18 @@
         return;
       }
 
-      const rowsHtml = data.map((r) => `
+      // Per-item default clean box = where this linen currently sits the most
+      const homeBoxes = await Promise.all(data.map((r) => _bestCleanSource(r.item_id)));
+
+      const cleanOptsHtml = (selId) =>
+        `<option value="">— เลือกกล่อง —</option>` +
+        cleanLocs.map((l) =>
+          `<option value="${_esc(l.id)}" ${l.id === selId ? 'selected' : ''}>${_esc(l.name)}</option>`
+        ).join('');
+
+      const rowsHtml = data.map((r, i) => {
+        const defId = homeBoxes[i]?.location_id || '';
+        return `
         <tr>
           <td>${_esc(r.stock_items?.name || r.item_id)}</td>
           <td class="text-center">${_esc(String(r.qty))}</td>
@@ -652,13 +653,20 @@
                    data-item="${_esc(r.item_id)}" data-sent="${_esc(String(r.qty))}"
                    style="width:80px">
           </td>
+          <td>
+            <select class="form-select form-select-sm lnd-rb-clean-row"
+                    data-item="${_esc(r.item_id)}" style="min-width:140px">
+              ${cleanOptsHtml(defId)}
+            </select>
+          </td>
           <td class="text-center text-danger lnd-rb-loss" data-item="${_esc(r.item_id)}">0</td>
-        </tr>`).join('');
+        </tr>`;
+      }).join('');
 
       document.getElementById('lnd-rb-rows').innerHTML = `
         <div class="table-responsive">
           <table class="table table-sm align-middle">
-            <thead><tr><th>สินค้า</th><th>ที่ส่งไป</th><th>รับคืน</th><th>หาย</th></tr></thead>
+            <thead><tr><th>สินค้า</th><th>ที่ส่งไป</th><th>รับคืน</th><th>เก็บเข้ากล่อง</th><th>หาย</th></tr></thead>
             <tbody>${rowsHtml}</tbody>
           </table>
         </div>`;
@@ -678,17 +686,24 @@
     });
 
     document.getElementById('lnd-rb-submit').addEventListener('click', async () => {
-      const extLocId   = document.getElementById('lnd-rb-ext').value;
-      const cleanLocId = document.getElementById('lnd-rb-clean').value;
-      if (!extLocId || !cleanLocId) { _toast('warning', 'กรุณาเลือก location'); return; }
+      const extLocId = document.getElementById('lnd-rb-ext').value;
+      if (!extLocId) { _toast('warning', 'กรุณาเลือกร้านซัก'); return; }
 
-      const rows = Array.from(document.querySelectorAll('.lnd-rb-qty')).map((el) => ({
-        itemId: el.dataset.item,
-        sent:   parseInt(el.dataset.sent, 10),
-        recv:   parseInt(el.value, 10) || 0,
-      }));
+      const rows = Array.from(document.querySelectorAll('.lnd-rb-qty')).map((el) => {
+        const cleanSel = document.querySelector(`.lnd-rb-clean-row[data-item="${el.dataset.item}"]`);
+        return {
+          itemId:     el.dataset.item,
+          sent:       parseInt(el.dataset.sent, 10),
+          recv:       parseInt(el.value, 10) || 0,
+          cleanLocId: cleanSel ? cleanSel.value : '',
+        };
+      });
 
       if (!rows.length) return;
+
+      // Every row we actually receive back must have its own clean box chosen
+      const missing = rows.filter((r) => r.recv > 0 && !r.cleanLocId);
+      if (missing.length) { _toast('warning', 'กรุณาเลือกกล่องให้ครบทุกรายการที่รับคืน'); return; }
 
       const btn = document.getElementById('lnd-rb-submit');
       btn.disabled = true;
@@ -710,7 +725,7 @@
         if (row.recv > 0) {
           if (total > 3) progressEl.innerHTML = _renderProgress(done, total);
           const { error } = await _transfer(
-            row.itemId, extLocId, cleanLocId, row.recv, 'returned from wash'
+            row.itemId, extLocId, row.cleanLocId, row.recv, 'returned from wash'
           );
           if (error) { failCount++; console.error('receive_back transfer error', error); }
           done++;
