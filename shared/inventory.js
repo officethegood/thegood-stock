@@ -254,13 +254,21 @@
       if (!v) return { data: null, error: null };
       // Phase 1.1 B5: use ilike for partial barcode/SKU matching (EAN-13 variants, partial scan).
       const like = `%${v}%`;
+      // Embed per-location qty and sum it into total_qty (same pattern as
+      // _queryItemsFallback). The borrow flow gates on item.total_qty — the
+      // base stock_items table has NO such column, so without this every
+      // borrow attempt read undefined → "ของไม่เหลือในคลัง" for every item.
       const r = await sb.from('stock_items')
-        .select('id,sku,barcode,name,name_en,category_id,unit,reorder_threshold,tracks_lots,active')
+        .select('id,sku,barcode,name,name_en,category_id,unit,reorder_threshold,tracks_lots,active,stock_item_locations(qty)')
         .or(`barcode.ilike.${like},sku.ilike.${like}`)
         .eq('active', true)
         .limit(1);
       if (r.error) return r;
-      return { data: r.data?.[0] || null, error: null };
+      const row = r.data?.[0] || null;
+      if (!row) return { data: null, error: null };
+      const total = (row.stock_item_locations || []).reduce((acc, x) => acc + (x.qty || 0), 0);
+      const { stock_item_locations, ...rest } = row;
+      return { data: { ...rest, total_qty: total }, error: null };
     });
   }
 
