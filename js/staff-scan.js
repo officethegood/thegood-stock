@@ -1233,6 +1233,9 @@
           : '<p class="text-muted small">ไม่มีเทมเพลต</p>'}
       </div>
 
+      <!-- กระเป๋าขึ้นรถ / คืนกระเป๋า (rendered async once the parent is known) -->
+      <div id="bag-cl-deploy-wrap" class="mt-3"></div>
+
       <div class="mt-3">
         <button class="btn btn-outline-secondary w-100" id="bag-cl-scan-btn" style="min-height:52px;">
           <i class="bi bi-arrow-left me-1"></i> สแกนใหม่
@@ -1241,6 +1244,9 @@
       <!-- NOTE: No restock button for Staff (read-only per spec §7.2 A-2) -->`;
 
     overlay.querySelector('#bag-cl-scan-btn').addEventListener('click', _dismissBagChecklist);
+
+    // กระเป๋าขึ้นรถ / คืนกระเป๋า — context-aware button (no due date by design)
+    _renderBagDeploySection(location, bag).catch(() => { /* non-fatal */ });
 
     // Load composition async
     if (bag.bag_template_id) {
@@ -1295,6 +1301,90 @@
     } else if (!state.cameraStartedEver) {
       setState('PERMISSION_PROMPT');
     }
+  }
+
+  // --------------------------------------------------------------------------
+  // กระเป๋าขึ้นรถ / คืนกระเป๋า — context-aware section in the bag checklist.
+  // If the bag's current parent is an ambulance → show "คืนกระเป๋า" (home comes
+  // from the latest bag_moves deploy row, resolved server-side). Otherwise →
+  // show "เอาขึ้นรถ" with a vehicle picker. Backed by rpc_deploy_bag /
+  // rpc_return_bag (migration 20260705010000). No due date by design.
+  // --------------------------------------------------------------------------
+  async function _renderBagDeploySection(location, bag) {
+    const wrap = document.getElementById('bag-cl-deploy-wrap');
+    if (!wrap || !window.AppBags || !window.AppBags.deployBag) return;
+
+    const bagLocId = bag.location_id || location.id;
+    // Some scan paths resolve the bag without parent_id (e.g. v_location_path
+    // rows) — refetch the bag row itself in that case.
+    let parentId = location.parent_id;
+    if (parentId === undefined) {
+      const bagRow = await window.AppBags.getLocationBrief(bagLocId);
+      parentId = bagRow?.data?.parent_id || null;
+    }
+    const parentRes = await window.AppBags.getLocationBrief(parentId);
+    const parent = parentRes?.data || null;
+    const onVehicle = !!parent && parent.type === 'ambulance';
+
+    if (onVehicle) {
+      wrap.innerHTML = `
+        <div class="small text-muted mb-1"><i class="bi bi-truck me-1"></i>กระเป๋าอยู่บนรถ: <strong>${escapeHtml(parent.name || parent.code || '')}</strong></div>
+        <button class="btn btn-stock-primary w-100" id="bag-cl-return-btn" style="min-height:52px;">
+          <i class="bi bi-box-arrow-in-down me-1"></i> คืนกระเป๋าเข้าที่เก็บเดิม
+        </button>`;
+      wrap.querySelector('#bag-cl-return-btn').addEventListener('click', async (ev) => {
+        const btn = ev.currentTarget;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>กำลังคืน…';
+        const { data, error } = await window.AppBags.returnBag(bagLocId);
+        if (error) {
+          window.showToast('error', error.message || 'คืนกระเป๋าไม่สำเร็จ');
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-box-arrow-in-down me-1"></i> คืนกระเป๋าเข้าที่เก็บเดิม';
+          return;
+        }
+        window.showToast('success', `คืนกระเป๋าเข้า ${data?.home_name || 'ที่เก็บเดิม'} แล้ว`);
+        _dismissBagChecklist();
+      });
+      return;
+    }
+
+    // Not on a vehicle → offer deploy. Load the vehicle list first; hide the
+    // whole section when there are no ambulance locations to send it to.
+    const vehRes = await window.AppBags.listVehicleLocations();
+    const vehicles = vehRes?.data || [];
+    if (!vehicles.length) return;
+
+    wrap.innerHTML = `
+      <button class="btn btn-stock-primary w-100" id="bag-cl-deploy-btn" style="min-height:52px;">
+        <i class="bi bi-truck me-1"></i> เอากระเป๋าขึ้นรถ
+      </button>
+      <div id="bag-cl-vehicle-pick" class="d-none mt-2">
+        <div class="small text-muted mb-1">เลือกรถ:</div>
+        ${vehicles.map((v) => `
+          <button class="btn btn-outline-secondary w-100 mb-2 bag-cl-vehicle-btn"
+                  data-veh-id="${escapeHtml(v.id)}" style="min-height:52px;">
+            <i class="bi bi-truck me-1"></i> ${escapeHtml(v.name || v.code)}
+          </button>`).join('')}
+      </div>`;
+
+    wrap.querySelector('#bag-cl-deploy-btn').addEventListener('click', () => {
+      wrap.querySelector('#bag-cl-vehicle-pick')?.classList.toggle('d-none');
+    });
+
+    wrap.querySelectorAll('.bag-cl-vehicle-btn').forEach((b) => {
+      b.addEventListener('click', async () => {
+        wrap.querySelectorAll('button').forEach((x) => { x.disabled = true; });
+        const { data, error } = await window.AppBags.deployBag(bagLocId, b.dataset.vehId);
+        if (error) {
+          window.showToast('error', error.message || 'นำกระเป๋าขึ้นรถไม่สำเร็จ');
+          wrap.querySelectorAll('button').forEach((x) => { x.disabled = false; });
+          return;
+        }
+        window.showToast('success', `กระเป๋า ${data?.bag_code || ''} ขึ้นรถ ${data?.dest_name || ''} แล้ว`);
+        _dismissBagChecklist();
+      });
+    });
   }
 
   // ==========================================================================

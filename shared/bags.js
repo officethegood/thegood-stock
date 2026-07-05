@@ -404,6 +404,49 @@
   }
 
   // ==========================================================================
+  // กระเป๋าขึ้นรถ / คืนกระเป๋า (bag deploy & return — no due date)
+  // Backed by rpc_deploy_bag / rpc_return_bag (20260705010000). A bag is a
+  // locations row; deploying re-parents it under an ambulance and logs a
+  // bag_moves row whose from_parent_id is the "home" the return restores.
+  // ==========================================================================
+
+  /** Active ambulance locations for the deploy picker. */
+  async function listVehicleLocations() {
+    return _safe(() =>
+      _sb().from('locations')
+        .select('id,code,name')
+        .eq('type', 'ambulance')
+        .eq('active', true)
+        .order('name')
+    );
+  }
+
+  /** Fetch a location row (used to inspect the bag's current parent). */
+  async function getLocationBrief(locId) {
+    if (!locId) return { data: null, error: null };
+    return _safe(() =>
+      _sb().from('locations')
+        .select('id,code,name,type,parent_id')
+        .eq('id', locId)
+        .maybeSingle()
+    );
+  }
+
+  /** กระเป๋าขึ้นรถ. Returns { ok, bag_code, dest_name } on success. */
+  async function deployBag(bagLocationId, destLocationId) {
+    return _safe(() =>
+      _sb().rpc('rpc_deploy_bag', { p_bag_id: bagLocationId, p_dest_id: destLocationId })
+    );
+  }
+
+  /** คืนกระเป๋า to the home recorded by the latest deploy. */
+  async function returnBag(bagLocationId) {
+    return _safe(() =>
+      _sb().rpc('rpc_return_bag', { p_bag_id: bagLocationId })
+    );
+  }
+
+  // ==========================================================================
   // Public namespace
   // ==========================================================================
 
@@ -428,6 +471,11 @@
     buildShoppingList,
     submitRestockItem,
     generateUUID,
+    // Deploy / return (กระเป๋าขึ้นรถ)
+    listVehicleLocations,
+    getLocationBrief,
+    deployBag,
+    returnBag,
     // UI helpers
     getAlertBadge,
     formatThaiDate,
