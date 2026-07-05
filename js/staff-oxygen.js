@@ -135,9 +135,10 @@
           <div id="oxy-scan-stage" style="position:relative; width:100%; aspect-ratio:4/3;
                max-height:42vh; background:#000; border-radius:12px; overflow:hidden;"
                role="img" aria-label="กล้องสแกนบาร์โค้ด">
-            <!-- NO inline style: sized via `#oxy-scan-stage video` CSS rule in
-                 staff-oxygen.html so the html5-qrcode-injected <video> (the iOS
-                 fallback replaces THIS element) is also sized → iOS can decode. -->
+            <!-- NO inline style: sized via the #oxy-scan-stage video CSS rule in
+                 staff-oxygen.html so the html5-qrcode-injected video (the iOS
+                 fallback replaces THIS element) is also sized and iOS can decode.
+                 (This comment sits inside a JS template literal - no backticks!) -->
             <video id="oxy-scan-video" playsinline muted
                    aria-label="ภาพจากกล้องสำหรับสแกนบาร์โค้ด"></video>
             <div style="position:absolute;inset:0;pointer-events:none;
