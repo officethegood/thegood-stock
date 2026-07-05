@@ -1941,13 +1941,101 @@
     else if (_borrow.step === 5) _renderBorrowStep5(body);
   }
 
+  // ---------------------------------------------------------------------
+  // One-shot camera scan modal for the ยืม-คืน steps. Resolves with the raw
+  // decoded text via onText, then closes. The main issue-mode camera is
+  // stopped first — AppScanner allows a single active session per page.
+  // NOTE: the <video> is sized by the CSS rule injected below, NOT an inline
+  // style — on iOS html5-qrcode REPLACES the video element, and only a
+  // descendant CSS rule also covers the injected replacement (same root
+  // cause as the staff-oxygen iOS scan fix, v0.20.26).
+  // ---------------------------------------------------------------------
+  function _openBorrowScanModal(title, onText) {
+    if (!window.AppScanner || !window.AppScanner.isSupported()) {
+      _toast('warning', 'อุปกรณ์นี้ใช้กล้องสแกนไม่ได้ — พิมพ์รหัสแทน');
+      return;
+    }
+    try { window.AppScanner.stopScanning().catch(() => {}); } catch { /* ignore */ }
+    try { if (typeof state === 'object' && state) state.scanning = false; } catch { /* ignore */ }
+
+    const old = document.getElementById('borrow-scan-modal');
+    if (old) try { old.remove(); } catch { /* ignore */ }
+
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      <div class="modal fade" id="borrow-scan-modal" tabindex="-1" aria-labelledby="borrow-scan-title">
+        <style>#borrow-scan-modal .borrow-scan-stage video{width:100%;height:100%;object-fit:cover;display:block;}</style>
+        <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+          <div class="modal-content bg-dark text-white">
+            <div class="modal-header border-0 pb-0">
+              <h5 class="modal-title" id="borrow-scan-title"></h5>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="ปิด"></button>
+            </div>
+            <div class="modal-body p-2">
+              <div class="borrow-scan-stage"
+                   style="position:relative;width:100%;aspect-ratio:3/4;max-height:55vh;
+                          background:#000;border-radius:12px;overflow:hidden;">
+                <video id="borrow-scan-video" playsinline muted aria-label="กล้องสแกน"></video>
+                <div style="position:absolute;top:15%;left:15%;right:15%;bottom:15%;
+                            border:2px solid #00B8A9;border-radius:10px;pointer-events:none;"></div>
+                <div style="position:absolute;left:0;right:0;bottom:14px;text-align:center;
+                            color:#fff;font-size:.95rem;text-shadow:0 1px 4px rgba(0,0,0,.7);">
+                  วางบาร์โค้ด/QR ให้อยู่กลางกรอบ
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    const modalEl = wrap.firstElementChild;
+    modalEl.querySelector('#borrow-scan-title').textContent = title;
+    document.body.appendChild(modalEl);
+    const bsModal = new bootstrap.Modal(modalEl);
+    let _done = false;
+
+    modalEl.addEventListener('shown.bs.modal', () => {
+      window.AppScanner.startScanning({
+        videoElement: modalEl.querySelector('#borrow-scan-video'),
+        onScan: (text) => {
+          if (_done) return;
+          _done = true;
+          window.AppScanner.stopScanning().catch(() => {});
+          bsModal.hide();
+          onText(String(text || '').trim());
+        },
+        onError: (msg) => {
+          if (_done) return;
+          _done = true;
+          window.AppScanner.stopScanning().catch(() => {});
+          bsModal.hide();
+          _toast('error', 'เปิดกล้องไม่สำเร็จ: ' + (msg || '') + ' — พิมพ์รหัสแทนได้');
+        },
+      });
+    }, { once: true });
+
+    modalEl.addEventListener('hidden.bs.modal', () => {
+      if (!_done) window.AppScanner.stopScanning().catch(() => {});
+      try { modalEl.remove(); } catch { /* ignore */ }
+    });
+
+    bsModal.show();
+  }
+
   function _renderBorrowStep1(body) {
+    const camBtn = (window.AppScanner && window.AppScanner.cameraAvailable)
+      ? `<button type="button" id="borrow-scan-item-btn" class="btn btn-outline-secondary"
+                 style="min-width:56px;min-height:48px;" aria-label="สแกนด้วยกล้อง">
+           <i class="bi bi-camera"></i></button>`
+      : '';
     body.innerHTML = `
       <div class="card p-3">
         <h6 class="mb-2">ขั้นที่ 1: สแกนหรือพิมพ์ SKU สินค้า</h6>
-        <input type="text" id="borrow-sku-input" class="form-control mb-2"
-               placeholder="SKU / Barcode" autocomplete="off"
-               style="min-height:48px; font-size:1.05rem;">
+        <div class="d-flex gap-2 mb-2">
+          <input type="text" id="borrow-sku-input" class="form-control flex-grow-1"
+                 placeholder="SKU / Barcode" autocomplete="off"
+                 style="min-height:48px; font-size:1.05rem;">
+          ${camBtn}
+        </div>
         <button type="button" id="borrow-step1-btn" class="btn btn-stock-primary w-100"
                 style="min-height:48px;">ค้นหาสินค้า →</button>
         <div id="borrow-item-result" class="mt-2"></div>
@@ -1959,10 +2047,21 @@
       const res = await window.AppInventory.searchByBarcode(sku);
       if (res.error || !res.data) {
         document.getElementById('borrow-item-result').innerHTML =
-          `<div class="alert alert-warning small">ไม่พบสินค้า — ลองใหม่</div>`;
+          `<div class="alert alert-warning small">ไม่พบสินค้า — ลองใหม่<br>
+           <span class="text-muted">หมายเหตุ: รหัสกระเป๋า (BAG-…) ไม่ใช่สินค้า — ยืม-คืนใช้ได้กับ "สินค้า" ในคลังเท่านั้น</span></div>`;
         return;
       }
       const item = res.data;
+      // Lot-tracked meds cannot be borrowed: the borrow movement carries no
+      // lot_id and the DB trigger rejects it. Say so clearly instead of
+      // letting the user hit a raw trigger error at the confirm step.
+      if (item.tracks_lots) {
+        document.getElementById('borrow-item-result').innerHTML =
+          `<div class="alert alert-warning small">
+             <strong>${_esc(item.name || '')}</strong> เป็นของคุมล็อต/วันหมดอายุ —
+             ยืม-คืนใช้กับอุปกรณ์เท่านั้น ให้ใช้โหมด <strong>เบิก-จ่าย</strong> แทน</div>`;
+        return;
+      }
       if ((item.total_qty || 0) <= 0) {
         document.getElementById('borrow-item-result').innerHTML =
           `<div class="alert alert-warning small">ของไม่เหลือในคลัง — ไม่สามารถยืมได้</div>`;
@@ -1971,6 +2070,14 @@
       _borrow.item = item;
       _borrow.step = 2;
       _renderBorrowStep();
+    });
+
+    document.getElementById('borrow-scan-item-btn')?.addEventListener('click', () => {
+      _openBorrowScanModal('สแกนสินค้า', (text) => {
+        const input = document.getElementById('borrow-sku-input');
+        if (input) input.value = text;
+        document.getElementById('borrow-step1-btn')?.click();
+      });
     });
 
     document.getElementById('borrow-sku-input')?.addEventListener('keydown', (ev) => {
@@ -1987,14 +2094,29 @@
           · คงเหลือรวม: ${_esc(String(item?.total_qty || 0))} ชิ้น
         </div>
         <h6 class="mb-2">ขั้นที่ 2: สแกนหรือพิมพ์ตำแหน่งจัดเก็บ</h6>
-        <input type="text" id="borrow-loc-input" class="form-control mb-2"
-               placeholder="รหัสตำแหน่ง (เช่น ROOM-A)" autocomplete="off"
-               style="min-height:48px; font-size:1.05rem;">
+        <div class="d-flex gap-2 mb-2">
+          <input type="text" id="borrow-loc-input" class="form-control flex-grow-1"
+                 placeholder="รหัสตำแหน่ง (เช่น ROOM-A)" autocomplete="off"
+                 style="min-height:48px; font-size:1.05rem;">
+          ${(window.AppScanner && window.AppScanner.cameraAvailable)
+            ? `<button type="button" id="borrow-scan-loc-btn" class="btn btn-outline-secondary"
+                       style="min-width:56px;min-height:48px;" aria-label="สแกน QR ตำแหน่ง">
+                 <i class="bi bi-camera"></i></button>`
+            : ''}
+        </div>
         <button type="button" id="borrow-step2-btn" class="btn btn-stock-primary w-100"
                 style="min-height:48px;">ค้นหาตำแหน่ง →</button>
         <div id="borrow-loc-result" class="mt-2"></div>
         <button type="button" class="btn btn-link btn-sm mt-2" id="borrow-back-1">← แก้ไขสินค้า</button>
       </div>`;
+
+    document.getElementById('borrow-scan-loc-btn')?.addEventListener('click', () => {
+      _openBorrowScanModal('สแกน QR ตำแหน่ง', (text) => {
+        const input = document.getElementById('borrow-loc-input');
+        if (input) input.value = text;
+        document.getElementById('borrow-step2-btn')?.click();
+      });
+    });
 
     document.getElementById('borrow-step2-btn')?.addEventListener('click', async () => {
       const code = (document.getElementById('borrow-loc-input')?.value || '').trim();
@@ -2311,13 +2433,28 @@
     body.innerHTML = `
       <div class="card p-3">
         <h6 class="mb-2">ขั้นที่ 1: สแกนหรือพิมพ์ SKU สินค้าที่ต้องการคืน</h6>
-        <input type="text" id="return-sku-input" class="form-control mb-2"
-               placeholder="SKU / Barcode" autocomplete="off"
-               style="min-height:48px; font-size:1.05rem;">
+        <div class="d-flex gap-2 mb-2">
+          <input type="text" id="return-sku-input" class="form-control flex-grow-1"
+                 placeholder="SKU / Barcode" autocomplete="off"
+                 style="min-height:48px; font-size:1.05rem;">
+          ${(window.AppScanner && window.AppScanner.cameraAvailable)
+            ? `<button type="button" id="return-scan-item-btn" class="btn btn-outline-secondary"
+                       style="min-width:56px;min-height:48px;" aria-label="สแกนด้วยกล้อง">
+                 <i class="bi bi-camera"></i></button>`
+            : ''}
+        </div>
         <button type="button" id="return-step1-btn" class="btn btn-stock-primary w-100"
                 style="min-height:48px;">ค้นหารายการยืม →</button>
         <div id="return-loan-result" class="mt-2"></div>
       </div>`;
+
+    document.getElementById('return-scan-item-btn')?.addEventListener('click', () => {
+      _openBorrowScanModal('สแกนสินค้าที่จะคืน', (text) => {
+        const input = document.getElementById('return-sku-input');
+        if (input) input.value = text;
+        document.getElementById('return-step1-btn')?.click();
+      });
+    });
 
     document.getElementById('return-step1-btn')?.addEventListener('click', async () => {
       const sku = (document.getElementById('return-sku-input')?.value || '').trim();
