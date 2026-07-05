@@ -101,6 +101,15 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('SW failed', e)));
+  // Auto-heal after a deploy: when the updated service worker takes control,
+  // reload once so the page runs the freshly precached files instead of the
+  // stale (possibly broken) copies it booted from. hadCtrl skips the very
+  // first install; __swAutoReloaded guards against reload loops.
+  let hadCtrl = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (hadCtrl && !window.__swAutoReloaded) { window.__swAutoReloaded = true; location.reload(); }
+    hadCtrl = true;
+  });
 }
 </script>
 
