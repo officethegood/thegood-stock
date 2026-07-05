@@ -32,6 +32,11 @@
   const _filters  = { movementType: '', locationId: '', dateFrom: '', dateTo: '', search: '' };
   let _locations  = [];
 
+  // ประวัติกระเป๋า (bag_moves) — second view on this page.
+  let _view       = 'stock';   // 'stock' | 'bags'
+  let _bagLimit   = PAGE;
+  let _bagRows    = [];
+
   function _esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -155,6 +160,77 @@
   }
 
   // -------------------------------------------------------------------------
+  // ประวัติกระเป๋า — bag_moves log (deploy/return, migration 20260705010000)
+  // -------------------------------------------------------------------------
+
+  async function _fetchBags() {
+    const tbody = document.getElementById('hist-bags-tbody');
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-4">
+        <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด…</td></tr>`;
+    }
+    let r;
+    try {
+      // Three FKs point at locations — disambiguate each embed by FK column.
+      r = await _sb().from('bag_moves')
+        .select(`id, action, moved_by, moved_at,
+                 bag:locations!bag_location_id(id,code,name),
+                 from_loc:locations!from_parent_id(id,code,name),
+                 to_loc:locations!to_parent_id(id,code,name)`)
+        .order('moved_at', { ascending: false })
+        .limit(_bagLimit);
+    } catch (e) { r = { data: null, error: e }; }
+
+    if (r.error || !r.data) {
+      _bagRows = [];
+      if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-4">
+        โหลดประวัติกระเป๋าไม่สำเร็จ</td></tr>`;
+      return;
+    }
+    _bagRows = r.data;
+    _renderBagRows();
+  }
+
+  function _renderBagRows() {
+    const tbody = document.getElementById('hist-bags-tbody');
+    if (!tbody) return;
+
+    if (!_bagRows.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-4">
+        ยังไม่มีประวัติกระเป๋าขึ้นรถ/คืน</td></tr>`;
+      _updateBagCount(0);
+      return;
+    }
+
+    tbody.innerHTML = _bagRows.map((r) => {
+      const isDeploy = r.action === 'deploy';
+      const actHtml  = isDeploy
+        ? '🚑 <span class="fw-semibold">ขึ้นรถ</span>'
+        : '↩️ คืนเข้าที่เก็บ';
+      const bag = r.bag || {};
+      return `
+        <tr>
+          <td class="small text-muted text-nowrap">${_esc(_fmtTime(r.moved_at))}</td>
+          <td class="small text-nowrap">${actHtml}</td>
+          <td class="small"><code>${_esc(bag.code || '')}</code>
+            ${bag.name ? ` <span class="text-muted">${_esc(bag.name)}</span>` : ''}</td>
+          <td class="small d-none d-md-table-cell">
+            ${_locName(r.from_loc)} <i class="bi bi-arrow-right mx-1 text-muted"></i> ${_locName(r.to_loc)}</td>
+          <td class="small">${_esc(r.moved_by || '')}</td>
+        </tr>`;
+    }).join('');
+
+    _updateBagCount(_bagRows.length);
+  }
+
+  function _updateBagCount(shown) {
+    const el = document.getElementById('hist-count');
+    if (el) el.textContent = `แสดง ${shown} รายการ`;
+    const more = document.getElementById('hist-bags-load-more');
+    if (more) more.classList.toggle('d-none', _bagRows.length < _bagLimit);
+  }
+
+  // -------------------------------------------------------------------------
 
   function _render(root) {
     const typeOpts = TYPES.map((t) =>
@@ -165,9 +241,43 @@
     root.innerHTML = `
       <div class="d-flex align-items-center mb-3 flex-wrap gap-2">
         <h5 class="mb-0 me-auto fc-display"><i class="bi bi-clock-history me-2"></i>ประวัติการเคลื่อนไหว</h5>
+        <div class="btn-group btn-group-sm" role="group" aria-label="เลือกมุมมองประวัติ">
+          <button type="button" id="hist-view-stock" class="btn btn-stock-primary">
+            <i class="bi bi-box-seam me-1"></i>สต็อก</button>
+          <button type="button" id="hist-view-bags" class="btn btn-outline-secondary">
+            <i class="bi bi-bag-heart me-1"></i>กระเป๋า</button>
+        </div>
         <span id="hist-count" class="small text-muted"></span>
       </div>
 
+      <div id="hist-bags-view" class="d-none">
+        <div class="card">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th scope="col">เวลา</th>
+                  <th scope="col">การกระทำ</th>
+                  <th scope="col">กระเป๋า</th>
+                  <th scope="col" class="d-none d-md-table-cell">จาก → ไป</th>
+                  <th scope="col">ผู้ทำ</th>
+                </tr>
+              </thead>
+              <tbody id="hist-bags-tbody">
+                <tr><td colspan="5" class="text-center text-muted py-4">
+                  <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="text-center mt-3">
+          <button type="button" id="hist-bags-load-more" class="btn btn-outline-secondary btn-sm d-none">
+            โหลดเพิ่ม
+          </button>
+        </div>
+      </div>
+
+      <div id="hist-stock-view">
       <div class="card mb-3">
         <div class="card-body py-3">
           <div class="row g-2">
@@ -227,7 +337,30 @@
           โหลดเพิ่ม
         </button>
       </div>
+      </div><!-- /#hist-stock-view -->
     `;
+
+    // View switch: สต็อก (stock_movements) ↔ กระเป๋า (bag_moves)
+    const _applyView = () => {
+      const isBags = _view === 'bags';
+      document.getElementById('hist-stock-view')?.classList.toggle('d-none', isBags);
+      document.getElementById('hist-bags-view')?.classList.toggle('d-none', !isBags);
+      const bStock = document.getElementById('hist-view-stock');
+      const bBags  = document.getElementById('hist-view-bags');
+      bStock?.classList.toggle('btn-stock-primary', !isBags);
+      bStock?.classList.toggle('btn-outline-secondary', isBags);
+      bBags?.classList.toggle('btn-stock-primary', isBags);
+      bBags?.classList.toggle('btn-outline-secondary', !isBags);
+    };
+    document.getElementById('hist-view-stock').addEventListener('click', () => {
+      _view = 'stock'; _applyView(); _renderRows();
+    });
+    document.getElementById('hist-view-bags').addEventListener('click', () => {
+      _view = 'bags'; _applyView(); _fetchBags();
+    });
+    document.getElementById('hist-bags-load-more').addEventListener('click', () => {
+      _bagLimit += PAGE; _fetchBags();
+    });
 
     // Wire filters — server-side ones re-query, search is client-side.
     let _searchTimer = null;
