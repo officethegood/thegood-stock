@@ -63,6 +63,17 @@
     if (msg.includes('ไม่พบรายการยืมที่เปิดอยู่')) {
       return 'ไม่พบรายการยืมที่เปิดอยู่';
     }
+    // Lot-tracked borrow (20260709): trigger strings from check_lot_status /
+    // apply_movement_to_sil — must be checked before the generic qty case.
+    if (msg.includes('ล็อตหมดอายุหรือถูกเรียกคืน')) {
+      return 'ล็อตนี้หมดอายุหรือถูกเรียกคืน — เลือกล็อตอื่น';
+    }
+    if (msg.includes('lot current_qty negative')) {
+      return 'ของในล็อตไม่พอ — ไม่สามารถยืมได้';
+    }
+    if (msg.includes('lot_id is required')) {
+      return 'สินค้านี้เป็นของคุมล็อต — กรุณาเลือกล็อตก่อนยืม';
+    }
     if (msg.includes('would drive qty negative')) {
       return 'ของไม่พอ — ไม่สามารถยืมได้';
     }
@@ -294,9 +305,10 @@
    * @param {string} [p.note]
    * @param {string} [p.borrowerUsername] — Q-Phase3-D: Admin passes explicit value; Staff omits
    * @param {string} [p.clientRefId]      — idempotency UUID; generated if omitted
+   * @param {string} [p.lotId]            — required by DB when item.tracks_lots=true (20260709)
    * @returns {Promise<{ data: object|null, error: object|null }>}
    */
-  async function createBorrow({ itemId, locationId, qty, dueAt, note, borrowerUsername, clientRefId }) {
+  async function createBorrow({ itemId, locationId, qty, dueAt, note, borrowerUsername, clientRefId, lotId }) {
     const refId = clientRefId || _uuid();
     const payload = {
       item_id:          itemId,
@@ -307,6 +319,9 @@
       note:             note || null,
       client_ref_id:    refId,
     };
+    if (lotId) {
+      payload.lot_id = lotId;
+    }
     if (borrowerUsername) {
       payload.borrower_username = borrowerUsername;
     }

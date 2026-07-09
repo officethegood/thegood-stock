@@ -1859,6 +1859,10 @@
     note:           '',
     photoUrl:       null,
     clientRefId:    null,
+    // Lot-tracked borrow (20260709) — set only when item.tracks_lots
+    lot:            null,   // chosen lot { id, lot_number, expiry_date, current_qty }
+    lots:           [],     // FEFO-sorted available lots for the chosen item
+    itemLocs:       null,   // locations holding this item [{id,code,name,qty}] — null until loaded
   };
 
   // Return flow state
@@ -1996,6 +2000,8 @@
     _borrow.qty = 1; _borrow.dueAt = window.AppLoans ? window.AppLoans.defaultDueAt() : _defaultDue();
     _borrow.duePreset = 3; _borrow.note = ''; _borrow.photoUrl = null;
     _borrow.clientRefId = null;
+    _borrow.lot = null; _borrow.lots = [];
+    _borrow.itemLocs = null;
     _renderBorrowStep();
   }
 
@@ -2142,19 +2148,16 @@
         return;
       }
       const item = res.data;
-      // Lot-tracked meds cannot be borrowed: the borrow movement carries no
-      // lot_id and the DB trigger rejects it. Say so clearly instead of
-      // letting the user hit a raw trigger error at the confirm step.
-      if (item.tracks_lots) {
-        document.getElementById('borrow-item-result').innerHTML =
-          `<div class="alert alert-warning small">
-             <strong>${_esc(item.name || '')}</strong> เป็นของคุมล็อต/วันหมดอายุ —
-             ยืม-คืนใช้กับอุปกรณ์เท่านั้น ให้ใช้โหมด <strong>เบิก-จ่าย</strong> แทน</div>`;
-        return;
-      }
       if ((item.total_qty || 0) <= 0) {
         document.getElementById('borrow-item-result').innerHTML =
           `<div class="alert alert-warning small">ของไม่เหลือในคลัง — ไม่สามารถยืมได้</div>`;
+        return;
+      }
+      _borrow.lot = null; _borrow.lots = []; _borrow.itemLocs = null;
+      // Lot-tracked items (AED pads etc.): the DB requires lot_id on borrow,
+      // so pick the lot here before moving to the location step (20260709).
+      if (item.tracks_lots) {
+        await _loadBorrowLots(item);
         return;
       }
       _borrow.item = item;
@@ -2175,15 +2178,111 @@
     });
   }
 
+  /**
+   * Borrow step 1.5 (lot-tracked items only, 20260709): fetch available lots
+   * FEFO-sorted and render an inline lot picker below the item search box.
+   * Reuses shared/lots.js (fetchAvailableLots / renderLotPicker / getLotBadge).
+   */
+  /**
+   * Fallback loader for shared/lots.js — staff-scan.html loads it statically,
+   * this only covers pages/caches where the tag is missing. (The issue-flow
+   * IIFE has its own copy; scopes are separate.)
+   */
+  function _ensureBorrowLotsScript() {
+    if (window.AppLots) return Promise.resolve();
+    return new Promise((resolve) => {
+      if (document.querySelector('script[src*="shared/lots.js"]')) { resolve(); return; }
+      const s = document.createElement('script');
+      s.src = './shared/lots.js';
+      s.onload = () => resolve();
+      s.onerror = () => resolve();
+      document.head.appendChild(s);
+    });
+  }
+
+  async function _loadBorrowLots(item) {
+    const box = document.getElementById('borrow-item-result');
+    if (!box) return;
+    box.innerHTML = `<div class="text-muted small py-2">
+      <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>กำลังโหลดล็อต…</div>`;
+
+    if (!window.AppLots) await _ensureBorrowLotsScript();
+    if (!window.AppLots) {
+      box.innerHTML = `<div class="alert alert-warning small">โหลดข้อมูลล็อตไม่สำเร็จ — ลองใหม่อีกครั้ง</div>`;
+      return;
+    }
+
+    const { data, error } = await window.AppLots.fetchAvailableLots(item.id);
+    if (error) {
+      box.innerHTML = `<div class="alert alert-warning small">โหลดข้อมูลล็อตไม่สำเร็จ — ลองใหม่อีกครั้ง</div>`;
+      return;
+    }
+
+    const lots = (window.AppLots.sortFEFO(data || []))
+      .filter((l) => l.status === 'active' && (l.current_qty || 0) > 0);
+    if (lots.length === 0) {
+      box.innerHTML = `<div class="alert alert-warning small">
+        <strong>${_esc(item.name || '')}</strong> ไม่มีล็อตที่ยังใช้ได้ (ยังไม่หมดอายุ) — ไม่สามารถยืมได้</div>`;
+      return;
+    }
+
+    _borrow.item = item;
+    _borrow.lots = lots;
+    _borrow.lot  = lots[0];   // FEFO default: soonest expiry first
+    _renderBorrowLotPicker(box);
+  }
+
+  function _renderBorrowLotPicker(box) {
+    const item = _borrow.item;
+    const lots = _borrow.lots;
+    box.innerHTML = `
+      <div class="alert alert-success small py-2 mb-2">
+        สินค้า: <strong>${_esc(item?.name || '')} (${_esc(item?.sku || '')})</strong>
+      </div>
+      <h6 class="small fw-semibold mb-1">เลือกล็อตที่จะยืม
+        <span class="text-muted fw-normal">(เรียงตามวันหมดอายุ — ควรใช้ล็อตบนสุดก่อน)</span></h6>
+      <div id="borrow-lot-picker" class="mb-2"></div>
+      <div id="borrow-lot-fefo-note" class="small text-warning mb-2 d-none">
+        ⚠ ล็อตนี้ไม่ใช่ล็อตที่ควรใช้ก่อน (FEFO)</div>
+      <button type="button" id="borrow-lot-next" class="btn btn-stock-primary w-100"
+              style="min-height:48px;">ใช้ล็อตนี้ →</button>`;
+
+    const container = box.querySelector('#borrow-lot-picker');
+    const pickerEl = window.AppLots.renderLotPicker(lots, _borrow.lot?.id, (lot) => {
+      _borrow.lot = lot;
+      // Cap any previously entered qty to the newly chosen lot's remaining.
+      if (_borrow.qty > (lot.current_qty || 1)) _borrow.qty = lot.current_qty || 1;
+      const note = box.querySelector('#borrow-lot-fefo-note');
+      if (note) note.classList.toggle('d-none', !!(lots[0] && lot.id === lots[0].id));
+    });
+    if (container && pickerEl) container.appendChild(pickerEl);
+
+    box.querySelector('#borrow-lot-next')?.addEventListener('click', () => {
+      if (!_borrow.lot) { _toast('warning', 'กรุณาเลือกล็อตก่อน'); return; }
+      _borrow.step = 2;
+      _renderBorrowStep();
+    });
+  }
+
   function _renderBorrowStep2(body) {
     const item = _borrow.item;
+    const lotLine = _borrow.lot
+      ? `<br>ล็อต: <code>${_esc(_borrow.lot.lot_number || '')}</code>
+         · หมดอายุ ${_esc(window.AppLots ? window.AppLots.formatThaiDate(_borrow.lot.expiry_date) : (_borrow.lot.expiry_date || '—'))}
+         · คงเหลือในล็อต ${_esc(String(_borrow.lot.current_qty || 0))} ชิ้น`
+      : '';
     body.innerHTML = `
       <div class="card p-3">
         <div class="alert alert-success small py-2 mb-2">
           สินค้า: <strong>${_esc(item?.name || '')} (${_esc(item?.sku || '')})</strong>
-          · คงเหลือรวม: ${_esc(String(item?.total_qty || 0))} ชิ้น
+          · คงเหลือรวม: ${_esc(String(item?.total_qty || 0))} ชิ้น${lotLine}
         </div>
-        <h6 class="mb-2">ขั้นที่ 2: สแกนหรือพิมพ์ตำแหน่งจัดเก็บ</h6>
+        <h6 class="mb-2">ขั้นที่ 2: เลือกตำแหน่งที่จะหยิบของ</h6>
+        <div id="borrow-loc-suggest" class="mb-2">
+          <span class="text-muted small">
+            <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>กำลังหาว่าของอยู่ที่ไหน…</span>
+        </div>
+        <div class="text-muted small mb-1">หรือสแกน/พิมพ์รหัสตำแหน่งเอง:</div>
         <div class="d-flex gap-2 mb-2">
           <input type="text" id="borrow-loc-input" class="form-control flex-grow-1"
                  placeholder="รหัสตำแหน่ง (เช่น ROOM-A)" autocomplete="off"
@@ -2217,10 +2316,21 @@
           `<div class="alert alert-warning small">ไม่พบตำแหน่ง — ลองใหม่</div>`;
         return;
       }
-      _borrow.location = res.data;
-      _borrow.step = 3;
-      if (!_borrow.dueAt) _borrow.dueAt = _defaultDue();
-      _renderBorrowStep();
+      // The item must actually have stock at the chosen location — otherwise
+      // the DB rejects with 'would drive qty negative' ("ของไม่พอ") at the
+      // very last step. Tell the user NOW, and say where the stock really is.
+      if (Array.isArray(_borrow.itemLocs)
+          && !_borrow.itemLocs.some((l) => l.id === res.data.id)) {
+        const at = _borrow.itemLocs
+          .map((l) => `${l.code || l.name} (${l.qty} ชิ้น)`).join(', ');
+        document.getElementById('borrow-loc-result').innerHTML =
+          `<div class="alert alert-warning small">
+             ไม่มี <strong>${_esc(item?.name || '')}</strong> ที่ตำแหน่ง
+             <code>${_esc(res.data.code || res.data.name || code)}</code>
+             ${at ? ' — ของอยู่ที่: ' + _esc(at) + ' (แตะปุ่มด้านบนเพื่อเลือก)' : ' — ไม่มีของเหลือในคลัง'}</div>`;
+        return;
+      }
+      _borrowSelectLocation(res.data);
     });
 
     document.getElementById('borrow-loc-input')?.addEventListener('keydown', (ev) => {
@@ -2228,6 +2338,62 @@
     });
     document.getElementById('borrow-back-1')?.addEventListener('click', () => {
       _borrow.step = 1; _renderBorrowStep();
+    });
+
+    _loadBorrowItemLocations();
+  }
+
+  function _borrowSelectLocation(loc) {
+    _borrow.location = loc;
+    _borrow.step = 3;
+    if (!_borrow.dueAt) _borrow.dueAt = _defaultDue();
+    _renderBorrowStep();
+  }
+
+  /**
+   * Load the locations that actually hold the chosen item (qty > 0) and show
+   * them as tap-to-select buttons in step 2. Fixes the trap where any valid
+   * location was accepted and the borrow then died at confirm with "ของไม่พอ"
+   * because the item's stock lives somewhere else.
+   */
+  async function _loadBorrowItemLocations() {
+    _borrow.itemLocs = null;
+    const r = await window.AppInventory.getItem(_borrow.item.id);
+    const box = document.getElementById('borrow-loc-suggest');
+    if (!box || _borrow.step !== 2) return;   // user already moved on
+    if (r.error || !r.data) { box.innerHTML = ''; return; }  // fail-soft: manual entry + DB guard still apply
+
+    const locs = (r.data.locations || [])
+      .filter((x) => (x.qty || 0) > 0 && x.locations)
+      .map((x) => ({
+        id:   x.location_id,
+        code: x.locations.code,
+        name: x.locations.name,
+        qty:  x.qty,
+      }));
+    _borrow.itemLocs = locs;
+
+    if (locs.length === 0) {
+      box.innerHTML = `<div class="alert alert-warning small mb-0">ของไม่เหลือในคลัง — ไม่สามารถยืมได้</div>`;
+      return;
+    }
+
+    box.innerHTML = `
+      <div class="small text-muted mb-1">ของอยู่ที่ — แตะเพื่อเลือก:</div>
+      <div class="d-flex flex-wrap gap-2">
+        ${locs.map((l, i) => `
+          <button type="button" class="btn btn-outline-success borrow-loc-pick"
+                  data-idx="${i}" style="min-height:48px;">
+            <i class="bi bi-geo-alt me-1" aria-hidden="true"></i>${_esc(l.code || l.name || '')}
+            <span class="badge bg-success-subtle text-success ms-1">${_esc(String(l.qty))} ชิ้น</span>
+          </button>`).join('')}
+      </div>`;
+
+    box.querySelectorAll('.borrow-loc-pick').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const loc = locs[parseInt(btn.dataset.idx, 10)];
+        if (loc) _borrowSelectLocation(loc);
+      });
     });
   }
 
@@ -2326,6 +2492,12 @@
       if (!_borrow.dueAt || _borrow.dueAt <= new Date()) {
         _toast('warning', 'วันคืนต้องไม่ผ่านมาแล้ว'); return;
       }
+      // Lot-tracked borrow: qty cannot exceed the chosen lot's remaining
+      // (DB would reject with 'lot current_qty negative' — catch it earlier).
+      if (_borrow.lot && _borrow.qty > (_borrow.lot.current_qty || 0)) {
+        _toast('warning', `ล็อต ${_borrow.lot.lot_number || ''} เหลือ ${_borrow.lot.current_qty || 0} ชิ้น — ลดจำนวนลง`);
+        return;
+      }
       _borrow.step = 4; _renderBorrowStep();
     });
 
@@ -2419,6 +2591,9 @@
           <dd>${_esc(item?.name || '—')} <code class="small">${_esc(item?.sku || '')}</code></dd>
           <dt class="small text-muted">ตำแหน่ง</dt>
           <dd>${_esc(loc?.code || loc?.name || '—')}</dd>
+          ${_borrow.lot ? `<dt class="small text-muted">ล็อต</dt>
+          <dd><code>${_esc(_borrow.lot.lot_number || '')}</code>
+              <span class="text-muted small">หมดอายุ ${_esc(window.AppLots ? window.AppLots.formatThaiDate(_borrow.lot.expiry_date) : (_borrow.lot.expiry_date || '—'))}</span></dd>` : ''}
           <dt class="small text-muted">จำนวน</dt>
           <dd>${_borrow.qty} ชิ้น</dd>
           <dt class="small text-muted">ครบกำหนด</dt>
@@ -2455,6 +2630,7 @@
       dueAt:      _borrow.dueAt,
       note:       _borrow.note || null,
       clientRefId: _borrow.clientRefId,
+      lotId:      _borrow.lot ? _borrow.lot.id : null,
     });
 
     if (r.error) {
