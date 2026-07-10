@@ -1295,6 +1295,11 @@
     const overlay = document.getElementById('bag-checklist-overlay');
     if (overlay) overlay.style.display = 'none';
 
+    // Opened from the ยืม-คืน tab (BAG- code routing): the issue-mode scan UI
+    // is hidden behind the borrow panel — don't restart its camera or touch
+    // its state machine, just drop back to the borrow flow underneath.
+    if (window.__staffScanMode === 'borrow') return;
+
     // Resume scanning if camera was previously started
     if (state.cameraStartedEver && !state.scanning) {
       startScanLoop().catch(handleCameraError);
@@ -1302,6 +1307,11 @@
       setState('PERMISSION_PROMPT');
     }
   }
+
+  // Exposed for the ยืม-คืน IIFE below: scanning a BAG-… code in borrow/return
+  // step 1 routes here (bags are locations, not stock items — "ยืมกระเป๋า" =
+  // เอากระเป๋าขึ้นรถ, which this view already offers).
+  window.StaffScanBagView = { show: _showBagChecklistView };
 
   // --------------------------------------------------------------------------
   // กระเป๋าขึ้นรถ / คืนกระเป๋า — context-aware section in the bag checklist.
@@ -1863,6 +1873,12 @@
     lot:            null,   // chosen lot { id, lot_number, expiry_date, current_qty }
     lots:           [],     // FEFO-sorted available lots for the chosen item
     itemLocs:       null,   // locations holding this item [{id,code,name,qty}] — null until loaded
+    // จุดประสงค์การยืม (Chittawan 2026-07-10): general = งานทั่วไป/สแตนด์บาย,
+    // vehicle = ยืมขึ้นประจำรถ. Persisted as a note prefix → stock_loans.notes.
+    purpose:        'general',  // 'general' | 'vehicle'
+    purposeDetail:  '',         // free text — ชื่องาน (general only, optional)
+    vehicle:        null,       // { id, code, name } (vehicle only)
+    vehicles:       null,       // cached AppBags.listVehicleLocations result
   };
 
   // Return flow state
@@ -1944,6 +1960,9 @@
 
   function _setMode(mode) {
     _mode = mode;
+    // Read by _dismissBagChecklist (issue-mode IIFE) so closing the bag view
+    // opened from ยืม-คืน doesn't restart the hidden issue-mode camera.
+    window.__staffScanMode = mode;
     const issueBtn  = document.getElementById('mode-btn-issue');
     const borrowBtn = document.getElementById('mode-btn-borrow');
     const panel     = document.getElementById('borrow-return-panel');
@@ -2002,6 +2021,7 @@
     _borrow.clientRefId = null;
     _borrow.lot = null; _borrow.lots = [];
     _borrow.itemLocs = null;
+    _borrow.purpose = 'general'; _borrow.purposeDetail = ''; _borrow.vehicle = null;
     _renderBorrowStep();
   }
 
@@ -2117,6 +2137,21 @@
     bsModal.show();
   }
 
+  /**
+   * BAG-… routing for ยืม-คืน step 1 (both borrow and return): if the scanned
+   * code resolves to a type='bag' location, open the bag checklist overlay
+   * (เอากระเป๋าขึ้นรถ / คืนกระเป๋า live there) and report true. Bags are
+   * movable sublocations — contents travel with the bag — so "ยืมกระเป๋า"
+   * is a deploy, not a stock_loans row.
+   */
+  async function _tryRouteBagCode(code) {
+    if (!window.StaffScanBagView || !window.AppInventory) return false;
+    const locRes = await window.AppInventory.findLocationByCode(code);
+    if (!locRes.data || locRes.data.type !== 'bag') return false;
+    window.StaffScanBagView.show(locRes.data);
+    return true;
+  }
+
   function _renderBorrowStep1(body) {
     const camBtn = (window.AppScanner && window.AppScanner.cameraAvailable)
       ? `<button type="button" id="borrow-scan-item-btn" class="btn btn-outline-secondary"
@@ -2142,9 +2177,14 @@
       if (!sku) { _toast('warning', 'กรุณาระบุ SKU หรือ Barcode'); return; }
       const res = await window.AppInventory.searchByBarcode(sku);
       if (res.error || !res.data) {
+        // Not a stock item — maybe a bag QR. "ยืมกระเป๋า" = เอากระเป๋าขึ้นรถ
+        // (bags are movable sublocations, not loans), so route to the bag
+        // view which has the deploy/return buttons (Chittawan 2026-07-10).
+        if (await _tryRouteBagCode(sku)) return;
         document.getElementById('borrow-item-result').innerHTML =
           `<div class="alert alert-warning small">ไม่พบสินค้า — ลองใหม่<br>
-           <span class="text-muted">หมายเหตุ: รหัสกระเป๋า (BAG-…) ไม่ใช่สินค้า — ยืม-คืนใช้ได้กับ "สินค้า" ในคลังเท่านั้น</span></div>`;
+           <span class="text-muted">หมายเหตุ: ถ้าสแกนรหัสกระเป๋า (BAG-…) ระบบจะเปิดหน้ากระเป๋าให้
+           — ใช้ปุ่ม "เอากระเป๋าขึ้นรถ / คืนกระเป๋า" ในหน้านั้นแทนการยืม</span></div>`;
         return;
       }
       const item = res.data;
@@ -2439,6 +2479,25 @@
 
         <div id="borrow-due-preview" class="text-muted small mb-3"></div>
 
+        <label class="form-label small fw-semibold">ยืมไปทำอะไร *</label>
+        <div class="btn-group w-100 mb-2" role="group" aria-label="จุดประสงค์การยืม">
+          <button type="button" id="borrow-purpose-general"
+                  class="btn ${_borrow.purpose === 'general' ? 'btn-stock-primary' : 'btn-outline-secondary'}"
+                  style="min-height:48px;">🧰 งานทั่วไป / สแตนด์บาย</button>
+          <button type="button" id="borrow-purpose-vehicle"
+                  class="btn ${_borrow.purpose === 'vehicle' ? 'btn-stock-primary' : 'btn-outline-secondary'}"
+                  style="min-height:48px;">🚑 ขึ้นประจำรถ</button>
+        </div>
+        <div id="borrow-purpose-general-box" class="${_borrow.purpose === 'general' ? '' : 'd-none'} mb-3">
+          <input type="text" id="borrow-purpose-detail" class="form-control"
+                 placeholder="ชื่องาน / รายละเอียด (ไม่บังคับ)" autocomplete="off"
+                 value="${_esc(_borrow.purposeDetail)}" style="min-height:44px;">
+        </div>
+        <div id="borrow-purpose-vehicle-box" class="${_borrow.purpose === 'vehicle' ? '' : 'd-none'} mb-3">
+          <div id="borrow-vehicle-list" class="text-muted small">
+            <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>กำลังโหลดรายชื่อรถ…</div>
+        </div>
+
         <label class="form-label small">หมายเหตุ (ไม่บังคับ)</label>
         <textarea id="borrow-note" class="form-control mb-3" rows="2"
                   placeholder="หมายเหตุ">${_esc(_borrow.note)}</textarea>
@@ -2486,11 +2545,34 @@
       _borrow.note = ev.target.value;
     });
 
+    // จุดประสงค์การยืม — toggle general/vehicle + lazy-load the vehicle list.
+    function _setPurpose(p) {
+      _borrow.purpose = p;
+      const gBtn = document.getElementById('borrow-purpose-general');
+      const vBtn = document.getElementById('borrow-purpose-vehicle');
+      gBtn?.classList.toggle('btn-stock-primary',     p === 'general');
+      gBtn?.classList.toggle('btn-outline-secondary', p !== 'general');
+      vBtn?.classList.toggle('btn-stock-primary',     p === 'vehicle');
+      vBtn?.classList.toggle('btn-outline-secondary', p !== 'vehicle');
+      document.getElementById('borrow-purpose-general-box')?.classList.toggle('d-none', p !== 'general');
+      document.getElementById('borrow-purpose-vehicle-box')?.classList.toggle('d-none', p !== 'vehicle');
+      if (p === 'vehicle') _renderBorrowVehiclePick();
+    }
+    document.getElementById('borrow-purpose-general')?.addEventListener('click', () => _setPurpose('general'));
+    document.getElementById('borrow-purpose-vehicle')?.addEventListener('click', () => _setPurpose('vehicle'));
+    document.getElementById('borrow-purpose-detail')?.addEventListener('input', (ev) => {
+      _borrow.purposeDetail = ev.target.value.trim();
+    });
+    if (_borrow.purpose === 'vehicle') _renderBorrowVehiclePick();
+
     document.getElementById('borrow-step3-next')?.addEventListener('click', () => {
       _borrow.qty = Math.max(1, parseInt(document.getElementById('borrow-qty')?.value || '1', 10) || 1);
       _borrow.note = document.getElementById('borrow-note')?.value || '';
       if (!_borrow.dueAt || _borrow.dueAt <= new Date()) {
         _toast('warning', 'วันคืนต้องไม่ผ่านมาแล้ว'); return;
+      }
+      if (_borrow.purpose === 'vehicle' && !_borrow.vehicle) {
+        _toast('warning', 'กรุณาเลือกรถที่จะเอาของขึ้นประจำ'); return;
       }
       // Lot-tracked borrow: qty cannot exceed the chosen lot's remaining
       // (DB would reject with 'lot current_qty negative' — catch it earlier).
@@ -2516,6 +2598,67 @@
       btn.classList.toggle('btn-stock-primary', isActive);
       btn.classList.toggle('btn-outline-secondary', !isActive);
     });
+  }
+
+  /**
+   * Render the vehicle picker inside step 3 (purpose = ขึ้นประจำรถ).
+   * Vehicles come from AppBags.listVehicleLocations (active type='ambulance'),
+   * cached on _borrow.vehicles for the rest of this borrow.
+   */
+  async function _renderBorrowVehiclePick() {
+    const box = document.getElementById('borrow-vehicle-list');
+    if (!box) return;
+
+    if (!Array.isArray(_borrow.vehicles)) {
+      if (!window.AppBags || !window.AppBags.listVehicleLocations) {
+        box.innerHTML = '<div class="alert alert-warning small mb-0">โหลดรายชื่อรถไม่สำเร็จ — พิมพ์ชื่อรถในหมายเหตุแทนได้</div>';
+        return;
+      }
+      const r = await window.AppBags.listVehicleLocations();
+      if (r.error || !Array.isArray(r.data)) {
+        box.innerHTML = '<div class="alert alert-warning small mb-0">โหลดรายชื่อรถไม่สำเร็จ — พิมพ์ชื่อรถในหมายเหตุแทนได้</div>';
+        return;
+      }
+      _borrow.vehicles = r.data;
+      // Async guard: user may have switched back to "งานทั่วไป" meanwhile.
+      if (_borrow.purpose !== 'vehicle') return;
+    }
+
+    if (_borrow.vehicles.length === 0) {
+      box.innerHTML = '<div class="alert alert-warning small mb-0">ยังไม่มีรถในระบบ — แจ้ง Admin เพิ่มรถในหน้าสถานที่</div>';
+      return;
+    }
+
+    box.innerHTML = `
+      <div class="small text-muted mb-1">เลือกรถ:</div>
+      <div class="d-flex flex-wrap gap-2">
+        ${_borrow.vehicles.map((v, i) => `
+          <button type="button" data-idx="${i}"
+                  class="btn borrow-vehicle-btn ${_borrow.vehicle?.id === v.id ? 'btn-stock-primary' : 'btn-outline-secondary'}"
+                  style="min-height:48px;">
+            <i class="bi bi-truck me-1" aria-hidden="true"></i>${_esc(v.name || v.code || '')}
+          </button>`).join('')}
+      </div>`;
+
+    box.querySelectorAll('.borrow-vehicle-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        _borrow.vehicle = _borrow.vehicles[parseInt(btn.dataset.idx, 10)] || null;
+        box.querySelectorAll('.borrow-vehicle-btn').forEach((b) => {
+          const on = b === btn;
+          b.classList.toggle('btn-stock-primary', on);
+          b.classList.toggle('btn-outline-secondary', !on);
+        });
+      });
+    });
+  }
+
+  /** Human-readable จุดประสงค์ line — shown in step 5 and prefixed into note. */
+  function _borrowPurposeText() {
+    if (_borrow.purpose === 'vehicle') {
+      const v = _borrow.vehicle;
+      return 'ยืมขึ้นประจำรถ: ' + (v ? (v.name || v.code || '') : '—');
+    }
+    return 'ยืมใช้งานทั่วไป/สแตนด์บาย' + (_borrow.purposeDetail ? ' — ' + _borrow.purposeDetail : '');
   }
 
   function _updateDuePreview() {
@@ -2596,6 +2739,8 @@
               <span class="text-muted small">หมดอายุ ${_esc(window.AppLots ? window.AppLots.formatThaiDate(_borrow.lot.expiry_date) : (_borrow.lot.expiry_date || '—'))}</span></dd>` : ''}
           <dt class="small text-muted">จำนวน</dt>
           <dd>${_borrow.qty} ชิ้น</dd>
+          <dt class="small text-muted">จุดประสงค์</dt>
+          <dd>${_borrow.purpose === 'vehicle' ? '🚑' : '🧰'} ${_esc(_borrowPurposeText())}</dd>
           <dt class="small text-muted">ครบกำหนด</dt>
           <dd>${_esc(due)}</dd>
           <dt class="small text-muted">รูปถ่าย</dt>
@@ -2623,12 +2768,17 @@
 
     if (!_borrow.clientRefId) _borrow.clientRefId = _uuid();
 
+    // จุดประสงค์ leads the note so it lands verbatim in stock_loans.notes
+    // (create_loan_from_borrow copies note → notes) and the admin loan list.
+    const noteParts = [_borrowPurposeText()];
+    if (_borrow.note) noteParts.push(_borrow.note);
+
     const r = await window.AppLoans.createBorrow({
       itemId:     _borrow.item.id,
       locationId: _borrow.location.id,
       qty:        _borrow.qty,
       dueAt:      _borrow.dueAt,
-      note:       _borrow.note || null,
+      note:       noteParts.join(' | '),
       clientRefId: _borrow.clientRefId,
       lotId:      _borrow.lot ? _borrow.lot.id : null,
     });
@@ -2728,6 +2878,8 @@
 
       const itemRes = await window.AppInventory.searchByBarcode(sku);
       if (itemRes.error || !itemRes.data) {
+        // Bag QR? Route to the bag view — คืนกระเป๋า lives there.
+        if (await _tryRouteBagCode(sku)) return;
         document.getElementById('return-loan-result').innerHTML =
           `<div class="alert alert-warning small">ไม่พบสินค้า — ลองใหม่</div>`;
         return;
@@ -2939,6 +3091,7 @@
 
   function _injectAndBind() {
     _borrow.dueAt = window.AppLoans ? window.AppLoans.defaultDueAt() : _defaultDue();
+    window.__staffScanMode = _mode;   // default 'issue' until the user toggles
     _injectModeToggle();
   }
 
