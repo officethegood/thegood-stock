@@ -68,7 +68,8 @@
     if (msg.includes('ล็อตหมดอายุหรือถูกเรียกคืน')) {
       return 'ล็อตนี้หมดอายุหรือถูกเรียกคืน — เลือกล็อตอื่น';
     }
-    if (msg.includes('lot current_qty negative')) {
+    if (msg.includes('lot current_qty negative') ||
+        msg.includes('stock_lots_current_qty_check')) {
       return 'ของในล็อตไม่พอ — ไม่สามารถยืมได้';
     }
     if (msg.includes('lot_id is required')) {

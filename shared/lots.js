@@ -329,6 +329,14 @@
     if (msg.includes('ล็อตหมดอายุหรือถูกเรียกคืน')) {
       return 'ล็อตนี้หมดอายุหรือถูกเรียกคืน — เลือกล็อตอื่น';
     }
+    // Lot balance would go below zero. Two surfaces of the same condition:
+    // the table CHECK (stock_lots_current_qty_check) aborts the UPDATE before
+    // the trigger's guard string ('would drive lot current_qty negative') can
+    // be raised — map both so the user never sees the raw constraint text.
+    if (msg.includes('stock_lots_current_qty_check') ||
+        msg.includes('lot current_qty negative')) {
+      return 'ของในล็อตไม่พอ — เลือกล็อตอื่นหรือลดจำนวน';
+    }
     return null;
   }
 
