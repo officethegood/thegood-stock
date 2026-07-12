@@ -42,8 +42,25 @@
         <div class="text-center text-muted py-4">
           <span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด…
         </div>
-      </div>
-      <!-- Create/Edit Modal -->
+      </div>`;
+
+    _ensureModal();
+    containerEl.querySelector('#tpl-btn-add').addEventListener('click', () => openModal(null));
+
+    await loadList();
+  }
+
+  // ==========================================================================
+  // Create/Edit modal — appended to <body> ONCE so it can be opened from
+  // anywhere (templates panel AND the bag detail's "สร้างเทมเพลตจากของใน
+  // กระเป๋า" shortcut, 2026-07-12), not only after renderPanel.
+  // ==========================================================================
+
+  function _ensureModal() {
+    if (document.getElementById('tpl-modal')) return;
+
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
       <div class="modal fade" id="tpl-modal" tabindex="-1" aria-labelledby="tpl-modal-title" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-scrollable">
           <div class="modal-content">
@@ -107,12 +124,11 @@
           </div>
         </div>
       </div>`;
+    const modalEl = wrap.firstElementChild;
+    document.body.appendChild(modalEl);
 
-    containerEl.querySelector('#tpl-btn-add').addEventListener('click', () => openModal(null));
-    containerEl.querySelector('#tpl-item-add-btn').addEventListener('click', addItemRow);
-    containerEl.querySelector('#tpl-modal-save').addEventListener('click', onSave);
-
-    await loadList();
+    modalEl.querySelector('#tpl-item-add-btn').addEventListener('click', () => addItemRow());
+    modalEl.querySelector('#tpl-modal-save').addEventListener('click', onSave);
   }
 
   // ==========================================================================
@@ -186,11 +202,14 @@
 
   let _editId    = null;      // null = create mode
   let _editItems = [];        // current item rows in modal
+  let _onSavedCb = null;      // one-shot callback(templateId) after a successful save
 
-  async function openModal(templateId) {
+  async function openModal(templateId, opts = {}) {
     _editId    = templateId;
     _editItems = [];
+    _onSavedCb = typeof opts.onSaved === 'function' ? opts.onSaved : null;
 
+    _ensureModal();
     const modal = document.getElementById('tpl-modal');
     if (!modal) return;
 
@@ -203,6 +222,16 @@
     document.getElementById('tpl-code-err').textContent = '';
     document.getElementById('tpl-modal-title').textContent =
       templateId ? 'แก้ไขเทมเพลต' : 'สร้างเทมเพลต';
+
+    // Create mode with prefill (สร้างเทมเพลตจากของในกระเป๋า, 2026-07-12)
+    if (!templateId && opts.prefill) {
+      const p = opts.prefill;
+      document.getElementById('tpl-code').value     = (p.code || '').toUpperCase();
+      document.getElementById('tpl-name').value     = p.name || '';
+      document.getElementById('tpl-category').value = p.category || '';
+      document.getElementById('tpl-desc').value     = p.description || '';
+      (p.items || []).forEach((it) => addItemRow(it));
+    }
 
     // In edit mode: load existing data
     if (templateId) {
@@ -409,7 +438,13 @@
 
       bootstrap.Modal.getInstance(document.getElementById('tpl-modal'))?.hide();
       _toast(hasError ? 'warning' : 'success', hasError ? 'บันทึกบางรายการไม่สำเร็จ' : 'บันทึกเทมเพลตแล้ว');
-      await loadList();
+      await loadList();   // no-op when the templates panel isn't on screen
+
+      // One-shot hook for the bag-detail shortcut (auto-assign to the bag).
+      if (_onSavedCb) {
+        const cb = _onSavedCb; _onSavedCb = null;
+        try { await cb(templateId); } catch { /* caller handles its own errors */ }
+      }
     } finally {
       saveBtn.disabled = false;
       saveBtn.querySelector('.btn-text').textContent = 'บันทึก';
@@ -417,7 +452,33 @@
   }
 
   // ==========================================================================
+  // สร้างเทมเพลตจากของในกระเป๋า — shortcut from the bag detail (2026-07-12).
+  // Opens the create modal prefilled from the bag's ACTUAL contents; when
+  // saved, onSaved(templateId) lets the caller assign it to the bag.
+  //
+  // @param {{ bag_code: string, bag_name?: string }} bagInfo
+  // @param {Array} contents   rows from AppBags.getBagActualContents
+  // @param {Function} onSaved callback(templateId)
+  // ==========================================================================
+  function openCreateForBag(bagInfo, contents, onSaved) {
+    openModal(null, {
+      prefill: {
+        code: ('TPL-' + (bagInfo?.bag_code || '')).slice(0, 30),
+        name: bagInfo?.bag_name || bagInfo?.bag_code || '',
+        items: (contents || []).map((c) => ({
+          item_id:    c.item_id,
+          item_name:  c.stock_items?.name || '',
+          item_sku:   c.stock_items?.sku  || '',
+          target_qty: c.qty,
+          mandatory:  true,
+        })),
+      },
+      onSaved,
+    });
+  }
+
+  // ==========================================================================
   // Public namespace
   // ==========================================================================
-  window.AppBagTemplates = { renderPanel };
+  window.AppBagTemplates = { renderPanel, openModal, openCreateForBag };
 })();

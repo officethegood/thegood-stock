@@ -1314,7 +1314,8 @@
       </div>` : ''}
 
       ${!bag.bag_template_id ? `
-        <div class="alert alert-warning small">กระเป๋านี้ยังไม่มีเทมเพลต — ไม่สามารถตรวจสอบได้</div>` : ''}
+        <div class="alert alert-warning small">กระเป๋านี้ยังไม่มีเทมเพลต — เช็คครบ/ขาดไม่ได้
+        (รายการด้านล่างคือของที่อยู่ในกระเป๋าจริงตอนนี้)</div>` : ''}
 
       ${['low_stock','expiring','expired'].includes(bag.alert_level) ? `
         <div class="alert alert-warning small">
@@ -1331,11 +1332,9 @@
           <i class="bi bi-check-circle-fill me-1"></i>กระเป๋านี้สมบูรณ์พร้อมใช้งาน
         </div>` : ''}
 
-      <h6>ตรวจสอบของในกระเป๋า</h6>
+      <h6>${bag.bag_template_id ? 'ตรวจสอบของในกระเป๋า' : 'ของในกระเป๋าตอนนี้'}</h6>
       <div id="bag-cl-composition">
-        ${bag.bag_template_id
-          ? '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>กำลังโหลดรายการ…</div>'
-          : '<p class="text-muted small">ไม่มีเทมเพลต</p>'}
+        <div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>กำลังโหลดรายการ…</div>
       </div>
 
       <!-- กระเป๋าขึ้นรถ / คืนกระเป๋า (rendered async once the parent is known) -->
@@ -1391,6 +1390,38 @@
               <tr><th>สินค้า</th><th class="text-center">ปัจจุบัน/เป้า</th><th>ผล</th></tr>
             </thead>
             <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>`;
+    } else {
+      // No template (2026-07-12): show the bag's ACTUAL contents — items moved
+      // into the bag used to be invisible here, which read as "ของหาย".
+      const { data: contents, error: cErr } =
+        await window.AppBags.getBagActualContents(bag.location_id);
+      const compEl = document.getElementById('bag-cl-composition');
+      if (!compEl) return;
+
+      if (cErr) {
+        compEl.innerHTML = `<p class="text-muted small">โหลดรายการไม่สำเร็จ — ลองใหม่</p>`;
+        return;
+      }
+      if (!contents || contents.length === 0) {
+        compEl.innerHTML = `<p class="text-muted small">กระเป๋าว่าง — ยังไม่มีของข้างใน</p>`;
+        return;
+      }
+
+      compEl.innerHTML = `
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered align-middle">
+            <thead class="table-light">
+              <tr><th>สินค้า</th><th class="text-center" style="width:100px">จำนวน</th></tr>
+            </thead>
+            <tbody>
+              ${contents.map((r) => `
+                <tr>
+                  <td><small><code>${escapeHtml(r.stock_items?.sku || '')}</code> ${escapeHtml(r.stock_items?.name || '')}</small></td>
+                  <td class="text-center"><small>${escapeHtml(String(r.qty))} ${escapeHtml(r.stock_items?.unit || 'ชิ้น')}</small></td>
+                </tr>`).join('')}
+            </tbody>
           </table>
         </div>`;
     }

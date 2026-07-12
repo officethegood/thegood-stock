@@ -226,6 +226,46 @@
   }
 
   // ==========================================================================
+  // Actual contents — what is physically inside the bag right now
+  // (stock_item_locations at the bag-location; template NOT required).
+  // Added 2026-07-12: bags without a template showed nothing even when items
+  // had been moved in — the bag view must always show reality.
+  // ==========================================================================
+
+  /**
+   * List items currently inside a bag-location (qty > 0), joined for display.
+   * @param {string} locationId  bag-location UUID
+   * @returns rows: { item_id, qty, stock_items: { sku, name, unit, tracks_lots } }
+   */
+  async function getBagActualContents(locationId) {
+    return _safe(() =>
+      _sb()
+        .from('stock_item_locations')
+        .select('item_id, qty, stock_items(sku, name, unit, tracks_lots)')
+        .eq('location_id', locationId)
+        .gt('qty', 0)
+        .order('qty', { ascending: false })
+    );
+  }
+
+  /**
+   * Link a template to a bag-location (locations.bag_template_id).
+   * RLS: Admin-only in practice (locations update policy).
+   * @param {string} locationId
+   * @param {string|null} templateId  null = unlink
+   */
+  async function assignTemplateToBag(locationId, templateId) {
+    return _safe(() =>
+      _sb()
+        .from('locations')
+        .update({ bag_template_id: templateId })
+        .eq('id', locationId)
+        .select('id, bag_template_id')
+        .single()
+    );
+  }
+
+  // ==========================================================================
   // Lot-tracked items in a bag (for the lots expandable section)
   // ==========================================================================
 
@@ -467,6 +507,8 @@
     // Detail
     getBagComposition,
     getBagLotsAtLocation,
+    getBagActualContents,
+    assignTemplateToBag,
     // Restock
     buildShoppingList,
     submitRestockItem,

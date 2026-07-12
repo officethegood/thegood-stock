@@ -47,6 +47,7 @@
   let _filterSearch  = '';       // text search
   let _selectedBag   = null;     // selected v_bag_status row
   let _view          = 'list';   // 'list' | 'detail' | 'restock' | 'templates'
+  let _detailContents = [];      // actual contents of the bag shown in detail (2026-07-12)
 
   // Restock flow state
   let _restockBag    = null;     // selected bag row for restock
@@ -313,7 +314,19 @@
       <p class="text-muted">${_esc(bag.bag_name || '')}</p>
       ${bag.template_name
         ? `<p class="small">เทมเพลต: <strong>${_esc(bag.template_name)}</strong> (${_esc(bag.template_code || '')})</p>`
-        : `<div class="alert alert-warning small">กระเป๋านี้ยังไม่มีเทมเพลต — กำหนดเทมเพลตก่อนเริ่มตรวจสอบ</div>`}
+        : `<div class="alert alert-warning small" id="bags-no-tpl-box">
+             กระเป๋านี้ยังไม่มีเทมเพลต — เทมเพลตคือรายการ "ของที่ควรมี" ไว้เช็คครบ/ขาด
+             (ของที่อยู่ในกระเป๋าจริงแสดงด้านล่างเสมอ)
+             <div class="d-flex gap-2 mt-2 flex-wrap align-items-center">
+               <select id="bags-assign-tpl-select" class="form-select form-select-sm" style="max-width:230px;">
+                 <option value="">— เลือกเทมเพลตที่มีอยู่ —</option>
+               </select>
+               <button class="btn btn-sm btn-stock-primary" id="bags-assign-tpl-btn">ใช้เทมเพลตนี้</button>
+               <button class="btn btn-sm btn-outline-secondary" id="bags-create-tpl-btn">
+                 <i class="bi bi-magic me-1"></i>สร้างเทมเพลตจากของในกระเป๋า
+               </button>
+             </div>
+           </div>`}
 
       ${bag.completion_pct !== null ? `
       <div class="mb-3">
@@ -331,6 +344,8 @@
         <div class="text-center text-muted py-3"><span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด…</div>
       </div>
 
+      <div id="bags-detail-actual" class="mt-3"></div>
+
       <div id="bags-detail-lots" class="mt-3"></div>
 
       <div class="mt-3">
@@ -342,7 +357,8 @@
     area.querySelector('#bags-detail-back').addEventListener('click', () => _showListView());
     area.querySelector('#bags-btn-restock').addEventListener('click', () => _startRestockFlow(bag));
 
-    // Load composition
+    // Load composition (template checklist)
+    let compItemIds = null;
     if (bag.bag_template_id) {
       const { data: comp, error } = await window.AppBags.getBagComposition(bag.location_id, bag.bag_template_id);
       if (error) {
@@ -350,11 +366,116 @@
           `<div class="alert alert-danger small">โหลดรายการไม่สำเร็จ</div>`;
       } else {
         _renderComposition(comp || []);
+        compItemIds = new Set((comp || []).map((r) => r.item_id));
         await _loadBagLotsSection(bag.location_id);
       }
     } else {
       document.getElementById('bags-detail-composition').innerHTML = '';
+      _initNoTemplateActions(bag);
     }
+
+    // Actual contents — always shown, template or not (2026-07-12: items moved
+    // into a template-less bag were invisible in this view).
+    await _loadActualContents(bag, compItemIds);
+  }
+
+  /**
+   * "ของในกระเป๋าตอนนี้" — the physical truth from stock_item_locations.
+   * No template → full list. With template → only the EXTRA items that are
+   * not part of the checklist (the checklist table already shows the rest).
+   */
+  async function _loadActualContents(bag, compItemIds) {
+    const el = document.getElementById('bags-detail-actual');
+    if (!el) return;
+
+    const { data, error } = await window.AppBags.getBagActualContents(bag.location_id);
+    if (error) { el.innerHTML = ''; return; }   // fail-soft: section is additive
+
+    // Cache for the "สร้างเทมเพลตจากของในกระเป๋า" shortcut (even when empty).
+    _detailContents = data || [];
+
+    let rows = data || [];
+    let heading = '🎒 ของในกระเป๋าตอนนี้';
+    if (compItemIds) {
+      rows = rows.filter((r) => !compItemIds.has(r.item_id));
+      if (!rows.length) { el.innerHTML = ''; return; }
+      heading = '➕ ของอื่นในกระเป๋า (นอกเทมเพลต)';
+    } else if (!rows.length) {
+      el.innerHTML = `<h6>🎒 ของในกระเป๋าตอนนี้</h6>
+        <p class="text-muted small">กระเป๋าว่าง — ยังไม่มีของข้างใน
+        (ย้ายของเข้ากระเป๋าได้จากหน้าสแกน: สแกนสินค้า → ย้าย → ปลายทางเป็นกระเป๋านี้)</p>`;
+      return;
+    }
+
+    el.innerHTML = `
+      <h6>${heading} <span class="text-muted small fw-normal">(${rows.length} รายการ)</span></h6>
+      <div class="table-responsive">
+        <table class="table table-sm table-bordered align-middle">
+          <thead class="table-light"><tr><th>สินค้า</th><th class="text-center" style="width:110px">จำนวน</th></tr></thead>
+          <tbody>
+            ${rows.map((r) => `
+              <tr>
+                <td><small><code>${_esc(r.stock_items?.sku || '')}</code> ${_esc(r.stock_items?.name || '')}</small></td>
+                <td class="text-center"><small>${_esc(String(r.qty))} ${_esc(r.stock_items?.unit || 'ชิ้น')}</small></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  /**
+   * No-template actions in the detail view (2026-07-12): assign an existing
+   * template, or create one prefilled from the bag's actual contents — then
+   * auto-link it to this bag. Ends the "กดเพิ่มเทมเพลตแล้วไปต่อไม่ถูก" dead end.
+   */
+  async function _initNoTemplateActions(bag) {
+    const sel = document.getElementById('bags-assign-tpl-select');
+    const assignBtn = document.getElementById('bags-assign-tpl-btn');
+    const createBtn = document.getElementById('bags-create-tpl-btn');
+    if (!sel || !assignBtn || !createBtn) return;
+
+    const { data: tpls } = await window.AppBags.listTemplates({ activeOnly: true });
+    (tpls || []).forEach((t) => {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = `${t.code} — ${t.name}`;
+      sel.appendChild(opt);
+    });
+
+    async function _assignAndRefresh(templateId) {
+      const { error } = await window.AppBags.assignTemplateToBag(bag.location_id, templateId);
+      if (error) {
+        _toast('error', 'ผูกเทมเพลตไม่สำเร็จ: ' + (error.message || ''));
+        return;
+      }
+      _toast('success', 'ผูกเทมเพลตกับกระเป๋าแล้ว');
+      // Re-read v_bag_status so the detail view reflects the new checklist.
+      const fresh = await window.AppBags.getBagStatus(bag.location_id);
+      if (fresh?.data) {
+        const i = _bags.findIndex((b) => b.location_id === bag.location_id);
+        if (i >= 0) _bags[i] = fresh.data;
+        _showDetailView(fresh.data);
+      } else {
+        _loadBagList();
+      }
+    }
+
+    assignBtn.addEventListener('click', () => {
+      if (!sel.value) { _toast('warning', 'เลือกเทมเพลตก่อน'); return; }
+      _assignAndRefresh(sel.value);
+    });
+
+    createBtn.addEventListener('click', () => {
+      if (!window.AppBagTemplates?.openCreateForBag) {
+        _toast('error', 'โมดูลเทมเพลตไม่ถูกโหลด — รีเฟรชหน้าใหม่');
+        return;
+      }
+      window.AppBagTemplates.openCreateForBag(
+        { bag_code: bag.bag_code, bag_name: bag.bag_name },
+        _detailContents || [],
+        (templateId) => _assignAndRefresh(templateId)
+      );
+    });
   }
 
   function _renderComposition(rows) {
