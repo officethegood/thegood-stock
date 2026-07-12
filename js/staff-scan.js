@@ -74,6 +74,9 @@
       /** @type {Array}                                 */ availableLots:  [],   // FEFO-sorted lots from API
       /** @type {object|null}                           */ selectedLot:    null, // chosen lot
       /** @type {boolean}                               */ fefoOverride:   false,// true when non-FEFO lot confirmed
+      // เบิกของหมดอายุ (20260712020000) — set by the red ack modal
+      /** @type {boolean}                               */ expiredAck:     false,
+      /** @type {string}                                */ expiredReason:  '',
     },
     /** Set true once camera has been successfully started at least once.  */
     cameraStartedEver: false,
@@ -366,7 +369,10 @@
     if (state.name === 'LOT_PICK') {
       // Build lot picker panel
       const lots = state.ctx.availableLots || [];
-      const selectedId = state.ctx.selectedLot ? state.ctx.selectedLot.id : (lots[0] ? lots[0].id : null);
+      // FEFO anchor = first ACTIVE lot (expired lots sort first by expiry).
+      const fefoActive = lots.find((l) => l.status === 'active') || null;
+      const selectedId = state.ctx.selectedLot ? state.ctx.selectedLot.id
+                       : (fefoActive ? fefoActive.id : null);
 
       // Lot chip display
       const lotChipHtml = state.ctx.selectedLot
@@ -375,7 +381,10 @@
             const fefoNote = state.ctx.fefoOverride
               ? ' <span class="badge bg-warning text-dark ms-1 small">FEFO override</span>'
               : '';
-            return `<span class="badge ${badge.badgeClass}">${escapeHtml(state.ctx.selectedLot.lot_number)}</span>${fefoNote}`;
+            const expNote = state.ctx.expiredAck
+              ? ' <span class="badge bg-danger ms-1 small">เบิกของหมดอายุ</span>'
+              : '';
+            return `<span class="badge ${badge.badgeClass}">${escapeHtml(state.ctx.selectedLot.lot_number)}</span>${fefoNote}${expNote}`;
           }())
         : '—';
 
@@ -408,7 +417,7 @@
       if (window.AppLots && pickerContainer) {
         const pickerEl = window.AppLots.renderLotPicker(lots, selectedId, (lot) => {
           _handleLotSelect(lot);
-        });
+        }, { allowExpired: true });   // เบิกของหมดอายุได้หลังยืนยัน (20260712020000)
         pickerContainer.appendChild(pickerEl);
       }
 
@@ -429,17 +438,98 @@
    */
   function _handleLotSelect(lot) {
     const lots = state.ctx.availableLots || [];
-    const isFEFO = lots.length > 0 && lots[0].id === lot.id;
 
-    if (isFEFO) {
+    // เบิกของหมดอายุ (20260712020000): expired lot needs the red ack modal —
+    // reason required, ห้ามใช้กับผู้ป่วย. Sets expiredAck + expiredReason.
+    if (lot.status === 'expired') {
+      _showExpiredConfirmModal(lot);
+      return;
+    }
+
+    // FEFO anchor = first ACTIVE lot (expired lots sort first by expiry).
+    const fefoLot = lots.find((l) => l.status === 'active') || null;
+    if (fefoLot && fefoLot.id === lot.id) {
       // FEFO default — select immediately, no confirmation
-      setState('LOT_PICK', { selectedLot: lot, fefoOverride: false });
+      setState('LOT_PICK', { selectedLot: lot, fefoOverride: false, expiredAck: false, expiredReason: '' });
       return;
     }
 
     // Non-FEFO selection — Q-D2 confirm modal
     // Exact copy: "ล็อต {lot_number} ไม่ใช่ล็อตที่ควรใช้ก่อน — ยืนยันหรือไม่?"
     _showFEFOConfirmModal(lot);
+  }
+
+  /**
+   * Red ack modal for issuing from an EXPIRED lot (20260712020000).
+   * Reason is mandatory — it is prefixed into the movement note so the ledger
+   * records who took expired stock and why (training / disposal).
+   */
+  function _showExpiredConfirmModal(lot) {
+    const old = document.getElementById('expired-confirm-modal');
+    if (old) old.remove();
+
+    const expDate = window.AppLots ? window.AppLots.formatThaiDate(lot.expiry_date) : (lot.expiry_date || '—');
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      <div class="modal fade" id="expired-confirm-modal" tabindex="-1" aria-labelledby="expired-modal-title">
+        <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title text-danger" id="expired-modal-title">
+                <i class="bi bi-exclamation-octagon-fill"></i> ล็อตนี้หมดอายุแล้ว
+              </h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+            </div>
+            <div class="modal-body">
+              <div class="alert alert-danger small">
+                ล็อต <strong>${escapeHtml(lot.lot_number || '')}</strong> หมดอายุ ${escapeHtml(expDate)}
+                — <strong>ห้ามใช้กับผู้ป่วยเด็ดขาด</strong><br>
+                เบิกได้เฉพาะกรณีไม่ใช้กับผู้ป่วย เช่น ใช้ฝึกซ้อม/อบรม หรือส่งทำลาย
+              </div>
+              <label class="form-label small fw-semibold" for="expired-reason">เหตุผลที่เบิก *</label>
+              <input type="text" id="expired-reason" class="form-control"
+                     placeholder="เช่น ใช้ฝึกซ้อม CPR / ส่งทำลาย" autocomplete="off"
+                     style="min-height:44px;">
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" id="expired-cancel-btn"
+                      style="min-height:44px;">ยกเลิก</button>
+              <button type="button" class="btn btn-danger" id="expired-confirm-btn"
+                      style="min-height:44px;">ยืนยันเบิกของหมดอายุ</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    const modalEl = wrap.firstElementChild;
+    document.body.appendChild(modalEl);
+    const modal = new bootstrap.Modal(modalEl);
+
+    modalEl.querySelector('#expired-confirm-btn').addEventListener('click', () => {
+      const reason = (modalEl.querySelector('#expired-reason')?.value || '').trim();
+      if (!reason) {
+        window.showToast('warning', 'กรุณาระบุเหตุผลที่เบิกของหมดอายุ');
+        return;
+      }
+      modal.hide();
+      setState('LOT_PICK', {
+        selectedLot:   lot,
+        fefoOverride:  true,      // server recomputes anyway; chip shows override
+        expiredAck:    true,
+        expiredReason: reason,
+      });
+    });
+
+    modalEl.querySelector('#expired-cancel-btn').addEventListener('click', () => {
+      modal.hide();
+      const fefoLot = (state.ctx.availableLots || []).find((l) => l.status === 'active') || null;
+      setState('LOT_PICK', { selectedLot: fefoLot, fefoOverride: false, expiredAck: false, expiredReason: '' });
+    });
+
+    modalEl.addEventListener('hidden.bs.modal', () => {
+      try { modalEl.remove(); } catch { /* ignore */ }
+    });
+
+    modal.show();
   }
 
   /**
@@ -483,14 +573,14 @@
     modalEl.querySelector('#fefo-confirm-btn').addEventListener('click', () => {
       modal.hide();
       // User confirmed non-FEFO lot — set fefoOverride=true
-      setState('LOT_PICK', { selectedLot: lot, fefoOverride: true });
+      setState('LOT_PICK', { selectedLot: lot, fefoOverride: true, expiredAck: false, expiredReason: '' });
     });
 
     modalEl.querySelector('#fefo-cancel-btn').addEventListener('click', () => {
       modal.hide();
-      // Revert to FEFO default
-      const fefoLot = state.ctx.availableLots[0] || null;
-      setState('LOT_PICK', { selectedLot: fefoLot, fefoOverride: false });
+      // Revert to FEFO default (first ACTIVE lot — expired lots sort first)
+      const fefoLot = (state.ctx.availableLots || []).find((l) => l.status === 'active') || null;
+      setState('LOT_PICK', { selectedLot: fefoLot, fefoOverride: false, expiredAck: false, expiredReason: '' });
     });
 
     modalEl.addEventListener('hidden.bs.modal', () => {
@@ -538,9 +628,14 @@
       }
     }
 
-    setState('LOT_LOADING', { availableLots: [], selectedLot: null, fefoOverride: false });
+    setState('LOT_LOADING', { availableLots: [], selectedLot: null, fefoOverride: false,
+                              expiredAck: false, expiredReason: '' });
 
-    const { data, error } = await window.AppLots.fetchAvailableLots(ctx.item.id);
+    // fetchIssuableLots includes EXPIRED lots (issuable behind the red ack
+    // modal, 20260712020000). Fallback keeps old active-only behavior when
+    // a stale cached lots.js lacks the new helper.
+    const fetchFn = window.AppLots.fetchIssuableLots || window.AppLots.fetchAvailableLots;
+    const { data, error } = await fetchFn(ctx.item.id);
     if (error) {
       // M-61: load error
       window.showToast('error', 'โหลดล็อตยาไม่สำเร็จ (M-61) — ลองใหม่อีกครั้ง (M-62)');
@@ -555,11 +650,14 @@
       return true;
     }
 
-    // Pre-select FEFO default (lots[0])
+    // Pre-select FEFO default = first ACTIVE lot (expired lots sort first by
+    // expiry — never auto-select those; user must tap + ack explicitly).
     setState('LOT_PICK', {
       availableLots: lots,
-      selectedLot:   lots[0],
+      selectedLot:   lots.find((l) => l.status === 'active') || null,
       fefoOverride:  false,
+      expiredAck:    false,
+      expiredReason: '',
     });
     return true;
   }
@@ -932,6 +1030,11 @@
         const sb = getSupabaseClient();
         const POSITIVE = new Set(['receive', 'adjustment_gain']);
         const qty_delta = POSITIVE.has(ctx.action) ? ctx.qty : -ctx.qty;
+        // เบิกของหมดอายุ: reason leads the note; expired_ack unlocks the DB
+        // guard for movement_type=issue only (20260712020000).
+        const noteParts = [];
+        if (ctx.expiredAck) noteParts.push('เบิกของหมดอายุ — ' + (ctx.expiredReason || ''));
+        if (ctx.note) noteParts.push(ctx.note);
         const rawRes = await sb.from('stock_movements').insert({
           client_ref_id:  ctx.clientRefId,
           item_id:        ctx.item.id,
@@ -940,7 +1043,8 @@
           qty_delta:      qty_delta,
           lot_id:         ctx.selectedLot.id,
           fefo_override:  ctx.fefoOverride,
-          note:           ctx.note || null,
+          expired_ack:    ctx.expiredAck === true,
+          note:           noteParts.length ? noteParts.join(' | ') : null,
         }).select().single();
         data  = rawRes.data ? { movement: rawRes.data, replay: false, client_ref_id: ctx.clientRefId } : null;
         error = rawRes.error;
@@ -1043,6 +1147,7 @@
       qty: 0, action: 'issue', note: '', clientRefId: null,
       // Phase 2 lot fields
       availableLots: [], selectedLot: null, fefoOverride: false,
+      expiredAck: false, expiredReason: '',
     };
     el.mQty.value  = '';
     el.mNote.value = '';

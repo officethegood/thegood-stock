@@ -84,6 +84,28 @@
   }
 
   /**
+   * Fetch lots issuable from the เบิก-จ่าย flow: active AND expired lots with
+   * stock remaining (20260712020000 — expired stock is issuable behind an
+   * explicit red-modal ack, for training/disposal use). Queries stock_lots
+   * directly — v_lots_with_remaining stays active-only on purpose, because
+   * every other consumer (borrow, bag restock) must NOT offer expired lots.
+   *
+   * @param {string} itemId - UUID of the stock_item
+   * @returns {Promise<{ data: Array, error: object|null }>}
+   */
+  async function fetchIssuableLots(itemId) {
+    return _safe(() =>
+      _sb()
+        .from('stock_lots')
+        .select('id,lot_number,expiry_date,current_qty,supplier,status,item_id,stock_items!inner(unit)')
+        .eq('item_id', itemId)
+        .in('status', ['active', 'expired'])
+        .gt('current_qty', 0)
+        .order('expiry_date', { ascending: true })
+    );
+  }
+
+  /**
    * Fetch all lots for an item (all statuses — for admin lot list).
    * Joins stock_items so the lot list can show item name/sku/unit.
    *
@@ -355,12 +377,17 @@
    * Tap target height: min 44px per mobile-first requirement.
    *
    * @param {Array}    lots          - FEFO-sorted array of lot objects from fetchAvailableLots
-   * @param {string}   selectedLotId - Pre-selected lot id (default: lots[0].id)
+   * @param {string}   selectedLotId - Pre-selected lot id (default: first active lot)
    * @param {Function} onSelect      - Callback(lot) called when a selectable lot is tapped
+   * @param {{ allowExpired?: boolean }} [opts]
+   *        allowExpired: expired lots are tappable (เบิกของหมดอายุ flow,
+   *        20260712020000 — caller shows the red ack modal). recalled lots are
+   *        NEVER tappable. Default false = Q-D1 behavior unchanged.
    * @returns {HTMLElement}          - Container div ready to insert into DOM
    */
-  function renderLotPicker(lots, selectedLotId, onSelect) {
+  function renderLotPicker(lots, selectedLotId, onSelect, opts = {}) {
     const DEFAULT_SHOW = 5;   // Q-D4
+    const allowExpired = opts.allowExpired === true;
     const container = document.createElement('div');
     container.className = 'lot-picker';
     container.setAttribute('role', 'listbox');
@@ -375,11 +402,15 @@
       return container;
     }
 
-    const currentId = selectedLotId || lots[0].id;
+    // FEFO anchor = first ACTIVE lot. With expired lots in the list (they sort
+    // first — earliest expiry), index 0 is no longer necessarily the FEFO pick.
+    const fefoLot   = lots.find((l) => l.status === 'active') || null;
+    const currentId = selectedLotId || (fefoLot ? fefoLot.id : null);
 
     function buildCard(lot, isFefoDefault) {
       const badge    = getLotBadge(lot);
-      const isBlocked = lot.status === 'expired' || lot.status === 'recalled';
+      const isBlocked = lot.status === 'recalled' ||
+                        (lot.status === 'expired' && !allowExpired);
       const isSelected = lot.id === currentId;
 
       const card = document.createElement('div');
@@ -387,6 +418,7 @@
         'card mb-2 lot-picker-card',
         isSelected ? 'border-primary' : '',
         isBlocked  ? 'lot-picker-card--blocked opacity-50' : '',
+        (!isBlocked && lot.status === 'expired') ? 'border-danger' : '',
       ].join(' ').trim();
       card.dataset.lotId = lot.id;
       card.setAttribute('role', 'option');
@@ -417,8 +449,11 @@
         <div class="card-body py-2 px-3" style="min-height:44px;">
           <div class="d-flex justify-content-between align-items-start gap-2">
             <div class="flex-grow-1">
-              ${isFefoDefault && !isBlocked
+              ${isFefoDefault && !isBlocked && lot.status === 'active'
                 ? '<span class="badge bg-primary-subtle text-primary me-1 small">FEFO — เลือกอัตโนมัติ</span>'
+                : ''}
+              ${(!isBlocked && lot.status === 'expired')
+                ? '<span class="badge bg-danger-subtle text-danger me-1 small">หมดอายุ — เบิกได้เมื่อยืนยัน</span>'
                 : ''}
               <span class="fw-semibold">${_esc(lot.lot_number)}</span>
               ${isBlocked ? `<span class="ms-1 small text-muted">(${badge.label})</span>` : ''}
@@ -437,7 +472,8 @@
     const visibleLots = lots.slice(0, DEFAULT_SHOW);
     const hiddenLots  = lots.slice(DEFAULT_SHOW);
 
-    visibleLots.forEach((lot, i) => container.appendChild(buildCard(lot, i === 0)));
+    visibleLots.forEach((lot) =>
+      container.appendChild(buildCard(lot, !!fefoLot && lot.id === fefoLot.id)));
 
     if (hiddenLots.length > 0) {
       const totalCount = lots.length;
@@ -497,6 +533,7 @@
   window.AppLots = {
     // REST helpers
     fetchAvailableLots,
+    fetchIssuableLots,
     fetchAllLots,
     fetchAllLotsForAdmin,
     createLot,
