@@ -5,7 +5,7 @@
 **Blocking:** T185 (partial fail) — ambulance locations cannot be created via UI
 **Found by:** QA (Run 2 live functional test @ aefa347)
 **Owner:** FE agent
-**Status:** Open
+**Status:** Fixed — verified in code 2026-07-15: `js/locations.js` renders an ambulance selector when type=ambulance, requires it before save, and writes `ambulance_id` in the payload (comment cites BUG-T185-01)
 
 ---
 

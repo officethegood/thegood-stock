@@ -13,6 +13,9 @@ const CONFIG = {
   GAS_AUTH_API_URL: 'https://script.google.com/macros/s/AKfycbxV5tbmeFx8SxEENtFgHNhZJfM26QocQX1bfqSzxxOPFd_CSiRCINGE2FfXuRAVF-IYGw/exec',
 
   // ===== External services (re-used from Thegood) =====
+  // NOTE (2026-07-15): NOTIFY_PROXY_URL is NOT called from the browser — Telegram
+  // goes DB trigger → Edge tg-notify → Worker, using the Edge secret of the same
+  // name. Kept here as documentation of the shared Worker endpoint only.
   NOTIFY_PROXY_URL:         'https://thegood-ocr-proxy.officethegood.workers.dev',
   CLOUDINARY_CLOUD_NAME:    'ddummbyql',
   CLOUDINARY_UPLOAD_PRESET: 'pt-medical',

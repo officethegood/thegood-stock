@@ -24,7 +24,7 @@ and implementers (BE/FE) must treat these as binding.
 
 | ID | Decision | Source |
 |---|---|---|
-| **Q-D1** | **No force-issue override** in Phase 2. The 2-tap admin override designed in UX §3.7 (S-2.5) is **removed** from scope. Any future need for override goes to Phase 2.1 with a supervisor-PIN gate. | UX flagged as #1 patient-safety risk; PM concurs |
+| **Q-D1** | **No force-issue override** in Phase 2. The 2-tap admin override designed in UX §3.7 (S-2.5) is **removed** from scope. Any future need for override goes to Phase 2.1 with a supervisor-PIN gate. **⚠ AMENDED 2026-07-12** (requested by field user Chittawan, approved by PM): issuing from an EXPIRED lot is now allowed behind a red ack modal + mandatory typed reason (`stock_movements.expired_ack`, migration `20260712020000`) — for non-patient use (training/disposal). Recalled lots remain absolutely blocked; expired lots remain blocked for borrow/transfer_out. | UX flagged as #1 patient-safety risk; PM concurs · amended 2026-07-12 |
 | **Q-D2** | **FEFO override warning toast** before submit when staff picks a non-FEFO lot. Copy: `"ล็อต {lot_number} ไม่ใช่ล็อตที่ควรใช้ก่อน — ยืนยันหรือไม่?"` Modal confirm pattern. Audited in `stock_movements.reason` or new `fefo_override_confirmed=true` column. | UX recommended |
 
 ## Visual / layout (design)
@@ -83,7 +83,7 @@ Security review (`docs/superpowers/audits/2026-05-19-phase2-security.md`) found 
 
 ## What's NOT in Phase 2 (deferred)
 
-- Force-issue expired override (per Q-D1 — punted to Phase 2.1 with supervisor PIN)
+- Force-issue expired override (per Q-D1 — punted to Phase 2.1 with supervisor PIN) — *shipped 2026-07-12 as red-modal + reason (`expired_ack`), see Q-D1 amendment above*
 - Quarantine-location workflow (per Q-Phase2-2 — soft flag only)
 - Per-lot photo proof (Phase 3 borrow/return covers Cloudinary first)
 - Per-vendor supplier table (Phase 2 uses free-text `supplier`)

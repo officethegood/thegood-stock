@@ -105,6 +105,12 @@ Tick each row as you verify. Re-run after every material change.
 
 # Phase 2 Medication — Manual Test Checklist (T45–T70)
 
+> **สถานะ 2026-07-15:** ชุด T45–T70 ไม่เคยถูกรันอย่างเป็นทางการ (deferred ตาม verdict ล่างสุดของ section นี้
+> เพราะตอนนั้นยังไม่มีสินค้า MEDICATION จริง) — ฟีเจอร์ทั้งหมดใช้งานจริงบน production ตั้งแต่ พ.ค.–ก.ค. 2026
+> ผ่านการใช้หน้างานจริง + DB-level smoke ที่บันทึกไว้แล้ว ไม่ติ๊กย้อนหลังเพื่อไม่ปลอมหลักฐาน QA
+> หมายเหตุ: ข้อที่อ้าง "ล็อตหมดอายุห้ามเบิกเด็ดขาด" (Q-D1) ล้าสมัยแล้ว — Q-D1 ถูกผ่อน 2026-07-12
+> (เบิกได้เมื่อ expired_ack + เหตุผล) ถ้าจะรันชุดนี้ให้ตีความตาม amendment ใน phase2-decisions-locked.md
+
 Tick each row as you verify. Re-run after every material change.
 
 > **Verification log convention:** `[x]` followed by ` — <by> <YYYY-MM-DD> @ <commit-hash>: <evidence>`

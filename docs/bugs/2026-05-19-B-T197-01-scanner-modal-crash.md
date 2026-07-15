@@ -5,7 +5,7 @@
 **Blocking:** T197, T205, T206 (3 tests) — camera scan path completely non-functional
 **Found by:** QA (code inspection during Run 2 live functional test @ aefa347)
 **Owner:** FE agent
-**Status:** Open
+**Status:** Fixed — verified in code 2026-07-15: same root cause as B-T189-01; `shared/scanner.js` uses `firstElementChild` (camera scan in daily production use)
 
 ---
 

@@ -1,8 +1,11 @@
 # Thegood Stock — Project Status & Handoff to PM
 
-**Last updated:** 2026-05-18
-**Phase:** 0 Foundation — LIVE
-**Tag:** `phase0.1-ambulance-sync` (latest)
+> ⚠ **เอกสารนี้คือ snapshot ตอนส่งมอบ Phase 0 (2026-05-18)** — เก็บไว้เป็นประวัติ/บริบทการตัดสินใจ
+> **สถานะปัจจุบันของระบบ (ทุก phase ขึ้น production แล้ว) ดูที่ [`docs/system-overview.md`](docs/system-overview.md)**
+> ตารางสถานะ §2 ด้านล่างถูกอัปเดตแล้ว ส่วนอื่นคงไว้ตามต้นฉบับ
+
+**Last updated:** 2026-07-15 (status refresh — เนื้อหาหลักคือ snapshot 2026-05-18)
+**Phase:** ทุก phase (0–6 + งานต่อเนื่อง) — **LIVE บน production**
 **Live URL:** https://officethegood.github.io/thegood-stock/login.html
 **Login (test):** `admin / thegood`
 
@@ -31,15 +34,16 @@ Source: `~/Downloads/ระบบจัดการสต๊อกและอ�
 
 | Phase | Module | Status |
 |---|---|---|
-| 0 | **Foundation** — auth + DB + locations + ambulances + settings + notification plumbing + admin shell | **LIVE** |
-| 1 | General Inventory + Storage scanning + Low-stock alert | not started |
-| 2 | Medication lots + Expiry tracking + Expiry alerts (30/60/90d) | not started |
-| 3 | Equipment Borrow/Return with photo proof + Overdue alerts | not started |
-| 4 | ALS Bags / Medical Kits with restock + granular expiry | not started |
-| 5 | Oxygen Tanks lifecycle + Refill batch alerts | not started |
-| 6 | Linens & Laundry (cabinet QR, count-based, photo) | not started |
+| 0 | **Foundation** — auth + DB + locations + ambulances + settings + notification plumbing + admin shell | **LIVE** (18 พ.ค.) |
+| 1 | General Inventory + Storage scanning + Low-stock alert | **LIVE** (พ.ค. 2026) |
+| 2 | Medication lots + Expiry tracking + Expiry alerts (30/60/90d) | **LIVE** (พ.ค. 2026) — Q-D1 ผ่อนแล้ว 12 ก.ค.: เบิกล็อตหมดอายุได้เมื่อยืนยัน+เหตุผล |
+| 3 | Equipment Borrow/Return with photo proof + Overdue alerts | **LIVE** (พ.ค. 2026) + จุดประสงค์การยืม (ก.ค.) |
+| 4 | ALS Bags / Medical Kits with restock + granular expiry | **LIVE** (พ.ค. 2026) + กระเป๋าขึ้นรถ/คืน, ของจริงในกระเป๋า (ก.ค.) |
+| 5 | Oxygen Tanks lifecycle + Refill batch alerts | **LIVE** (พ.ค. 2026) + สถานะที่ 6 `awaiting_refill` (29 พ.ค.) |
+| 6 | Linens & Laundry (cabinet QR, count-based, photo) | **LIVE** (พ.ค. 2026) |
+| 0.5 / 0.7 | QR print · Location hierarchy + Transfer | **LIVE** (19–20 พ.ค.) |
 
-**Note on hand-off:** PM is taking over after Phase 0. Phases 1–6 still need brainstorm → spec → plan → implement, following the same pattern used for Phase 0 (see `docs/superpowers/specs/` and `docs/superpowers/plans/` for templates).
+**สถานะละเอียด + สถาปัตยกรรมปัจจุบัน:** `docs/system-overview.md` · flow ผู้ใช้: `docs/flow-issue-borrow.md`
 
 ---
 
@@ -136,7 +140,7 @@ User explicitly chose to **not install** Supabase CLI ("กลัวชนกั
 | Table | Purpose |
 |---|---|
 | `ambulances` | Synced from Ambulance GAS via manual button. Columns: `gas_id`, `plate`, `callsign`, `active`, `raw` jsonb, `last_synced_at` |
-| `locations` | Multi-level hierarchy (`type` enum: room/cabinet/shelf/ambulance/bag). `parent_id` recursive, `ambulance_id` link, `code` unique, CHECK constraint enforces ambulance↔ambulance_id |
+| `locations` | Multi-level hierarchy. `type` enum ปัจจุบัน: room/**storage**/shelf/**bin**/**zone**/ambulance/bag (`cabinet` deprecated — Phase 0.7 แทนด้วย storage+storage_style) + คอลัมน์เพิ่มภายหลัง: `bag_template_id`, `laundry_role`, `storage_style`. `parent_id` recursive, `ambulance_id` link, `code` unique, CHECK enforces ambulance↔ambulance_id |
 | `settings` | Key-value: `NOTIFY_TELEGRAM_ENABLED`, `NOTIFY_TELEGRAM_CHAT_ID`, `NOTIFY_CRON_HOUR`, `LOW_STOCK_DEDUPE_HOURS`, `EXPIRY_ALERT_DAYS`, `OXYGEN_REFILL_THRESHOLD`, `AMBULANCE_GAS_URL` |
 | `notification_log` | Audit + dedupe of Telegram sends. `dedupe_key`, `event_type`, `success`, `error` |
 | `user_sessions` | Per-device JWT sessions. `jwt_jti` unique, `refresh_token` unique, `revoked` flag |
@@ -359,4 +363,5 @@ These are in the user's local Claude memory and load automatically in future ses
 
 ---
 
-**Ready for PM hand-off. Phase 0 is operational; Phases 1–6 are the open work.**
+**[Historical] Ready for PM hand-off. Phase 0 is operational; Phases 1–6 are the open work.**
+*(2026-07-15: ทุก phase ขึ้น production แล้ว — สถานะปัจจุบันดู `docs/system-overview.md`)*

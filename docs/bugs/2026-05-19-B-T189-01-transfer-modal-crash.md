@@ -5,7 +5,7 @@
 **Blocking:** T189, T191, T192, T194, T202 (5 tests) — no transfers possible via UI
 **Found by:** QA (Run 2 live functional test @ aefa347)
 **Owner:** FE agent
-**Status:** Open
+**Status:** Fixed — verified in code 2026-07-15: no `wrap.firstChild` remains anywhere in js/shared; all modal factories use `firstElementChild` (transfer modal works in production since May)
 
 ---
 
