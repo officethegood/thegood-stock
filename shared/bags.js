@@ -189,12 +189,14 @@
     const { data: tplItems, error: tplErr } = await getTemplateWithItems(templateId);
     if (tplErr) return { data: null, error: tplErr };
 
-    // Fetch actual quantities at this bag-location
+    // Actual quantities — from v_bag_contents so stock in zones/sub-locations
+    // INSIDE the bag counts too (20260715050000). Querying stock_item_locations
+    // at the bag location alone missed items a user moved into a child zone.
     const { data: silRows, error: silErr } = await _safe(() =>
       _sb()
-        .from('stock_item_locations')
+        .from('v_bag_contents')
         .select('item_id, qty')
-        .eq('location_id', locationId)
+        .eq('bag_location_id', locationId)
     );
     if (silErr) return { data: null, error: silErr };
 
@@ -226,26 +228,35 @@
   }
 
   // ==========================================================================
-  // Actual contents — what is physically inside the bag right now
-  // (stock_item_locations at the bag-location; template NOT required).
+  // Actual contents — what is physically inside the bag right now, counting the
+  // bag location AND every zone/sub-location inside it (v_bag_contents subtree,
+  // 20260715050000). Template NOT required.
   // Added 2026-07-12: bags without a template showed nothing even when items
   // had been moved in — the bag view must always show reality.
   // ==========================================================================
 
   /**
-   * List items currently inside a bag-location (qty > 0), joined for display.
+   * List items currently inside a bag (qty > 0), summed across the bag subtree,
+   * shaped to preserve the existing consumer contract
+   * ({ item_id, qty, stock_items: { sku, name, unit, tracks_lots } }).
    * @param {string} locationId  bag-location UUID
-   * @returns rows: { item_id, qty, stock_items: { sku, name, unit, tracks_lots } }
    */
   async function getBagActualContents(locationId) {
-    return _safe(() =>
+    const res = await _safe(() =>
       _sb()
-        .from('stock_item_locations')
-        .select('item_id, qty, stock_items(sku, name, unit, tracks_lots)')
-        .eq('location_id', locationId)
-        .gt('qty', 0)
+        .from('v_bag_contents')
+        .select('item_id, qty, sku, name, unit, tracks_lots')
+        .eq('bag_location_id', locationId)
         .order('qty', { ascending: false })
     );
+    if (res.error) return res;
+    // Re-shape flat view columns into the { stock_items: {...} } shape callers expect.
+    const data = (res.data || []).map((r) => ({
+      item_id: r.item_id,
+      qty:     r.qty,
+      stock_items: { sku: r.sku, name: r.name, unit: r.unit, tracks_lots: r.tracks_lots },
+    }));
+    return { data, error: null };
   }
 
   /**
