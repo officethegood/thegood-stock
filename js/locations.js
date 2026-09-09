@@ -309,7 +309,8 @@
         const itemsDiv = document.createElement('div');
         itemsDiv.className = 'rtc-items';
 
-        for (const it of preview) {
+        // Build one item row element (reused by the preview and the expand).
+        const _makeRow = (it) => {
           const s  = _itemStatus(it);
           const row = document.createElement('div');
           row.className = 'rtc-item';
@@ -318,16 +319,24 @@
             <span class="rtc-item-name">${escapeHtml(it.name)}</span>
             <span class="rtc-item-qty">${it.qty} ${escapeHtml(it.unit)}</span>
             <span class="rtc-item-flag ${s}">${s}</span>`;
-          itemsDiv.appendChild(row);
-        }
+          return row;
+        };
+
+        for (const it of preview) itemsDiv.appendChild(_makeRow(it));
 
         if (moreCount > 0) {
           const moreBtn = document.createElement('button');
           moreBtn.className = 'rtc-item-more';
           moreBtn.innerHTML = `<i class="bi bi-arrow-right-short"></i> + อีก ${moreCount} รายการ`;
+          // Expand INLINE — show the remaining items right here, then drop the
+          // button. (Previously this opened the edit modal, which has no item
+          // list, so "กดแล้วไม่ขึ้น" — the user could never see the rest.)
           moreBtn.onclick = (ev) => {
             ev.stopPropagation();
-            openModal(l.id); // open edit modal — user can navigate from there
+            for (const it of ownItems.slice(MAX_PREVIEW)) {
+              itemsDiv.insertBefore(_makeRow(it), moreBtn);
+            }
+            moreBtn.remove();
           };
           itemsDiv.appendChild(moreBtn);
         }
