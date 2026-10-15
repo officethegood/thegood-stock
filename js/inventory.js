@@ -1134,9 +1134,17 @@
             </li>`;
           }).join('');
           const unlotted = (sil.qty || 0) - lottedSum;
-          const unlottedItem = unlotted > 0
-            ? `<li class="py-0 text-muted fst-italic"><span class="small">ไม่ระบุล็อต ${unlotted} ชิ้น</span></li>`
-            : '';
+          let unlottedItem = '';
+          if (unlotted > 0) {
+            unlottedItem = `<li class="py-0 text-muted fst-italic"><span class="small">ไม่ระบุล็อต ${unlotted} ชิ้น</span></li>`;
+          } else if (unlotted < 0) {
+            // Lots listed sum to MORE than this location's real qty. v_item_location_lots
+            // hides negative-net lots (HAVING SUM>0), so a hidden lot in the ledger is
+            // negative here — a leftover from a historical lot-less outflow. Surface the
+            // overage instead of silently dropping it, so the sub-list reconciles to the
+            // header (= the real issuable qty).
+            unlottedItem = `<li class="py-0 text-warning"><span class="small">⚠ ยอดล็อตเกินยอดจริง ${-unlotted} ชิ้น · เบิกได้จริง ${sil.qty} ชิ้น (ล็อตติดลบจากรายการเก่า)</span></li>`;
+          }
           if (lotItems || unlottedItem) {
             lotSubHtml = `<ul class="list-unstyled ms-3 mb-0 mt-1">${lotItems}${unlottedItem}</ul>`;
           }
