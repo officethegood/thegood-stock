@@ -528,7 +528,7 @@
       return;
     }
 
-    const lotRows = data.filter((l) => l.stock_items?.tracks_lots);
+    const lotRows = data.filter((l) => l.tracks_lots);
     if (!lotRows.length) { el.innerHTML = ''; return; }
 
     const getLotBadge = window.AppLots?.getLotBadge || (() => ({ cls: 'bg-secondary', label: '' }));
@@ -536,12 +536,12 @@
       const expBadge = getLotBadge(l.expiry_date);
       return `
         <tr>
-          <td><small>${_esc(l.stock_items?.name || '')}</small></td>
+          <td><small>${_esc(l.name || '')}</small></td>
           <td><small>${_esc(l.lot_number || '')}</small></td>
           <td><small>${window.AppBags.formatThaiDate(l.expiry_date)}<br>
             <span class="badge ${expBadge.cls}">${expBadge.label}</span>
           </small></td>
-          <td class="text-center"><small>${l.current_qty}</small></td>
+          <td class="text-center"><small>${l.qty_in_bag}</small></td>
         </tr>`;
     }).join('');
 

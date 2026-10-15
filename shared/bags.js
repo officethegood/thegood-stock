@@ -303,20 +303,13 @@
    * @param {string} locationId
    */
   async function getBagLotsAtLocation(locationId) {
-    // Get item_ids at this location first
-    const { data: silRows, error: silErr } = await _safe(() =>
-      _sb().from('stock_item_locations').select('item_id').eq('location_id', locationId)
-    );
-    if (silErr || !silRows || silRows.length === 0) return { data: [], error: silErr };
-
-    const itemIds = silRows.map((r) => r.item_id);
-
+    // Per-lot on-hand INSIDE the bag (subtree-aware, from the ledger) — NOT the
+    // lot's global stock_lots.current_qty. qty_in_bag is the real in-bag qty.
     return _safe(() =>
       _sb()
-        .from('stock_lots')
-        .select('id, lot_number, expiry_date, current_qty, status, item_id, stock_items(name,sku,tracks_lots)')
-        .in('item_id', itemIds)
-        .in('status', ['active', 'expired'])
+        .from('v_bag_lot_contents')
+        .select('item_id, lot_id, lot_number, expiry_date, status, name, sku, tracks_lots, qty_in_bag')
+        .eq('bag_location_id', locationId)
         .order('expiry_date')
     );
   }
