@@ -42,6 +42,7 @@
   // =========================================================================
   let _mounted       = false;
   let _bags          = [];       // current v_bag_status rows
+  let _bagExpLots    = {};       // { [location_id]: expired/≤30d lots IN the bag } for the cards
   let _filterLevel   = null;     // 'complete'|'low_stock'|'expiring'|'expired'|'no_template'|null
   let _filterTpl     = null;     // template_code or null
   let _filterSearch  = '';       // text search
@@ -176,6 +177,10 @@
       return;
     }
     _bags = data || [];
+    // Which lots are expired / expiring INSIDE each bag — named on the card so
+    // staff see WHAT is near expiry, not just a date. Fail-soft: empty on error.
+    const lotsRes = await window.AppBags.getExpiringLotsForBags(_bags.map((b) => b.location_id), 30);
+    _bagExpLots = lotsRes?.data || {};
     _showListView();
   }
 
@@ -257,6 +262,24 @@
     const barCls = pct === null ? 'bg-secondary' : pct === 100 ? 'bg-success' : pct >= 70 ? 'bg-warning' : 'bg-danger';
     const expiry = window.AppBags.formatThaiDate(bag.nearest_expiry);
 
+    // Name the expired / expiring lots inside this bag (max 3 lines).
+    const todayIso = (() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    })();
+    const expLots = _bagExpLots[bag.location_id] || [];
+    const expLotsHtml = expLots.length ? `
+      <ul class="list-unstyled small mt-1 mb-0">
+        ${expLots.slice(0, 3).map((l) => {
+          const expired = l.expiry_date < todayIso;
+          return `<li class="${expired ? 'text-danger' : 'text-warning-emphasis'}">
+            ${expired ? '🔴 หมดแล้ว' : '🟠 ใกล้หมด'} · ${_esc(l.name || '')}
+            <span class="text-muted">ล็อต ${_esc(l.lot_number || '')} · ${window.AppBags.formatThaiDate(l.expiry_date)} (${l.qty_in_bag})</span>
+          </li>`;
+        }).join('')}
+        ${expLots.length > 3 ? `<li class="text-muted">…และอีก ${expLots.length - 3} ล็อต (ดูรายละเอียด)</li>` : ''}
+      </ul>` : '';
+
     return `
       <div class="col-12 col-md-6 col-lg-4">
         <div class="card bag-card h-100" data-bag-id="${_esc(bag.location_id)}" tabindex="0"
@@ -279,6 +302,7 @@
               <small class="text-muted">${pct}% สมบูรณ์${bag.mandatory_deficit_count > 0 ? ` — ขาด ${bag.mandatory_deficit_count} รายการบังคับ` : ''}</small>
             ` : ''}
             ${bag.nearest_expiry ? `<p class="small text-muted mt-1 mb-0">หมดอายุใกล้สุด: ${expiry}</p>` : ''}
+            ${expLotsHtml}
             <div class="d-flex justify-content-between align-items-center mt-2">
               <button class="btn btn-sm btn-link text-stock-accent bag-print-btn"
                       data-bag-code="${_esc(bag.bag_code)}"

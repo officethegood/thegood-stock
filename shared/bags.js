@@ -314,6 +314,36 @@
     );
   }
 
+  /**
+   * Expired + soon-to-expire lots physically inside the given bags, in ONE query
+   * (for the bag list cards — "อะไรใกล้หมดอายุ"). Source: v_bag_lot_contents
+   * (in-bag ledger qty, subtree-aware). Returns { data: { [bag_location_id]:
+   * [{ name, lot_number, expiry_date, qty_in_bag }] } } sorted soonest first.
+   * @param {string[]} locationIds  bag location ids
+   * @param {number}   withinDays   include lots expiring within N days (default 30)
+   */
+  async function getExpiringLotsForBags(locationIds, withinDays = 30) {
+    if (!locationIds || !locationIds.length) return { data: {}, error: null };
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() + withinDays);
+    const cutoffIso = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
+    const { data, error } = await _safe(() =>
+      _sb()
+        .from('v_bag_lot_contents')
+        .select('bag_location_id, name, lot_number, expiry_date, qty_in_bag')
+        .in('bag_location_id', locationIds)
+        .in('status', ['active', 'expired'])
+        .lte('expiry_date', cutoffIso)
+        .order('expiry_date')
+    );
+    if (error || !data) return { data: {}, error };
+    const byBag = {};
+    for (const row of data) {
+      (byBag[row.bag_location_id] = byBag[row.bag_location_id] || []).push(row);
+    }
+    return { data: byBag, error: null };
+  }
+
   // ==========================================================================
   // Restock helpers
   // ==========================================================================
@@ -511,6 +541,7 @@
     // Detail
     getBagComposition,
     getBagLotsAtLocation,
+    getExpiringLotsForBags,
     getBagActualContents,
     assignTemplateToBag,
     // Restock
