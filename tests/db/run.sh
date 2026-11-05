@@ -3,6 +3,7 @@
 # Never connects to Supabase. Needs initdb/pg_ctl/psql (set PG_BIN if not on PATH).
 #   bash tests/db/run.sh
 set -euo pipefail
+export PGCLIENTENCODING=UTF8   # migrations contain Thai; psql may default to WIN1252 on Windows
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 M="$HERE/../../supabase/migrations"
@@ -30,4 +31,6 @@ run "$HERE/triggers.sql"
 run "$M/20260519070500_rpc_transfer_stock.sql"
 run "$M/20260703010100_rpc_recall_lot_cap_sil.sql"
 run "$M/20261105010000_guard_lot_at_location.sql"
+run "$M/20261105020000_stock_audit_alert.sql"
 run "$HERE/lot_location_test.sql"
+run "$HERE/audit_test.sql"

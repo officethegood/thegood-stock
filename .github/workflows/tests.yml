@@ -1,0 +1,22 @@
+# Runs on every push. Does not deploy and never touches Supabase: the DB tests use a
+# throwaway Postgres inside the runner. A failure emails whoever pushed.
+name: tests
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: JS syntax
+        run: |
+          for f in js/*.js shared/*.js sw.js; do node --check "$f"; done
+      - name: DB rules
+        run: |
+          export PG_BIN="$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)"
+          bash tests/db/run.sh

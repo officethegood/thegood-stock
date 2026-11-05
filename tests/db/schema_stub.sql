@@ -6,6 +6,20 @@ CREATE ROLE authenticated NOLOGIN;
 CREATE FUNCTION app_user_role() RETURNS text LANGUAGE sql AS $$ SELECT 'Admin'::text $$;
 CREATE FUNCTION app_username()  RETURNS text LANGUAGE sql AS $$ SELECT 'test'::text $$;
 
+CREATE TABLE settings (key text PRIMARY KEY, value text);
+
+-- pg_net / pg_cron stand-ins: record what would have been sent or scheduled.
+CREATE TABLE http_log (body jsonb);
+CREATE SCHEMA net;
+CREATE FUNCTION net.http_post(url text, headers jsonb, body jsonb) RETURNS bigint
+LANGUAGE sql AS $$ INSERT INTO public.http_log VALUES (body); SELECT 1::bigint $$;
+CREATE SCHEMA cron;
+CREATE TABLE cron.job (jobname text PRIMARY KEY, schedule text, command text);
+CREATE FUNCTION cron.schedule(n text, s text, c text) RETURNS bigint
+LANGUAGE sql AS $$ INSERT INTO cron.job VALUES (n, s, c); SELECT 1::bigint $$;
+CREATE FUNCTION cron.unschedule(n text) RETURNS boolean
+LANGUAGE sql AS $$ DELETE FROM cron.job WHERE jobname = n; SELECT true $$;
+
 CREATE TYPE stock_movement_type AS ENUM
   ('receive','issue','adjustment_gain','adjustment_loss','borrow','return','transfer_out','transfer_in');
 CREATE TYPE stock_lot_status AS ENUM ('active','expired','depleted','recalled');

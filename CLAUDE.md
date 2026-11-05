@@ -38,6 +38,7 @@
 - หมายเหตุ: `Project.md` เขียนค้างไว้ที่ "Phase 0 LIVE" (2026-05-18) — **ล้าสมัยเรื่องสถานะ phase** แต่ยังเป็นแหล่งอ้างอิง architecture/secrets/gotchas ที่ดีที่สุด
 
 ## Gotchas / ข้อควรระวัง
+- **กฎยอดสต็อก:** ทุกยอดต้องตรงกับ ledger `stock_movements` และล็อตออกจากตำแหน่งได้เฉพาะเมื่อล็อตนั้นมีของอยู่ที่นั่น (`guard_lot_at_location`) · แก้ trigger/RPC สต็อก → รัน `bash tests/db/run.sh` และเพิ่มเคสใหม่ (CI รันทุก push) · ถ้าสร้างเวอร์ชันใหม่ของ function ให้อัปเดตรายการไฟล์ใน `run.sh` · cron `stock_audit_daily` แจ้ง Telegram 08:45 เมื่อยอดไม่ตรง
 - Edge Functions: toggle **"Verify JWT with legacy secret" ต้อง OFF** ทุกฟังก์ชัน (ค่า default หลัง deploy คือ ON → 401 ก่อนถึงโค้ดเรา)
 - CORS preflight ต้อง allow header `apikey` ด้วย (frontend ส่งทั้ง Authorization และ apikey)
 - `SUPABASE_ANON_KEY` ใน config ใช้ key format ใหม่ `sb_publishable_*` (ถูกต้องแล้ว ไม่ใช่ legacy JWT anon)
