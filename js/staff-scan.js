@@ -795,6 +795,16 @@
       if (parsed.type === 'item-barcode') {
         await handleItemScan(parsed.value);
       } else if (parsed.type === 'location-qr') {
+        // A bag QR on its own opens the bag view (checklist, ขึ้นรถ/คืน).
+        const scannedLoc = await window.AppInventory.findLocationByCode(parsed.value);
+        if (scannedLoc.data?.type === 'bag') {
+          if (state.scanning) {
+            window.AppScanner.stopScanning().catch(() => {});
+            state.scanning = false;
+          }
+          _showBagChecklistView(scannedLoc.data);
+          return;
+        }
         // User scanned location first — stash it so we apply it once item arrives.
         state.ctx.pendingLoc = parsed.value;
         window.showToast('info', 'รับ QR สถานที่แล้ว — กรุณาสแกนสินค้าต่อ');
@@ -820,12 +830,11 @@
     }
     // Optimistically apply any stashed location scan (out-of-order user).
     if (state.ctx.pendingLoc) {
-      const loc = await window.AppInventory.findLocationByCode(state.ctx.pendingLoc);
-      if (loc.data) {
-        setState('LOCATION_SCANNED', { item: data, location: loc.data, pendingLoc: '' });
-        return;
-      }
-      state.ctx.pendingLoc = '';
+      // Same path as scanning in order, so the lot picker and bag/linen routing run.
+      const pending = state.ctx.pendingLoc;
+      setState('ITEM_SCANNED', { item: data, pendingLoc: '' });
+      await handleLocationScan(pending);
+      return;
     }
     setState('ITEM_SCANNED', { item: data });
     // Phase 0.7: Show transfer option panel after item is scanned
@@ -883,31 +892,97 @@
     });
   }
 
-  async function handleLocationScan(value) {
-    const { data, error } = await window.AppInventory.findLocationByCode(value);
+  /**
+   * Which location inside a bag to issue this item from: the bag itself or one of
+   * its zones (zones are always direct children of a bag). One place: use it. Several:
+   * ask. None: say so and show the bag. Returns null when there is nothing to continue with.
+   */
+  async function _resolveBagIssueLocation(item, bag) {
+    const { data: rows, error } = await getSupabaseClient()
+      .from('stock_item_locations')
+      .select('qty,locations(id,code,name,type,parent_id)')
+      .eq('item_id', item.id)
+      .gt('qty', 0);
     if (error) {
-      window.showToast('error', error.friendly || error.message || 'ค้นหาสถานที่ไม่สำเร็จ');
+      window.showToast('error', 'โหลดของในกระเป๋าไม่สำเร็จ — ลองใหม่อีกครั้ง');
+      return null;
+    }
+    const here = (rows || []).filter((r) =>
+      r.locations && (r.locations.id === bag.id || r.locations.parent_id === bag.id));
+
+    if (here.length === 1) return here[0].locations;
+
+    if (state.scanning) {
+      window.AppScanner.stopScanning().catch(() => {});
+      state.scanning = false;
+    }
+    if (here.length === 0) {
+      window.showToast('warning', `ไม่มี ${item.name} ในกระเป๋านี้`);
+      _showBagChecklistView(bag);
+      return null;
+    }
+    return _pickBagZone(item, here);
+  }
+
+  function _pickBagZone(item, options) {
+    return new Promise((resolve) => {
+      const wrap = document.createElement('div');
+      wrap.innerHTML = `
+        <div class="modal fade" tabindex="-1">
+          <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title">เบิก ${escapeHtml(item.name)} จากช่องไหน</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+              </div>
+              <div class="modal-body d-grid gap-2">
+                ${options.map((o, i) => `
+                  <button type="button" class="btn btn-outline-secondary text-start bag-zone-pick"
+                          data-idx="${i}" style="min-height:48px;">
+                    ${escapeHtml(o.locations.name || o.locations.code)}
+                    <span class="badge bg-success-subtle text-success ms-1">${o.qty} ${escapeHtml(item.unit || 'ชิ้น')}</span>
+                  </button>`).join('')}
+              </div>
+            </div>
+          </div>
+        </div>`;
+      const modalEl = wrap.firstElementChild;
+      document.body.appendChild(modalEl);
+      let picked = null;
+      const modal = new bootstrap.Modal(modalEl);
+      modalEl.querySelectorAll('.bag-zone-pick').forEach((b) => {
+        b.addEventListener('click', () => {
+          picked = options[parseInt(b.dataset.idx, 10)].locations;
+          modal.hide();
+        });
+      });
+      modalEl.addEventListener('hidden.bs.modal', () => {
+        modalEl.remove();
+        resolve(picked);
+      });
+      modal.show();
+    });
+  }
+
+  async function handleLocationScan(value) {
+    const found = await window.AppInventory.findLocationByCode(value);
+    if (found.error) {
+      window.showToast('error', found.error.friendly || found.error.message || 'ค้นหาสถานที่ไม่สำเร็จ');
       return;
     }
-    if (!data) {
+    if (!found.data) {
       window.showToast('warning', 'ไม่พบสถานที่นี้');
       return;
     }
+    let data = found.data;
 
-    // ── Phase 4: Bag QR routing ─────────────────────────────────────────────
-    // If the scanned location is type='bag', switch to read-only bag checklist view.
-    // Spec: docs/superpowers/specs/2026-05-19-phase4-als-bags-design.md §7.2
-    // UX:  docs/superpowers/designs/2026-05-19-phase4-als-bags-ui-design.md §8
+    // An item is already chosen here, so a bag QR means "take it from this bag".
+    // It used to always open the read-only checklist, which made anything stored
+    // in a bag impossible to issue (report Chittawan 2026-10-14).
     if (data.type === 'bag') {
-      // Stop scanner while showing the checklist view.
-      if (state.scanning) {
-        window.AppScanner.stopScanning().catch(() => {});
-        state.scanning = false;
-      }
-      _showBagChecklistView(data);
-      return;
+      data = await _resolveBagIssueLocation(state.ctx.item, data);
+      if (!data) return;
     }
-    // ── End Phase 4 bag routing ─────────────────────────────────────────────
 
     // ── Phase 6: Cabinet LINEN routing ──────────────────────────────────────
     // If the scanned location is type='storage' (or legacy 'cabinet'), check for LINEN items.
@@ -958,8 +1033,18 @@
   async function onManualConfirm() {
     const sku = el.mSku.value.trim();
     const loc = el.mLoc.value.trim();
-    if (!sku) { window.showToast('warning', 'กรุณากรอก SKU หรือ Barcode'); return; }
     if (!loc) { window.showToast('warning', 'กรุณากรอกรหัสตู้/ชั้น'); return; }
+    if (!sku) {
+      // Bag code on its own opens the bag view, same as scanning its QR.
+      const bagRes = await window.AppInventory.findLocationByCode(loc);
+      if (bagRes.data?.type === 'bag') {
+        closeManualPanel();
+        _showBagChecklistView(bagRes.data);
+        return;
+      }
+      window.showToast('warning', 'กรุณากรอก SKU หรือ Barcode');
+      return;
+    }
 
     el.btnManualOk.disabled = true;
     try {
@@ -977,10 +1062,10 @@
       }
       closeManualPanel();
 
-      // Phase 4: if location is type='bag', route to bag checklist (read-only for Staff)
+      // Item + bag: issue from the bag (see handleLocationScan).
       if (locRes.data.type === 'bag') {
-        _showBagChecklistView(locRes.data);
-        return;
+        locRes.data = await _resolveBagIssueLocation(itemRes.data, locRes.data);
+        if (!locRes.data) return;
       }
 
       // Phase 6: if location is type='storage' (or legacy 'cabinet'), check for LINEN items

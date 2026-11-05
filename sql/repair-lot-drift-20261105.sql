@@ -2,14 +2,14 @@
 -- Run ONLY after the physical count confirms the expected end state below.
 -- Change the last ROLLBACK to COMMIT to save. Stops without changes if the data moved.
 --
--- Expected end state (from the 2026-11-05 ledger + Chittawan's report):
---   Miracid   กล่อง 1  2440475 x15            lot recorded wrong by the 09:08 move
---   Miracid   กล่อง 3  2640077 x21            qty 6 → 21: restores the 09:11 write-off of 15 phantom units
---   Strong-K  กล่อง 1  2610243 x11            lot-only fix, qty stays 11
---   Ponstan   ROOM-C   nothing                lot-only fix, qty stays 0
---   IV set    ZN-007   4260101 x1, 4260501 x7 lot-only fix, qty stays 8 (ASSUMED split — confirm on the shelf)
+-- Expected end state (ledger 2026-11-05 + physical count confirmed by Chittawan):
+--   Miracid   กล่อง 3  2640077 x21   qty 6 → 21: restores the 09:11 write-off of 15 phantom units
+--   Strong-K  กล่อง 1  2610243 x11   lot-only fix, qty stays 11
+--   Ponstan   ROOM-C   nothing        lot-only fix, qty stays 0; Lot A global becomes 42 (22+20)
 --
 -- Only Miracid กล่อง 3 changes a location total (total Miracid 45 → 60).
+-- Miracid กล่อง 1 is NOT touched: counted 15 of lot 2440429, as the system shows.
+-- IV set ZN-007 is NOT here: waiting for a count per lot.
 -- Gains run before losses so a location never dips below zero.
 
 BEGIN;
@@ -17,14 +17,10 @@ BEGIN;
 CREATE TEMP TABLE repair_plan (ord int, sku text, loc text, lot text, mtype stock_movement_type, qd int) ON COMMIT DROP;
 INSERT INTO repair_plan VALUES
   (1,'MED-MIR-20mg-TAB', 'BAG-ALS-006','2440429','adjustment_gain', 15),
-  (1,'MED-MIR-20mg-TAB', 'BAG-ALS-004','2440475','adjustment_gain', 15),
   (1,'MED-STK-25gm-SA',  'BAG-ALS-004','1301263','adjustment_gain', 11),
   (1,'MED-PON-500mg-TAB','ROOM-C',     'Lot A',  'adjustment_gain', 20),
-  (1,'SUP-VAS-IVSET-20D','ZN-007',     '4240701','adjustment_gain',  1),
-  (2,'MED-MIR-20mg-TAB', 'BAG-ALS-004','2440429','adjustment_loss',-15),
   (2,'MED-STK-25gm-SA',  'BAG-ALS-004','2610243','adjustment_loss',-11),
-  (2,'MED-PON-500mg-TAB','ROOM-C',     '2607015','adjustment_loss',-20),
-  (2,'SUP-VAS-IVSET-20D','ZN-007',     '4260101','adjustment_loss', -1);
+  (2,'MED-PON-500mg-TAB','ROOM-C',     '2607015','adjustment_loss',-20);
 
 -- Stop if anything moved since the diagnostic (values from 2026-11-05).
 DO $$
@@ -39,10 +35,7 @@ BEGIN
     ('MED-STK-25gm-SA',  'BAG-ALS-004','1301263',-11),
     ('MED-STK-25gm-SA',  'BAG-ALS-004','2610243', 22),
     ('MED-PON-500mg-TAB','ROOM-C',     'Lot A',  -20),
-    ('MED-PON-500mg-TAB','ROOM-C',     '2607015', 20),
-    ('SUP-VAS-IVSET-20D','ZN-007',     '4240701', -1),
-    ('SUP-VAS-IVSET-20D','ZN-007',     '4260101',  2),
-    ('SUP-VAS-IVSET-20D','ZN-007',     '4260501',  7)
+    ('MED-PON-500mg-TAB','ROOM-C',     '2607015', 20)
   ) AS t(sku, loc, lot, want) LOOP
     SELECT COALESCE(SUM(sm.qty_delta), 0) INTO v
     FROM stock_movements sm

@@ -117,3 +117,12 @@ AFTER: `apply_movement_to_sil` (SIL เท่านั้น, ล่าสุด
 - ทดสอบ = manual checklist `docs/test-checklist.md` (T-numbers + DB probe) + ชุดทีมเทสไทย `test-checklist-2026-06-01.md` · ไม่มี test runner — ทุกไฟล์ JS ต้องผ่าน `node --check` ก่อน push
 - Smoke หลัง deploy: `tools/smoke-test.sh`
 - ⚠ **เอกสารล้าสมัยที่รู้ตัวแล้ว:** `Project.md`/`README.md` (สถานะ phase ยังเป็นของ 18 พ.ค.), test-checklist T45–T70 ยังไม่ติ๊ก, docs/bugs 4 ไฟล์ status Open ทั้งที่แก้แล้ว, จำนวน secrets ใน env-setup vs Project.md ไม่ตรงกัน
+
+## กฎการเขียนยอดสต็อก (อัปเดต 2026-11-05)
+
+- ทุกยอดต้องตรงกับ ledger `stock_movements` · `v_stock_audit_issues` + cron `stock_audit_daily` แจ้ง Telegram 08:45 เมื่อไม่ตรง
+- ล็อตออกได้เฉพาะจากตำแหน่งที่มีล็อตนั้น (`guard_lot_at_location`) · คืนของต้องเท่าจำนวนที่ยืม (`guard_return_qty`) · ผู้ทำรายการและเวลามาจาก JWT (`stamp_movement_actor`)
+- งานหลายขั้นทำผ่าน RPC แบบสำเร็จทั้งหมดหรือไม่บันทึกเลย: `rpc_receive_new_lot`, `rpc_create_oxygen_tank`, `rpc_clear_location`, `rpc_laundry_batch` · เติมกระเป๋า (Restock) ยังเป็นหลาย insert ตามการตัดสินใจ Q-Phase4-B
+- กระเป๋า: สแกนกระเป๋าอย่างเดียว = เปิดหน้ากระเป๋า · เลือกสินค้าแล้วสแกนกระเป๋า = เบิกจากกระเป๋าหรือโซนข้างใน · ป้ายหมดอายุมาก่อน "ไม่มีเทมเพลต"
+- `NOTIFY_SERVICE_ROLE_KEY` อ่านจาก browser ไม่ได้แม้เป็น Admin
+- เทสต์: `bash tests/db/run.sh` (Postgres ทิ้งได้ในเครื่อง ไม่แตะ Supabase) และ CI รันทุก push · เพิ่ม `CREATE OR REPLACE` ใหม่ของ trigger/RPC สต็อกต้องเพิ่มใน `run.sh`

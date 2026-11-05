@@ -558,15 +558,15 @@
     try {
       const sb = window.getSupabaseClient();
 
-      // 1. Insert oxygen_tanks row
-      const { data: tankData, error: tankErr } = await sb.from('oxygen_tanks').insert({
-        serial,
-        tank_size:           size,
-        current_location_id: locationId,
-        next_inspection_due: inspection,
-        last_pressure_psi:   pressure,
-        notes,
-      }).select().single();
+      // Tank + first movement (NULL → ready) are saved together.
+      const { error: tankErr } = await sb.rpc('rpc_create_oxygen_tank', {
+        p_serial:              serial,
+        p_tank_size:           size,
+        p_location_id:         locationId,
+        p_next_inspection_due: inspection,
+        p_last_pressure_psi:   pressure,
+        p_notes:               notes,
+      });
 
       if (tankErr) {
         const msg = window.AppOxygen._mapError
@@ -576,20 +576,6 @@
           ? 'หมายเลขถังนี้มีอยู่แล้ว'
           : msg;
         _showErr(friendly);
-        return;
-      }
-
-      // 2. Insert initial movement (NULL → ready)
-      const { error: moveErr } = await window.AppOxygen.logTransition({
-        tankId:      tankData.id,
-        fromStatus:  null,
-        toStatus:    'ready',
-        toLocationId: locationId,
-        note:        'เพิ่มถังใหม่เข้าระบบ',
-        photoUrl:    null,
-      });
-      if (moveErr) {
-        _showErr(moveErr.message || 'บันทึกสถานะเริ่มต้นไม่สำเร็จ');
         return;
       }
 

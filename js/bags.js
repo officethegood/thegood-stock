@@ -194,7 +194,12 @@
 
   function _applyFilter() {
     const filtered = _bags.filter((bag) => {
-      if (_filterLevel && bag.alert_level !== _filterLevel) return false;
+      if (_filterLevel === 'no_template') {
+        // Expiry now outranks the template badge, so filter on the template itself.
+        if (bag.bag_template_id) return false;
+      } else if (_filterLevel && bag.alert_level !== _filterLevel) {
+        return false;
+      }
       if (_filterSearch) {
         const q = _filterSearch.toLowerCase();
         if (!bag.bag_code.toLowerCase().includes(q) &&

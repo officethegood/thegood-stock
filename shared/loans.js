@@ -68,7 +68,8 @@
     if (msg.includes('ล็อตหมดอายุหรือถูกเรียกคืน')) {
       return 'ล็อตนี้หมดอายุหรือถูกเรียกคืน — เลือกล็อตอื่น';
     }
-    if (msg.includes('ไม่พอในตำแหน่งนี้')) {   // guard_lot_at_location (20261105010000)
+    if (msg.includes('ไม่พอในตำแหน่งนี้') ||   // guard_lot_at_location (20261105010000)
+        msg.includes('จำนวนคืนต้องเท่ากับจำนวนที่ยืม')) {   // guard_return_qty (20261105040000)
       return msg;
     }
     if (msg.includes('lot current_qty negative') ||

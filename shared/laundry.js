@@ -145,17 +145,10 @@
     );
   }
 
-  async function _insertLoss(itemId, locId, lossQty, note) {
+  /** Save several laundry rows together: if one fails, none are saved. */
+  async function _batch(ops) {
     return _safe(() =>
-      _sb().from('stock_movements').insert({
-        item_id:       itemId,
-        location_id:   locId,
-        movement_type: 'adjustment_loss',
-        qty_delta:     -Math.abs(lossQty),
-        reason:        'laundry lost',
-        note:          note,
-        performed_by:  null, // RLS will set from JWT
-      })
+      _sb().rpc('rpc_laundry_batch', { p_client_ref: _uuid(), p_ops: ops })
     );
   }
 
@@ -203,21 +196,6 @@
   function _closeModal() {
     const el = document.getElementById(MODAL_ID);
     if (el) bootstrap.Modal.getOrCreateInstance(el).hide();
-  }
-
-  /** Render a progress bar inside modal-body (for batch ops). */
-  function _renderProgress(done, total) {
-    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-    return `
-      <div class="mb-3">
-        <div class="d-flex justify-content-between small mb-1">
-          <span>กำลังดำเนินการ…</span><span>${done}/${total}</span>
-        </div>
-        <div class="progress" style="height:10px">
-          <div class="progress-bar bg-success" style="width:${pct}%" role="progressbar"
-               aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"></div>
-        </div>
-      </div>`;
   }
 
   /** Simple select HTML helper. */
@@ -502,7 +480,6 @@
         <div class="col-6"><label class="form-label small">ชื่อร้าน/Vendor</label>
           <input id="lnd-sw-vendor" type="text" class="form-control form-control-sm" placeholder="ชื่อร้านซัก"></div>
       </div>
-      <div id="lnd-sw-progress"></div>
       <div class="table-responsive">
         <table class="table table-sm align-middle">
           <thead><tr><th>สินค้า</th><th>มีอยู่</th><th>ส่งซัก</th></tr></thead>
@@ -534,25 +511,16 @@
 
       const btn = document.getElementById('lnd-sw-submit');
       btn.disabled = true;
-      const progressEl = document.getElementById('lnd-sw-progress');
+      const { error } = await _batch(rows.map((row) => ({
+        op: 'transfer', item_id: row.itemId, from: row.srcLoc, to: extLocId, qty: row.qty, note,
+      })));
 
-      let done = 0, failCount = 0;
-      const total = rows.length;
-
-      for (const row of rows) {
-        if (total > 3) progressEl.innerHTML = _renderProgress(done, total);
-        const { error } = await _transfer(row.itemId, row.srcLoc, extLocId, row.qty, note);
-        if (error) { failCount++; console.error('send_wash transfer error', error); }
-        done++;
-      }
-
-      if (total > 3) progressEl.innerHTML = _renderProgress(done, total);
-
-      if (failCount === 0) {
-        _toast('success', `ส่งซัก สำเร็จ ${done} รายการ`);
+      if (!error) {
+        _toast('success', `ส่งซัก สำเร็จ ${rows.length} รายการ`);
         _closeModal();
       } else {
-        _toast('warning', `ส่งซัก: สำเร็จ ${done - failCount}/${done} รายการ (ล้มเหลว ${failCount})`);
+        console.error('send_wash error', error);
+        _toast('error', `ส่งซักไม่สำเร็จ ยังไม่ได้บันทึกรายการใด: ${error.message || ''}`);
         btn.disabled = false;
       }
     });
@@ -609,7 +577,6 @@
       <div id="lnd-rb-load-btn-wrap" class="mb-3">
         <button class="btn btn-outline-secondary btn-sm" id="lnd-rb-load">โหลดรายการที่ส่งซัก</button>
       </div>
-      <div id="lnd-rb-progress"></div>
       <div id="lnd-rb-rows"></div>`;
 
     document.getElementById('laundry-modal-footer').innerHTML = `
@@ -707,38 +674,27 @@
 
       const btn = document.getElementById('lnd-rb-submit');
       btn.disabled = true;
-      const progressEl = document.getElementById('lnd-rb-progress');
-      const total = rows.reduce((n, r) => n + (r.recv > 0 ? 1 : 0) + (r.sent - r.recv > 0 ? 1 : 0), 0);
-      let done = 0, failCount = 0;
-
+      const ops = [];
       for (const row of rows) {
         const loss = row.sent - row.recv;
-
         if (loss > 0) {
-          if (total > 3) progressEl.innerHTML = _renderProgress(done, total);
-          const note = `returned ${row.recv} of ${row.sent} sent`;
-          const { error } = await _insertLoss(row.itemId, extLocId, loss, note);
-          if (error) { failCount++; console.error('receive_back loss error', error); }
-          done++;
+          ops.push({ op: 'loss', item_id: row.itemId, from: extLocId, qty: loss,
+                     note: `returned ${row.recv} of ${row.sent} sent` });
         }
-
         if (row.recv > 0) {
-          if (total > 3) progressEl.innerHTML = _renderProgress(done, total);
-          const { error } = await _transfer(
-            row.itemId, extLocId, row.cleanLocId, row.recv, 'returned from wash'
-          );
-          if (error) { failCount++; console.error('receive_back transfer error', error); }
-          done++;
+          ops.push({ op: 'transfer', item_id: row.itemId, from: extLocId, to: row.cleanLocId,
+                     qty: row.recv, note: 'returned from wash' });
         }
       }
 
-      if (total > 3) progressEl.innerHTML = _renderProgress(done, total);
+      const { error } = await _batch(ops);
 
-      if (failCount === 0) {
+      if (!error) {
         _toast('success', `รับคืน สำเร็จ ${rows.filter((r) => r.recv > 0).length} รายการ`);
         _closeModal();
       } else {
-        _toast('warning', `รับคืน: ล้มเหลว ${failCount} รายการ`);
+        console.error('receive_back error', error);
+        _toast('error', `รับคืนไม่สำเร็จ ยังไม่ได้บันทึกรายการใด: ${error.message || ''}`);
         btn.disabled = false;
       }
     });

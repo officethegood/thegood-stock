@@ -29,7 +29,7 @@
 //   AppInventory.listCategories, listItems, getItem, searchByBarcode, findLocationByCode,
 //                getLowStock, createItem, updateItem, deactivateItem,
 //                receive, adjustmentLoss, adjustmentGain, subscribeInventory
-//   AppLots (window.AppLots from shared/lots.js — Phase 2): createLot, fetchAllLots
+//   AppLots (window.AppLots from shared/lots.js — Phase 2): receiveNewLot, fetchAllLots
 //   AppLotsView (window.initLotsView from js/inventory-lots.js — Phase 2): initLotsView
 //   AppScanner.isSupported, startScanning, stopScanning, parseScanResult
 //   AppUi: showToast, showConfirm, escapeHtml (globals)
@@ -1988,6 +1988,7 @@
       // Phase 2: lot validation for tracks_lots items
       // -----------------------------------------------------------------------
       let lotId = null;
+      let newLot = null;   // set on the "ล็อตใหม่" tab: lot + receive are saved together below
       if (_currentItemTracksLots) {
         await _ensureLotsScripts();
         const lotInlineErr = $('rf-lot-inline-error');
@@ -2011,26 +2012,7 @@
             errEl.classList.remove('d-none');
             return;
           }
-          // Create lot first
-          const createRes = await window.AppLots.createLot({
-            item_id:      itemId,
-            lot_number:   lotNumber,
-            expiry_date:  lotExpiry,
-            received_qty: qty,
-            supplier:     lotSupplier || null,
-            note:         lotNote || null,
-          });
-          if (createRes.error) {
-            const isDupe = createRes.error.code === '23505';
-            const lotErrMsg = isDupe
-              ? 'ล็อตนี้มีอยู่แล้วสำหรับสินค้านี้ — ใช้แท็บ "เพิ่มให้ล็อตเดิม" หรือเปลี่ยนหมายเลขล็อต (M-47)'
-              : _friendly(createRes.error, 'สร้างล็อตไม่สำเร็จ');
-            if (lotInlineErr) { lotInlineErr.textContent = lotErrMsg; lotInlineErr.classList.remove('d-none'); }
-            errEl.textContent = lotErrMsg;
-            errEl.classList.remove('d-none');
-            return;
-          }
-          lotId = createRes.data.id;
+          newLot = { lotNumber, lotExpiry, lotSupplier, lotNote };
         } else {
           // 'existing' tab
           lotId = $('rf-lot-select') ? $('rf-lot-select').value : '';
@@ -2050,7 +2032,32 @@
 
       // Build raw movement insert (lot_id extension requires raw insert, not the helper)
       let r;
-      if (lotId) {
+      if (newLot) {
+        const res = await window.AppLots.receiveNewLot({
+          item_id:       itemId,
+          location_id:   locId,
+          lot_number:    newLot.lotNumber,
+          expiry_date:   newLot.lotExpiry,
+          qty,
+          supplier:      newLot.lotSupplier,
+          lot_note:      newLot.lotNote,
+          note,
+          client_ref_id: clientRefId,
+        });
+        if (res.error && /uq_lot_per_item/.test(res.error.message || '')) {
+          submitEl.disabled = false;
+          submitEl.textContent = 'บันทึก';
+          const lotErrMsg = 'ล็อตนี้มีอยู่แล้วสำหรับสินค้านี้ — ใช้แท็บ "เพิ่มให้ล็อตเดิม" หรือเปลี่ยนหมายเลขล็อต (M-47)';
+          const lotInlineErr = $('rf-lot-inline-error');
+          if (lotInlineErr) { lotInlineErr.textContent = lotErrMsg; lotInlineErr.classList.remove('d-none'); }
+          errEl.textContent = lotErrMsg;
+          errEl.classList.remove('d-none');
+          return;
+        }
+        r = res.error
+          ? res
+          : { data: { movement: res.data.movement, replay: false, client_ref_id: clientRefId }, error: null };
+      } else if (lotId) {
         // Insert movement directly with lot_id (AppInventory.receive doesn't carry lot_id yet)
         const sb = getSupabaseClient();
         const rawRes = await sb.from('stock_movements').insert({

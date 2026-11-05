@@ -53,9 +53,9 @@ CALL t_audit('audit: reports location qty that disagrees with the ledger', 3, '�
 ROLLBACK;
 
 BEGIN;
--- Lot-less stock on a lot-tracked item (e.g. a legacy return).
+-- Lot-less stock on a lot-tracked item (transfer_in is exempt from the lot rule).
 INSERT INTO stock_movements(item_id, location_id, movement_type, qty_delta)
-VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-00000000000c','return',2);
+VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-00000000000c','transfer_in',2);
 CALL t_audit('audit: reports location qty that disagrees with its lots', 4, 'ยอดตำแหน่งไม่ตรงผลรวมล็อต');
 ROLLBACK;
 

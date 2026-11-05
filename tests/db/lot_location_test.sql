@@ -13,8 +13,9 @@ INSERT INTO stock_lots(id, item_id, lot_number, expiry_date) VALUES
 
 CREATE FUNCTION t_move(p_type stock_movement_type, p_loc text, p_lot text, p_delta int) RETURNS void
 LANGUAGE sql AS $$
-  INSERT INTO stock_movements(item_id, location_id, movement_type, qty_delta, lot_id)
-  SELECT '00000000-0000-0000-0000-000000000001', l.id, p_type, p_delta, sl.id
+  INSERT INTO stock_movements(item_id, location_id, movement_type, qty_delta, lot_id, due_at)
+  SELECT '00000000-0000-0000-0000-000000000001', l.id, p_type, p_delta, sl.id,
+         CASE WHEN p_type = 'borrow' THEN now() + interval '1 day' END
   FROM locations l, stock_lots sl WHERE l.code = p_loc AND sl.lot_number = p_lot;
 $$;
 CREATE FUNCTION t_transfer(p_lot text, p_from text, p_to text, p_qty int) RETURNS void

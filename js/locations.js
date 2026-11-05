@@ -1189,29 +1189,16 @@
     );
     if (!ok) return;
 
-    if (!window.AppInventory || !window.AppInventory.adjustmentLoss) {
-      showToast('error', 'โมดูล inventory ยังไม่พร้อม — รีเฟรชหน้าใหม่');
+    // All-or-nothing on the server; lot-tracked items are taken lot by lot.
+    const res = await sb.rpc('rpc_clear_location', {
+      p_location_id: locId,
+      p_note:        `ล้างตำแหน่ง ${loc?.code || ''}`,
+    });
+    if (res.error) {
+      showToast('error', res.error.message || 'ล้างตำแหน่งไม่สำเร็จ — ยังไม่ได้ลบอะไร');
       return;
     }
-
-    let done = 0, failed = 0;
-    const failNames = [];
-    for (const r of data) {
-      const ref = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()));
-      const res = await window.AppInventory.adjustmentLoss(
-        r.item_id, locId, r.qty, `ล้างตำแหน่ง ${loc?.code || ''}`, ref
-      );
-      if (res && res.error) { failed++; failNames.push(r.stock_items?.name || r.item_id); }
-      else done++;
-    }
-
-    if (failed) {
-      showToast('warning',
-        `ล้างสำเร็จ ${done} รายการ · ล้มเหลว ${failed} (${failNames.slice(0, 3).join(', ')}` +
-        `${failNames.length > 3 ? '…' : ''}) — รายการที่ track ล็อตอาจต้องจัดการแยก`);
-    } else {
-      showToast('success', `ล้างของใน ${loc?.code || 'ตำแหน่ง'} สำเร็จ — ${done} รายการเป็น 0`);
-    }
+    showToast('success', `ล้างของใน ${loc?.code || 'ตำแหน่ง'} สำเร็จ — ${res.data?.items ?? totalItems} รายการเป็น 0`);
     if (modal) { try { modal.hide(); } catch {} }
     await load();
     renderTree();

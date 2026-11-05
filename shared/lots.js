@@ -179,21 +179,19 @@
    * @param {{ item_id, lot_number, expiry_date, received_qty, supplier?, note? }} lot
    * @returns {Promise<{ data: object, error: object|null }>}
    */
-  async function createLot(lot) {
+  async function receiveNewLot(lot) {
     return _safe(() =>
-      _sb()
-        .from('stock_lots')
-        .insert({
-          item_id:      lot.item_id,
-          lot_number:   lot.lot_number,
-          expiry_date:  lot.expiry_date,
-          received_qty: lot.received_qty,
-          current_qty:  0,   // ledger-driven — the receive movement sets it
-          supplier:     lot.supplier  || null,
-          note:         lot.note      || null,
-        })
-        .select('id,lot_number,expiry_date,current_qty')
-        .single()
+      _sb().rpc('rpc_receive_new_lot', {
+        p_item_id:       lot.item_id,
+        p_location_id:   lot.location_id,
+        p_lot_number:    lot.lot_number,
+        p_expiry_date:   lot.expiry_date,
+        p_qty:           lot.qty,
+        p_supplier:      lot.supplier || null,
+        p_lot_note:      lot.lot_note || null,
+        p_note:          lot.note     || null,
+        p_client_ref_id: lot.client_ref_id,
+      })
     );
   }
 
@@ -371,7 +369,10 @@
     if (msg.includes('ล็อตหมดอายุหรือถูกเรียกคืน')) {
       return 'ล็อตนี้หมดอายุหรือถูกเรียกคืน — เลือกล็อตอื่น';
     }
-    if (msg.includes('ไม่พอในตำแหน่งนี้')) {   // guard_lot_at_location (20261105010000)
+    // Thai messages raised by triggers are already written for the user.
+    if (msg.includes('ไม่พอในตำแหน่งนี้') ||   // guard_lot_at_location (20261105010000)
+        msg.includes('ล็อตนี้ไม่ตรงกับสินค้า') ||
+        msg.includes('ต้องระบุเหตุผลเมื่อเบิกของหมดอายุ')) {
       return msg;
     }
     // Lot balance would go below zero. Two surfaces of the same condition:
@@ -560,7 +561,7 @@
     fetchLotQtyByLocation,
     fetchAllLots,
     fetchAllLotsForAdmin,
-    createLot,
+    receiveNewLot,
     updateLot,
     recallLot,
     // Sort / bucket
