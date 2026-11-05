@@ -18,7 +18,10 @@ cleanup() {
 trap cleanup EXIT
 
 "$BIN/initdb" -D "$DATA" -U postgres -A trust -E UTF8 --locale=C >/dev/null
-"$BIN/pg_ctl" -D "$DATA" -o "-p $PORT" -w start >/dev/null
+# Linux default socket dir (/var/run/postgresql) is not writable on CI runners.
+SOCK=""
+[ "$(uname -s)" = "Linux" ] && SOCK="-k $(dirname "$DATA")"
+"$BIN/pg_ctl" -D "$DATA" -o "-p $PORT $SOCK" -l "$DATA.log" -w start >/dev/null   || { cat "$DATA.log"; exit 1; }
 
 run() { "$BIN/psql" -h localhost -p "$PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q -f "$1"; }
 
