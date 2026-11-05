@@ -106,6 +106,26 @@
   }
 
   /**
+   * Per-location lot quantities for an item, from the ledger (v_item_location_lots).
+   * Outgoing flows must offer only lots the location holds — stock_lots.current_qty
+   * is a global balance (migration 20261105010000 enforces this in the DB).
+   *
+   * @param {string} itemId - UUID of the stock_item
+   * @param {string} [locationId] - limit to one location
+   * @returns {Promise<{ data: Array<{location_id,lot_id,qty}>, error: object|null }>}
+   */
+  async function fetchLotQtyByLocation(itemId, locationId) {
+    return _safe(() => {
+      let q = _sb()
+        .from('v_item_location_lots')
+        .select('location_id,lot_id,qty')
+        .eq('item_id', itemId);
+      if (locationId) q = q.eq('location_id', locationId);
+      return q;
+    });
+  }
+
+  /**
    * Fetch all lots for an item (all statuses — for admin lot list).
    * Joins stock_items so the lot list can show item name/sku/unit.
    *
@@ -351,6 +371,9 @@
     if (msg.includes('ล็อตหมดอายุหรือถูกเรียกคืน')) {
       return 'ล็อตนี้หมดอายุหรือถูกเรียกคืน — เลือกล็อตอื่น';
     }
+    if (msg.includes('ไม่พอในตำแหน่งนี้')) {   // guard_lot_at_location (20261105010000)
+      return msg;
+    }
     // Lot balance would go below zero. Two surfaces of the same condition:
     // the table CHECK (stock_lots_current_qty_check) aborts the UPDATE before
     // the trigger's guard string ('would drive lot current_qty negative') can
@@ -534,6 +557,7 @@
     // REST helpers
     fetchAvailableLots,
     fetchIssuableLots,
+    fetchLotQtyByLocation,
     fetchAllLots,
     fetchAllLotsForAdmin,
     createLot,

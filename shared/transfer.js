@@ -56,6 +56,7 @@
     if (/ตำแหน่งต้นทาง/.test(msg)) return msg;
     if (/จำนวนที่ย้าย/.test(msg))   return msg;
     if (/ของไม่พอ/.test(msg))       return msg;
+    if (/ไม่พอในตำแหน่งนี้/.test(msg)) return msg;
     if (err.code === '42501')        return 'ไม่มีสิทธิ์ทำรายการนี้';
     if (err.code === '23505')        return 'รายการซ้ำ — ดำเนินการแล้ว';
     return msg;
@@ -105,26 +106,25 @@
   }
 
   /**
-   * Fetch available lots for an item.
-   * @returns {Promise<Array>}
+   * Fetch the lots that actually sit at a location, with the qty there.
+   * Listing the item's lots system-wide let a move take a lot the source does not
+   * hold, which wrote a negative lot at the source and a wrong lot at the
+   * destination (report 2026-11-05, migration 20261105010000).
+   * Active + not past expiry only: check_lot_status blocks transfer_out of the rest.
+   * @returns {Promise<Array<{id,lot_number,expiry_date,qty}>>}
    */
-  async function _fetchLots(itemId) {
-    const sb = _sb();
-    // Column is current_qty — stock_lots has NO remaining_qty column (that name
-    // belongs to the v_lots_with_remaining view). Querying the wrong column made
-    // this SELECT error on every call and the catch-all `return []` swallowed it,
-    // so the transfer modal showed "— ไม่มีล็อต —" for EVERY lot-tracked item and
-    // the "ต้องเลือกล็อตก่อนย้าย" gate made moving them impossible.
-    // status=active only: transfer_out of an expired/recalled lot is blocked by
-    // the check_lot_status trigger anyway — don't offer lots that would fail.
-    const r = await sb.from('stock_lots')
-      .select('id,lot_number,expiry_date')
+  async function _fetchLotsAtLocation(itemId, locationId) {
+    const r = await _sb().from('v_item_location_lots')
+      .select('lot_id,lot_number,expiry_date,lot_status,qty,days_until_expiry')
       .eq('item_id', itemId)
-      .eq('status', 'active')
-      .gt('current_qty', 0)
+      .eq('location_id', locationId)
+      .eq('lot_status', 'active')
+      .gte('days_until_expiry', 0)
       .order('expiry_date', { ascending: true, nullsFirst: false });
     if (r.error) return [];
-    return r.data || [];
+    return (r.data || []).map((l) => ({
+      id: l.lot_id, lot_number: l.lot_number, expiry_date: l.expiry_date, qty: l.qty,
+    }));
   }
 
   // =========================================================================
@@ -346,13 +346,8 @@
       if (srcLoc) {
         s.sourceLoc = { ...srcLoc, scanned: false };
         s.sourceQty = await _fetchSourceQty(itemId, prefilledSourceId);
+        if (item.tracks_lots) s.lots = await _fetchLotsAtLocation(itemId, prefilledSourceId);
       }
-    }
-
-    // Fetch lots if needed
-    if (item.tracks_lots) {
-      s.lots = await _fetchLots(itemId);
-      if (!s.selectedLotId && s.lots.length > 0) s.selectedLotId = s.lots[0].id;
     }
 
     // Remove stale modal if any
@@ -376,21 +371,6 @@
               <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
             </div>
             <div class="modal-body">
-
-              ${item.tracks_lots ? `
-              <!-- Lot dropdown -->
-              <div class="mb-3">
-                <label class="form-label fw-semibold" for="tf-lot">ล็อต</label>
-                <select id="tf-lot" class="form-select" style="min-height:44px;">
-                  ${s.lots.length === 0
-                    ? '<option value="">— ไม่มีล็อต —</option>'
-                    : s.lots.map((l) =>
-                        `<option value="${_esc(l.id)}" ${l.id === s.selectedLotId ? 'selected' : ''}>
-                          ${_esc(l.lot_number)}${l.expiry_date ? ' · หมดอายุ ' + _esc(l.expiry_date) : ''}
-                        </option>`
-                      ).join('')}
-                </select>
-              </div>` : ''}
 
               <!-- Source location -->
               <div class="mb-3">
@@ -416,6 +396,14 @@
                   </button>
                 </div>
               </div>
+
+              ${item.tracks_lots ? `
+              <!-- Lot dropdown: only lots at the chosen source (see _renderLotSelect) -->
+              <div class="mb-3">
+                <label class="form-label fw-semibold" for="tf-lot">ล็อต
+                  <span class="text-muted small fw-normal">(เฉพาะล็อตที่อยู่ในตำแหน่งต้นทาง)</span></label>
+                <select id="tf-lot" class="form-select" style="min-height:44px;"></select>
+              </div>` : ''}
 
               <!-- Destination location -->
               <div class="mb-3">
@@ -482,9 +470,45 @@
     const submitBtn        = modalEl.querySelector('#tf-submit');
     const lotSel           = modalEl.querySelector('#tf-lot');
 
+    // Most that can leave: the location's qty, and for lot items also that lot's qty there.
+    function _maxQty() {
+      if (!item.tracks_lots) return s.sourceQty;
+      const lot = s.lots.find((l) => l.id === s.selectedLotId);
+      return lot ? Math.min(s.sourceQty, lot.qty) : 0;
+    }
+    function _renderQtyLimit() {
+      if (!s.sourceLoc) return;
+      const max = _maxQty();
+      qtyInput.max = String(max);
+      const qtyLabel = modalEl.querySelector('label[for="tf-qty"]');
+      if (qtyLabel) qtyLabel.textContent = `จำนวน (สูงสุด ${max})`;
+    }
+    function _renderLotSelect() {
+      if (!lotSel) return;
+      lotSel.disabled = !s.sourceLoc || s.lots.length === 0;
+      if (!s.sourceLoc) {
+        lotSel.innerHTML = '<option value="">— เลือกตำแหน่งต้นทางก่อน —</option>';
+        s.selectedLotId = null;
+      } else if (s.lots.length === 0) {
+        lotSel.innerHTML = '<option value="">— ไม่มีล็อตที่ย้ายได้ในตำแหน่งนี้ —</option>';
+        s.selectedLotId = null;
+      } else {
+        if (!s.lots.some((l) => l.id === s.selectedLotId)) s.selectedLotId = s.lots[0].id;
+        lotSel.innerHTML = s.lots.map((l) =>
+          `<option value="${_esc(l.id)}" ${l.id === s.selectedLotId ? 'selected' : ''}>
+            ${_esc(l.lot_number)} · มี ${_esc(l.qty)}${l.expiry_date ? ' · หมดอายุ ' + _esc(l.expiry_date) : ''}
+          </option>`
+        ).join('');
+      }
+      _renderQtyLimit();
+    }
+
     // Sync lot selector to state
     if (lotSel) {
-      lotSel.addEventListener('change', () => { s.selectedLotId = lotSel.value || null; });
+      lotSel.addEventListener('change', () => {
+        s.selectedLotId = lotSel.value || null;
+        _renderQtyLimit();
+      });
     }
     qtyInput.addEventListener('input', () => {
       s.qty = Math.max(0, parseInt(qtyInput.value || '0', 10));
@@ -499,10 +523,7 @@
         sourceDisplay.innerHTML = `
           <div class="fw-semibold text-dark">${_esc(s.sourceLoc.path_display || s.sourceLoc.name)}</div>
           <div class="text-muted">จำนวนปัจจุบัน: ${s.sourceQty} ${_esc(item.unit || 'ชิ้น')}</div>`;
-        // Update qty max
-        qtyInput.max = String(s.sourceQty);
-        const qtyLabel = modalEl.querySelector('label[for="tf-qty"]');
-        if (qtyLabel) qtyLabel.textContent = `จำนวน (สูงสุด ${s.sourceQty})`;
+        _renderQtyLimit();
       }
     }
     function _renderDestDisplay() {
@@ -552,7 +573,9 @@
       if (role === 'source') {
         s.sourceLoc  = loc;
         s.sourceQty  = await _fetchSourceQty(itemId, loc.id);
+        if (item.tracks_lots) s.lots = await _fetchLotsAtLocation(itemId, loc.id);
         _renderSourceDisplay();
+        _renderLotSelect();
       } else {
         s.destLoc = loc;
         _renderDestDisplay();
@@ -569,11 +592,11 @@
       }
       const qty = parseInt(qtyInput.value || '0', 10);
       if (!qty || qty <= 0) { _toast('warning', 'กรุณาระบุจำนวนที่ต้องการย้าย'); return; }
-      if (qty > s.sourceQty) {
-        _toast('warning', `ของไม่พอ (มี ${s.sourceQty} ต้องการ ${qty})`); return;
-      }
       if (item.tracks_lots && !s.selectedLotId) {
         _toast('warning', 'สินค้านี้ต้องเลือกล็อตก่อนย้าย'); return;
+      }
+      if (qty > _maxQty()) {
+        _toast('warning', `ของไม่พอ (มี ${_maxQty()} ต้องการ ${qty})`); return;
       }
 
       // Disable while submitting
@@ -629,6 +652,7 @@
     // Pre-render existing source if filled
     _renderSourceDisplay();
     _renderDestDisplay();
+    _renderLotSelect();
 
     bsModal.show();
     // Focus qty if source already known

@@ -356,7 +356,7 @@
         <div class="text-center py-5" aria-live="polite">
           <div style="font-size:3rem;" class="mb-3">📦</div>
           <p class="fw-semibold mb-1">ไม่มีล็อตยาที่พร้อมใช้งาน (M-63)</p>
-          <p class="text-muted small mb-4">ยาทุกล็อตหมดหรือหมดอายุ ติดต่อผู้ดูแลระบบ (M-64)</p>
+          <p class="text-muted small mb-4">ตำแหน่งนี้ไม่มีล็อตที่เบิกได้ ตรวจว่าเลือกตำแหน่งถูกไหม หรือติดต่อผู้ดูแลระบบ (M-64)</p>
           <button type="button" class="btn btn-outline-secondary" id="lot-panel-reset"
                   style="min-height:44px;">
             เริ่มใหม่
@@ -643,7 +643,24 @@
       return true;
     }
 
-    const lots = window.AppLots.sortFEFO(data || []);
+    let lots = window.AppLots.sortFEFO(data || []);
+
+    // Offer only lots this location holds, showing the qty HERE — current_qty is
+    // a global balance (20261105010000). A stale cached lots.js skips the filter;
+    // the DB guard still rejects a lot that is not here.
+    if (window.AppLots.fetchLotQtyByLocation) {
+      const here = await window.AppLots.fetchLotQtyByLocation(ctx.item.id, ctx.location.id);
+      if (here.error) {
+        window.showToast('error', 'โหลดล็อตยาไม่สำเร็จ (M-61) — ลองใหม่อีกครั้ง (M-62)');
+        setState('LOCATION_SCANNED');
+        return true;
+      }
+      const qtyByLot = {};
+      (here.data || []).forEach((r) => { qtyByLot[r.lot_id] = r.qty; });
+      lots = lots
+        .filter((l) => qtyByLot[l.id] > 0)
+        .map((l) => ({ ...l, current_qty: qtyByLot[l.id] }));
+    }
 
     if (lots.length === 0) {
       setState('LOT_EMPTY');
@@ -2535,9 +2552,18 @@
   async function _loadBorrowItemLocations() {
     _borrow.itemLocs = null;
     const r = await window.AppInventory.getItem(_borrow.item.id);
+    // Lot-tracked: only locations holding the CHOSEN lot, capped at that lot's qty there.
+    const lotHere = (_borrow.lot && window.AppLots?.fetchLotQtyByLocation)
+      ? await window.AppLots.fetchLotQtyByLocation(_borrow.item.id)
+      : null;
     const box = document.getElementById('borrow-loc-suggest');
     if (!box || _borrow.step !== 2) return;   // user already moved on
-    if (r.error || !r.data) { box.innerHTML = ''; return; }  // fail-soft: manual entry + DB guard still apply
+    if (r.error || !r.data || lotHere?.error) { box.innerHTML = ''; return; }  // fail-soft: manual entry + DB guard still apply
+
+    const lotQtyByLoc = {};
+    (lotHere?.data || [])
+      .filter((x) => x.lot_id === _borrow.lot?.id)
+      .forEach((x) => { lotQtyByLoc[x.location_id] = x.qty; });
 
     const locs = (r.data.locations || [])
       .filter((x) => (x.qty || 0) > 0 && x.locations)
@@ -2545,12 +2571,15 @@
         id:   x.location_id,
         code: x.locations.code,
         name: x.locations.name,
-        qty:  x.qty,
-      }));
+        qty:  lotHere ? Math.min(x.qty, lotQtyByLoc[x.location_id] || 0) : x.qty,
+      }))
+      .filter((x) => x.qty > 0);
     _borrow.itemLocs = locs;
 
     if (locs.length === 0) {
-      box.innerHTML = `<div class="alert alert-warning small mb-0">ของไม่เหลือในคลัง — ไม่สามารถยืมได้</div>`;
+      box.innerHTML = `<div class="alert alert-warning small mb-0">${lotHere
+        ? 'ล็อตนี้ไม่มีของในตำแหน่งใดเลย — กลับไปเลือกล็อตอื่น'
+        : 'ของไม่เหลือในคลัง — ไม่สามารถยืมได้'}</div>`;
       return;
     }
 
@@ -2714,6 +2743,14 @@
       // (DB would reject with 'lot current_qty negative' — catch it earlier).
       if (_borrow.lot && _borrow.qty > (_borrow.lot.current_qty || 0)) {
         _toast('warning', `ล็อต ${_borrow.lot.lot_number || ''} เหลือ ${_borrow.lot.current_qty || 0} ชิ้น — ลดจำนวนลง`);
+        return;
+      }
+      // ...and the chosen lot's qty at the chosen location.
+      const lotQtyHere = _borrow.lot
+        ? (_borrow.itemLocs || []).find((l) => l.id === _borrow.location?.id)?.qty
+        : null;
+      if (lotQtyHere != null && _borrow.qty > lotQtyHere) {
+        _toast('warning', `ล็อต ${_borrow.lot.lot_number || ''} มีที่ตำแหน่งนี้ ${lotQtyHere} ชิ้น — ลดจำนวนลง`);
         return;
       }
       _borrow.step = 4; _renderBorrowStep();

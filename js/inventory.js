@@ -1138,12 +1138,11 @@
           if (unlotted > 0) {
             unlottedItem = `<li class="py-0 text-muted fst-italic"><span class="small">ไม่ระบุล็อต ${unlotted} ชิ้น</span></li>`;
           } else if (unlotted < 0) {
-            // Lots listed sum to MORE than this location's real qty. v_item_location_lots
+            // Lots listed sum to MORE than this location's qty. v_item_location_lots
             // hides negative-net lots (HAVING SUM>0), so a hidden lot in the ledger is
-            // negative here — a leftover from a historical lot-less outflow. Surface the
-            // overage instead of silently dropping it, so the sub-list reconciles to the
-            // header (= the real issuable qty).
-            unlottedItem = `<li class="py-0 text-warning"><span class="small">⚠ ยอดล็อตเกินยอดจริง ${-unlotted} ชิ้น · เบิกได้จริง ${sil.qty} ชิ้น (ล็อตติดลบจากรายการเก่า)</span></li>`;
+            // negative here, e.g. a lot moved or issued from a location that never held
+            // it. Which number matches the shelf is unknown until someone counts.
+            unlottedItem = `<li class="py-0 text-warning"><span class="small">⚠ ยอดล็อตไม่ตรงกับยอดตำแหน่ง (ล็อต ${lottedSum} / ตำแหน่ง ${sil.qty}) — นับของจริงแล้วแจ้ง Admin</span></li>`;
           }
           if (lotItems || unlottedItem) {
             lotSubHtml = `<ul class="list-unstyled ms-3 mb-0 mt-1">${lotItems}${unlottedItem}</ul>`;
@@ -2288,6 +2287,13 @@
         // Set-absolute: compute the delta to reach the target qty
         const delta = qty - current;
         if (delta === 0) {
+          // The lot already reads this qty but the location disagrees: closing the
+          // modal with "ยอดไม่เปลี่ยน" made the mismatch look unfixable with no hint.
+          const lotSum = (lotsByLocation[locId] || []).reduce((n, l) => n + (l.qty || 0), 0);
+          if (tracksLots && lotSum !== qtyByLoc[locId]) {
+            _showErr(`ล็อตนี้มี ${current} อยู่แล้ว แต่ยอดตำแหน่งคือ ${qtyByLoc[locId]} (ล็อตรวม ${lotSum}) — หน้านี้แก้ไม่ได้ นับของจริงแล้วแจ้ง Admin`);
+            return;
+          }
           _toast('info', 'ยอดไม่เปลี่ยน — ไม่ต้องบันทึก');
           modal.hide();
           return;
