@@ -61,7 +61,8 @@ for f in \
   20261105020000_stock_audit_alert \
   20261105030000_bag_status_expiry_before_template \
   20261105040000_harden_movement_writes \
-  20261105050000_atomic_stock_rpcs
+  20261105050000_atomic_stock_rpcs \
+  20261106010000_bag_template_save_and_empty_status
 do run "$M/$f.sql" >/dev/null; done
 
 run "$HERE/lot_location_test.sql"

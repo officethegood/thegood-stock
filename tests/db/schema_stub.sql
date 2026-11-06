@@ -35,7 +35,10 @@ CREATE TYPE stock_movement_type AS ENUM
   ('receive','issue','adjustment_gain','adjustment_loss','borrow','return','transfer_out','transfer_in');
 CREATE TYPE stock_lot_status AS ENUM ('active','expired','depleted','recalled');
 
-CREATE TABLE bag_templates (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), code text, name text);
+CREATE TABLE bag_templates (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), code text UNIQUE NOT NULL,
+  name text NOT NULL, category text NOT NULL DEFAULT 'ALS', description text, active boolean NOT NULL DEFAULT true,
+  created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(),
+  created_by text DEFAULT app_username(), updated_by text);
 CREATE TABLE locations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), code text, name text, type text,
   parent_id uuid REFERENCES locations(id), active boolean NOT NULL DEFAULT true,
@@ -43,7 +46,10 @@ CREATE TABLE locations (
 CREATE TABLE stock_items (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), sku text, name text,
   unit text, tracks_lots boolean NOT NULL DEFAULT true);
 CREATE TABLE bag_template_items (id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  bag_template_id uuid, item_id uuid, target_qty int, mandatory boolean DEFAULT true);
+  bag_template_id uuid NOT NULL REFERENCES bag_templates(id) ON DELETE CASCADE,
+  item_id uuid NOT NULL REFERENCES stock_items(id), target_qty int NOT NULL CHECK (target_qty > 0),
+  mandatory boolean NOT NULL DEFAULT true, sort_order int NOT NULL DEFAULT 0, note text,
+  UNIQUE (bag_template_id, item_id));
 CREATE TABLE stock_lots (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), item_id uuid NOT NULL REFERENCES stock_items(id),
   lot_number text NOT NULL, expiry_date date NOT NULL, received_qty int,

@@ -69,12 +69,21 @@
   }
 
   /**
-   * Create a bag template.
-   * @param {{ code: string, name: string, category?: string, description?: string }} tpl
+   * Create or update a template and its items in one transaction.
+   * @param {string|null} id  null = create
+   * @param {{ code, name, category, description }} header
+   * @param {Array<{ item_id, target_qty, mandatory, sort_order }>} items
    */
-  async function createTemplate(tpl) {
+  async function saveTemplate(id, header, items) {
     return _safe(() =>
-      _sb().from('bag_templates').insert([tpl]).select().single()
+      _sb().rpc('rpc_save_bag_template', {
+        p_id:          id,
+        p_code:        header.code,
+        p_name:        header.name,
+        p_category:    header.category || 'ALS',
+        p_description: header.description || null,
+        p_items:       items,
+      })
     );
   }
 
@@ -91,16 +100,6 @@
   }
 
   /**
-   * Add an item to a template.
-   * @param {{ bag_template_id, item_id, target_qty, mandatory?, sort_order?, note? }} row
-   */
-  async function addTemplateItem(row) {
-    return _safe(() =>
-      _sb().from('bag_template_items').insert([row]).select().single()
-    );
-  }
-
-  /**
    * Update a template item (target_qty, mandatory, sort_order, note).
    * @param {string} id  bag_template_items.id
    * @param {object} patch
@@ -108,16 +107,6 @@
   async function updateTemplateItem(id, patch) {
     return _safe(() =>
       _sb().from('bag_template_items').update(patch).eq('id', id).select().single()
-    );
-  }
-
-  /**
-   * Delete a template item row.
-   * @param {string} id  bag_template_items.id
-   */
-  async function deleteTemplateItem(id) {
-    return _safe(() =>
-      _sb().from('bag_template_items').delete().eq('id', id)
     );
   }
 
@@ -451,7 +440,11 @@
    * Mirrors spec §5.3 and UX §4.3.
    * @param {string} level  'complete'|'low_stock'|'expiring'|'expired'|'no_template'
    */
-  function getAlertBadge(level) {
+  function getAlertBadge(level, hasTemplate) {
+    // A template with no required items also reads no_template: nothing to compare.
+    if (level === 'no_template' && hasTemplate) {
+      return { cssClass: 'bg-secondary text-white', label: 'เทมเพลตว่าง' };
+    }
     switch (level) {
       case 'complete':    return { cssClass: 'bg-success text-white',               label: 'สมบูรณ์'       };
       case 'low_stock':   return { cssClass: 'bg-warning text-dark',                label: 'ของไม่ครบ'     };
@@ -528,11 +521,9 @@
     // Templates
     listTemplates,
     getTemplateWithItems,
-    createTemplate,
+    saveTemplate,
     updateTemplate,
-    addTemplateItem,
     updateTemplateItem,
-    deleteTemplateItem,
     // Bag status
     listBagStatus,
     getBagStatus,

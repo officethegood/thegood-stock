@@ -247,7 +247,12 @@
         document.getElementById('tpl-code').readOnly = true;
       }
       // Load existing items
-      const { data: items } = await window.AppBags.getTemplateWithItems(templateId);
+      // Opening with a blank list after a failed load would invite saving over it.
+      const { data: items, error: itemsErr } = await window.AppBags.getTemplateWithItems(templateId);
+      if (itemsErr) {
+        _toast('error', 'โหลดรายการในเทมเพลตไม่สำเร็จ — ลองใหม่อีกครั้ง');
+        return;
+      }
       (items || []).forEach((bti) => {
         addItemRow({
           bti_id:     bti.id,
@@ -369,75 +374,47 @@
     if (!code) { codeErr.textContent = 'กรุณากรอกรหัสเทมเพลต'; return; }
     if (!name) { _toast('warning', 'กรุณากรอกชื่อเทมเพลต'); return; }
 
+    // Check every row before saving anything.
+    const rows = document.getElementById('tpl-items-body').querySelectorAll('tr');
+    const items = [];
+    for (let i = 0; i < rows.length; i++) {
+      const item_id    = rows[i].querySelector('.tpl-item-id').value.trim();
+      const target_qty = parseInt(rows[i].querySelector('.tpl-item-qty').value, 10);
+      if (!item_id || !target_qty || target_qty < 1) {
+        _toast('warning', `แถวที่ ${i + 1}: กรุณาเลือกสินค้าและกรอกจำนวน`);
+        return;
+      }
+      items.push({
+        item_id,
+        target_qty,
+        mandatory: rows[i].querySelector('.tpl-item-mandatory').checked,
+        sort_order: i,
+      });
+    }
+    if (!items.length) {
+      _toast('warning', 'เทมเพลตต้องมีอย่างน้อย 1 รายการ');
+      return;
+    }
+
     const saveBtn = document.getElementById('tpl-modal-save');
     saveBtn.disabled = true;
     saveBtn.querySelector('.btn-text').textContent = 'กำลังบันทึก…';
 
     try {
-      let templateId = _editId;
-
-      if (!templateId) {
-        // Create
-        const { data, error } = await window.AppBags.createTemplate({
-          code, name,
-          category: category || 'ALS',
-          description: desc || null,
-        });
-        if (error) {
-          if (error.code === '23505' || (error.message && error.message.includes('code'))) {
-            codeErr.textContent = 'รหัสเทมเพลตนี้มีอยู่แล้ว';
-          } else {
-            _toast('error', 'สร้างเทมเพลตไม่สำเร็จ: ' + (error.message || ''));
-          }
-          return;
+      const { data: templateId, error } = await window.AppBags.saveTemplate(
+        _editId, { code, name, category, description: desc }, items
+      );
+      if (error) {
+        if (error.code === '23505' && /code/.test(error.message || '')) {
+          codeErr.textContent = 'รหัสเทมเพลตนี้มีอยู่แล้ว';
+        } else {
+          _toast('error', 'บันทึกเทมเพลตไม่สำเร็จ รายการเดิมยังอยู่ครบ: ' + (error.message || ''));
         }
-        templateId = data.id;
-      } else {
-        // Update header only (code locked in edit mode)
-        const { error } = await window.AppBags.updateTemplate(templateId, {
-          name,
-          category: category || 'ALS',
-          description: desc || null,
-        });
-        if (error) { _toast('error', 'อัปเดตเทมเพลตไม่สำเร็จ'); return; }
-
-        // Delete existing items before re-inserting (simplest edit strategy)
-        const { data: existing } = await window.AppBags.getTemplateWithItems(templateId);
-        for (const bti of (existing || [])) {
-          await window.AppBags.deleteTemplateItem(bti.id);
-        }
-      }
-
-      // Insert item rows
-      const rows = document.getElementById('tpl-items-body').querySelectorAll('tr');
-      let hasError = false;
-      for (let i = 0; i < rows.length; i++) {
-        const row       = rows[i];
-        const item_id   = row.querySelector('.tpl-item-id').value.trim();
-        const target_qty = parseInt(row.querySelector('.tpl-item-qty').value, 10);
-        const mandatory  = row.querySelector('.tpl-item-mandatory').checked;
-
-        if (!item_id || !target_qty || target_qty < 1) {
-          _toast('warning', `แถวที่ ${i + 1}: กรุณาเลือกสินค้าและกรอกจำนวน`);
-          hasError = true;
-          continue;
-        }
-
-        const { error: iErr } = await window.AppBags.addTemplateItem({
-          bag_template_id: templateId,
-          item_id,
-          target_qty,
-          mandatory,
-          sort_order: i,
-        });
-        if (iErr) {
-          _toast('warning', `รายการที่ ${i + 1} บันทึกไม่สำเร็จ`);
-          hasError = true;
-        }
+        return;
       }
 
       bootstrap.Modal.getInstance(document.getElementById('tpl-modal'))?.hide();
-      _toast(hasError ? 'warning' : 'success', hasError ? 'บันทึกบางรายการไม่สำเร็จ' : 'บันทึกเทมเพลตแล้ว');
+      _toast('success', 'บันทึกเทมเพลตแล้ว');
       await loadList();   // no-op when the templates panel isn't on screen
 
       // One-shot hook for the bag-detail shortcut (auto-assign to the bag).

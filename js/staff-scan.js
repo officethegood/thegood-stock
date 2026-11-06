@@ -1388,9 +1388,10 @@
       return;
     }
 
-    const alertBadge = window.AppBags?.getAlertBadge(bag.alert_level) ||
+    const alertBadge = window.AppBags?.getAlertBadge(bag.alert_level, !!bag.bag_template_id) ||
                        { cssClass: 'bg-secondary text-white', label: bag.alert_level };
     const pct        = bag.completion_pct;
+    const noChecklist = pct === null;   // no template, or one with no required items
     const barCls     = pct === null ? 'bg-secondary' : pct === 100 ? 'bg-success' : pct >= 70 ? 'bg-warning' : 'bg-danger';
 
     overlay.innerHTML = `
@@ -1415,13 +1416,18 @@
         <small class="text-muted">${pct}% สมบูรณ์</small>
       </div>` : ''}
 
-      ${!bag.bag_template_id ? `
-        <div class="alert alert-warning small">กระเป๋านี้ยังไม่มีเทมเพลต — เช็คครบ/ขาดไม่ได้
-        (รายการด้านล่างคือของที่อยู่ในกระเป๋าจริงตอนนี้)</div>` : ''}
+      ${noChecklist ? `
+        <div class="alert alert-warning small">${bag.bag_template_id ? 'เทมเพลตนี้ยังไม่มีรายการ' : 'กระเป๋านี้ยังไม่มีเทมเพลต'} — เช็คครบ/ขาดไม่ได้
+        (รายการด้านล่างคือของที่อยู่ในกระเป๋าจริง)</div>` : ''}
 
-      ${['low_stock','expiring','expired'].includes(bag.alert_level) ? `
+      ${bag.alert_level === 'low_stock' ? `
         <div class="alert alert-warning small">
           <i class="bi bi-info-circle me-1"></i>กระเป๋านี้ยังไม่สมบูรณ์ — แจ้ง Admin เพื่อเติมของ
+        </div>` : ''}
+
+      ${bag.alert_level === 'expiring' ? `
+        <div class="alert alert-warning small">
+          <i class="bi bi-info-circle me-1"></i>มีของใกล้หมดอายุ — แจ้ง Admin เพื่อเตรียมเปลี่ยน
         </div>` : ''}
 
       ${bag.alert_level === 'expired' ? `
@@ -1434,7 +1440,7 @@
           <i class="bi bi-check-circle-fill me-1"></i>กระเป๋านี้สมบูรณ์พร้อมใช้งาน
         </div>` : ''}
 
-      <h6>${bag.bag_template_id ? 'ตรวจสอบของในกระเป๋า' : 'ของในกระเป๋าตอนนี้'}</h6>
+      <h6>${!noChecklist ? 'ตรวจสอบของในกระเป๋า' : 'ของในกระเป๋าตอนนี้'}</h6>
       <div id="bag-cl-composition">
         <div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>กำลังโหลดรายการ…</div>
       </div>
@@ -1455,15 +1461,15 @@
     _renderBagDeploySection(location, bag).catch(() => { /* non-fatal */ });
 
     // Load composition async
-    if (bag.bag_template_id) {
+    if (!noChecklist) {
       const { data: comp, error: compErr } = await window.AppBags.getBagComposition(
         bag.location_id, bag.bag_template_id
       );
       const compEl = document.getElementById('bag-cl-composition');
       if (!compEl) return;
 
-      if (compErr || !comp || comp.length === 0) {
-        compEl.innerHTML = `<p class="text-muted small">ไม่พบรายการในเทมเพลต</p>`;
+      if (compErr || !comp) {
+        compEl.innerHTML = `<p class="text-danger small">โหลดรายการไม่สำเร็จ — ลองใหม่อีกครั้ง</p>`;
         return;
       }
 

@@ -195,8 +195,8 @@
   function _applyFilter() {
     const filtered = _bags.filter((bag) => {
       if (_filterLevel === 'no_template') {
-        // Expiry now outranks the template badge, so filter on the template itself.
-        if (bag.bag_template_id) return false;
+        // Expiry outranks this badge, so match on "nothing to check against" itself.
+        if (bag.completion_pct !== null) return false;
       } else if (_filterLevel && bag.alert_level !== _filterLevel) {
         return false;
       }
@@ -262,7 +262,7 @@
   }
 
   function _renderBagCard(bag) {
-    const badge  = window.AppBags.getAlertBadge(bag.alert_level);
+    const badge  = window.AppBags.getAlertBadge(bag.alert_level, !!bag.bag_template_id);
     const pct    = bag.completion_pct ?? null;
     const barCls = pct === null ? 'bg-secondary' : pct === 100 ? 'bg-success' : pct >= 70 ? 'bg-warning' : 'bg-danger';
     const expiry = window.AppBags.formatThaiDate(bag.nearest_expiry);
@@ -330,7 +330,9 @@
     const area  = document.getElementById('bags-content-area');
     if (!area) return;
 
-    const badge = window.AppBags.getAlertBadge(bag.alert_level);
+    const badge = window.AppBags.getAlertBadge(bag.alert_level, !!bag.bag_template_id);
+    // No template, or one with no required items: nothing to check against.
+    const needsTemplate = bag.completion_pct === null;
 
     area.innerHTML = `
       <div class="d-flex align-items-center mb-3">
@@ -341,10 +343,9 @@
         <span class="badge ${badge.cssClass}">${badge.label}</span>
       </div>
       <p class="text-muted">${_esc(bag.bag_name || '')}</p>
-      ${bag.template_name
-        ? `<p class="small">เทมเพลต: <strong>${_esc(bag.template_name)}</strong> (${_esc(bag.template_code || '')})</p>`
-        : `<div class="alert alert-warning small" id="bags-no-tpl-box">
-             กระเป๋านี้ยังไม่มีเทมเพลต — เทมเพลตคือรายการ "ของที่ควรมี" ไว้เช็คครบ/ขาด
+      ${bag.template_name ? `<p class="small">เทมเพลต: <strong>${_esc(bag.template_name)}</strong> (${_esc(bag.template_code || '')})</p>` : ''}
+      ${needsTemplate ? `<div class="alert alert-warning small" id="bags-no-tpl-box">
+             ${bag.bag_template_id ? 'เทมเพลตนี้ยังไม่มีรายการบังคับ จึงเช็คครบ/ขาดไม่ได้' : 'กระเป๋านี้ยังไม่มีเทมเพลต'} — ตั้งเทมเพลตเฉพาะใบนี้ได้จากปุ่มด้านล่าง
              (ของที่อยู่ในกระเป๋าจริงแสดงด้านล่างเสมอ)
              <div class="d-flex gap-2 mt-2 flex-wrap align-items-center">
                <select id="bags-assign-tpl-select" class="form-select form-select-sm" style="max-width:230px;">
@@ -355,7 +356,7 @@
                  <i class="bi bi-magic me-1"></i>สร้างเทมเพลตจากของในกระเป๋า
                </button>
              </div>
-           </div>`}
+           </div>` : ''}
 
       ${bag.completion_pct !== null ? `
       <div class="mb-3">
@@ -388,7 +389,7 @@
 
     // Load composition (template checklist)
     let compItemIds = null;
-    if (bag.bag_template_id) {
+    if (!needsTemplate) {
       const { data: comp, error } = await window.AppBags.getBagComposition(bag.location_id, bag.bag_template_id);
       if (error) {
         document.getElementById('bags-detail-composition').innerHTML =
@@ -621,7 +622,7 @@
     const area = document.getElementById('bags-content-area');
     if (!area) return;
 
-    const badge = window.AppBags.getAlertBadge(_restockBag.alert_level);
+    const badge = window.AppBags.getAlertBadge(_restockBag.alert_level, !!_restockBag.bag_template_id);
 
     area.innerHTML = `
       <div class="d-flex align-items-center mb-3">

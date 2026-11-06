@@ -184,4 +184,32 @@ CALL t_eq('bag badge: expiring stock wins over no template', t_q($q$SELECT count
 CALL t_eq('bag badge: nothing expiring stays no template', t_q($q$SELECT count(*) FROM v_bag_status WHERE bag_code='BAG-O' AND alert_level='no_template'$q$), 1);
 ROLLBACK;
 
+-- ---- Bag template: all-or-nothing save, empty template is not "complete" ----
+BEGIN;
+INSERT INTO bag_templates(id, code, name) VALUES ('00000000-0000-0000-0000-00000000aa01','TPL','Tpl');
+INSERT INTO bag_template_items(bag_template_id, item_id, target_qty, note) VALUES
+  ('00000000-0000-0000-0000-00000000aa01','00000000-0000-0000-0000-000000000003',2,'keep me'),
+  ('00000000-0000-0000-0000-00000000aa01','00000000-0000-0000-0000-000000000002',1,NULL);
+INSERT INTO locations(id, code, name, type, bag_template_id) VALUES
+  ('00000000-0000-0000-0000-0000000000e4','BAG-T','Has template','bag','00000000-0000-0000-0000-00000000aa01');
+
+CALL t_raises('template: empty list is rejected',
+  $$SELECT rpc_save_bag_template('00000000-0000-0000-0000-00000000aa01','TPL','Tpl',NULL,NULL,'[]'::jsonb)$$, 'อย่างน้อย 1 รายการ');
+CALL t_raises('template: a bad row fails the whole save',
+  $$SELECT rpc_save_bag_template('00000000-0000-0000-0000-00000000aa01','TPL','Tpl',NULL,NULL,'[{"item_id":"00000000-0000-0000-0000-000000000003","target_qty":5},{"item_id":"00000000-0000-0000-0000-000000000002","target_qty":0}]'::jsonb)$$, 'target_qty');
+CALL t_raises('template: duplicate item is rejected',
+  $$SELECT rpc_save_bag_template('00000000-0000-0000-0000-00000000aa01','TPL','Tpl',NULL,NULL,'[{"item_id":"00000000-0000-0000-0000-000000000003","target_qty":5},{"item_id":"00000000-0000-0000-0000-000000000003","target_qty":6}]'::jsonb)$$, 'ซ้ำ');
+CALL t_eq('template: failed saves keep every item', t_q($q$SELECT count(*) FROM bag_template_items WHERE bag_template_id='00000000-0000-0000-0000-00000000aa01'$q$), 2);
+CALL t_eq('template: failed saves keep the qty', t_q($q$SELECT target_qty FROM bag_template_items WHERE item_id='00000000-0000-0000-0000-000000000003' AND bag_template_id='00000000-0000-0000-0000-00000000aa01'$q$), 2);
+
+SELECT rpc_save_bag_template('00000000-0000-0000-0000-00000000aa01','TPL','Tpl 2',NULL,NULL,'[{"item_id":"00000000-0000-0000-0000-000000000003","target_qty":5,"mandatory":true,"sort_order":0}]'::jsonb);
+CALL t_eq('template: removed row is gone, kept row updated', t_q($q$SELECT count(*) FROM bag_template_items WHERE bag_template_id='00000000-0000-0000-0000-00000000aa01' AND target_qty=5$q$), 1);
+CALL t_eq('template: only the listed item remains', t_q($q$SELECT count(*) FROM bag_template_items WHERE bag_template_id='00000000-0000-0000-0000-00000000aa01'$q$), 1);
+CALL t_eq('template: kept row keeps its note', t_q($q$SELECT count(*) FROM bag_template_items WHERE note='keep me'$q$), 1);
+CALL t_eq('bag badge: template short of stock reads low_stock', t_q($q$SELECT count(*) FROM v_bag_status WHERE bag_code='BAG-T' AND alert_level='low_stock'$q$), 1);
+
+DELETE FROM bag_template_items WHERE bag_template_id='00000000-0000-0000-0000-00000000aa01';
+CALL t_eq('bag badge: empty template is not complete', t_q($q$SELECT count(*) FROM v_bag_status WHERE bag_code='BAG-T' AND alert_level='no_template'$q$), 1);
+ROLLBACK;
+
 \echo HARDENING PASSED
