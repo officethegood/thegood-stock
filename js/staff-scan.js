@@ -1297,7 +1297,9 @@
     el.finderResults.innerHTML = top.map((it, i) => {
       const d = detail[i]?.data;
       const total = d?.total_qty ?? it.total_qty ?? 0;
-      const locs = (d?.locations || []).slice(0, 4).map((row) => {
+      // Every location that holds it. The old 4-row cap hid the rest without saying so,
+      // so a bag holding the item looked empty (report 2026-11-07, ORS in กล่องยา 2).
+      const locs = (d?.locations || []).map((row) => {
         const code = row.locations?.code || '?';
         const name = row.locations?.name ? ` ${escapeHtml(row.locations.name)}` : '';
         return `<div class="d-flex justify-content-between small"><span><code>${escapeHtml(code)}</code>${name}</span><span class="text-stock-accent fw-semibold">${row.qty}</span></div>`;
