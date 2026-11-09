@@ -68,6 +68,16 @@
     return `<span class="${cls} fw-semibold">${sign}${n}</span>`;
   }
 
+  // Stock at that location before → after this movement. qty_after is written by
+  // apply_movement_to_sil on every insert; before = after - delta.
+  function _balanceLine(delta, after) {
+    if (after === null || after === undefined) return '';
+    const a = Number(after);
+    const b = a - (Number(delta) || 0);
+    return `<div class="text-muted text-nowrap" style="font-size:.75rem"
+                 title="ยอดที่ตำแหน่งนี้ ก่อน → หลังรายการนี้">${b} → ${a}</div>`;
+  }
+
   function _locName(loc) {
     if (!loc) return '?';
     const nm = (loc.name || '').trim();
@@ -141,7 +151,7 @@
           <td class="small text-muted text-nowrap">${_esc(_fmtTime(r.performed_at))}</td>
           <td class="small text-nowrap">${_typeCell(r.movement_type)}</td>
           <td class="small"><code>${sku}</code>${nm ? ` <span class="text-muted">${nm}</span>` : ''}</td>
-          <td class="text-end small">${_qtyCell(r.qty_delta)}</td>
+          <td class="text-end small">${_qtyCell(r.qty_delta)}${_balanceLine(r.qty_delta, r.qty_after)}</td>
           <td class="small d-none d-md-table-cell">${_locName(r.locations)}</td>
           <td class="small d-none d-sm-table-cell">${_esc(r.performed_by || '')}</td>
           <td class="small d-none d-lg-table-cell text-muted">${_esc(reason)}</td>
@@ -318,7 +328,7 @@
                 <th scope="col">เวลา</th>
                 <th scope="col">ชนิด</th>
                 <th scope="col">สินค้า</th>
-                <th scope="col" class="text-end">จำนวน</th>
+                <th scope="col" class="text-end">จำนวน<div class="fw-normal text-muted" style="font-size:.7rem">ก่อน → หลัง</div></th>
                 <th scope="col" class="d-none d-md-table-cell">สถานที่</th>
                 <th scope="col" class="d-none d-sm-table-cell">ผู้ทำ</th>
                 <th scope="col" class="d-none d-lg-table-cell">เหตุผล</th>

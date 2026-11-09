@@ -44,7 +44,7 @@ CREATE TABLE locations (
   parent_id uuid REFERENCES locations(id), active boolean NOT NULL DEFAULT true,
   bag_template_id uuid REFERENCES bag_templates(id));
 CREATE TABLE stock_items (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), sku text, name text,
-  unit text, tracks_lots boolean NOT NULL DEFAULT true);
+  unit text, tracks_lots boolean NOT NULL DEFAULT true, reorder_threshold int);
 CREATE TABLE bag_template_items (id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   bag_template_id uuid NOT NULL REFERENCES bag_templates(id) ON DELETE CASCADE,
   item_id uuid NOT NULL REFERENCES stock_items(id), target_qty int NOT NULL CHECK (target_qty > 0),

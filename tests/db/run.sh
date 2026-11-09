@@ -62,9 +62,15 @@ for f in \
   20261105030000_bag_status_expiry_before_template \
   20261105040000_harden_movement_writes \
   20261105050000_atomic_stock_rpcs \
-  20261106010000_bag_template_save_and_empty_status
+  20261106010000_bag_template_save_and_empty_status \
+  20261109010000_return_targets_selected_loan \
+  20261109020000_delete_location_keeps_history \
+  20261109030000_clear_location_refuses_drift \
+  20261109040000_lowstock_skip_transfer \
+  20261109050000_rpc_restock_bag
 do run "$M/$f.sql" >/dev/null; done
 
 run "$HERE/lot_location_test.sql"
 run "$HERE/audit_test.sql"
 run "$HERE/hardening_test.sql"
+run "$HERE/review_fixes_test.sql"

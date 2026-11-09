@@ -12,7 +12,8 @@
 //   S-4.4 Restock flow (3 steps: shopping list → photo → confirm)
 //
 // Decisions enforced:
-//   Q-Phase4-B: N individual REST INSERTs via AppBags.submitRestockItem (no bulk RPC)
+//   Restock saves in ONE call (AppBags.restockBag → rpc_restock_bag, 20261109050000): each line
+//   is moved from a chosen location (the store goes down) or received as new stock.
 //   Q-Phase4-D: Advisory photo via PhotoCaptureModal (skip always available)
 //   Q-Phase4-E: Bag swap OUT OF SCOPE
 //   Q-Phase4-F: Inspection tracking OUT OF SCOPE
@@ -561,15 +562,15 @@
     const lotRows = data.filter((l) => l.tracks_lots);
     if (!lotRows.length) { el.innerHTML = ''; return; }
 
-    const getLotBadge = window.AppLots?.getLotBadge || (() => ({ cls: 'bg-secondary', label: '' }));
+    const getLotBadge = window.AppLots?.getLotBadge || (() => ({ badgeClass: 'bg-secondary', label: '' }));
     const rowsHtml = lotRows.map((l) => {
-      const expBadge = getLotBadge(l.expiry_date);
+      const expBadge = getLotBadge({ expiry_date: l.expiry_date, status: l.status, current_qty: l.qty_in_bag });
       return `
         <tr>
           <td><small>${_esc(l.name || '')}</small></td>
           <td><small>${_esc(l.lot_number || '')}</small></td>
           <td><small>${window.AppBags.formatThaiDate(l.expiry_date)}<br>
-            <span class="badge ${expBadge.cls}">${expBadge.label}</span>
+            <span class="badge ${expBadge.badgeClass}">${expBadge.label}</span>
           </small></td>
           <td class="text-center"><small>${l.qty_in_bag}</small></td>
         </tr>`;
@@ -698,9 +699,18 @@
               </div>
             </div>
 
+            <div class="row g-2 mt-1 align-items-center">
+              <div class="col-auto"><label class="form-label small fw-semibold mb-0" for="restock-src-${idx}">หยิบมาจาก</label></div>
+              <div class="col">
+                <select class="form-select form-select-sm restock-source" id="restock-src-${idx}" data-idx="${idx}">
+                  <option value="">กำลังโหลด…</option>
+                </select>
+              </div>
+            </div>
+
             ${item.tracks_lots ? `
             <div class="mt-2" id="restock-lot-${idx}">
-              <label class="form-label small fw-semibold">เลือกล็อต (FEFO)</label>
+              <label class="form-label small fw-semibold">เลือกล็อต (หมดอายุก่อนอยู่บน)</label>
               <div class="restock-lot-picker" data-idx="${idx}">
                 <div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>กำลังโหลดล็อต…</div>
               </div>
@@ -736,44 +746,104 @@
       });
     });
 
-    // Load lot pickers for tracks_lots items
-    _shoppingList.forEach((item, idx) => {
-      if (!item.tracks_lots) return;
-      const pickerEl = container.querySelector(`.restock-lot-picker[data-idx="${idx}"]`);
-      if (!pickerEl) return;
-      window.AppLots?.fetchAvailableLots(item.item_id).then(({ data: lots, error }) => {
-        if (error || !lots || lots.length === 0) {
-          pickerEl.innerHTML = `<p class="text-muted small">ไม่มีล็อตที่ใช้ได้ — ต้องรับเข้าคลังก่อน</p>`;
-          return;
-        }
-        // Render radio group (FEFO — first lot is pre-selected)
-        const lotHtml = lots.map((lot, li) => {
-          const expBadge = window.AppLots?.getLotBadge(lot.expiry_date) || { cls: '', label: '' };
-          const checked  = li === 0 ? 'checked' : '';
-          return `
-            <div class="form-check">
-              <input class="form-check-input restock-lot-radio" type="radio"
-                     name="lot-${idx}" id="lot-${idx}-${li}" value="${_esc(lot.id)}"
-                     data-idx="${idx}" ${checked}>
-              <label class="form-check-label small" for="lot-${idx}-${li}">
-                ${_esc(lot.lot_number || '')}
-                วันหมดอายุ ${window.AppBags.formatThaiDate(lot.expiry_date)}
-                เหลือ ${lot.current_qty}
-                <span class="badge ${expBadge.cls}">${expBadge.label}</span>
-              </label>
-            </div>`;
-        }).join('');
-        pickerEl.innerHTML = lotHtml;
-        // Pre-select FEFO lot
-        if (lots[0]) _shoppingList[idx].selected_lot_id = lots[0].id;
+    // Sources (where each line is taken from), then lots at that source.
+    _shoppingList.forEach((item, idx) => _loadRestockSources(container, idx));
+  }
 
-        pickerEl.querySelectorAll('.restock-lot-radio').forEach((radio) => {
-          radio.addEventListener('change', () => {
-            _shoppingList[parseInt(radio.dataset.idx, 10)].selected_lot_id = radio.value;
-          });
-        });
-      });
+  // Each line is either moved from a location that holds the item, or new stock that never
+  // went through the store (some oral drugs go straight into the box — Chittawan 2026-11-09).
+  async function _loadRestockSources(container, idx) {
+    const item = _shoppingList[idx];
+    const sel  = container.querySelector(`.restock-source[data-idx="${idx}"]`);
+    if (!sel) return;
+    if (!item.sources) {
+      const { data, error } = await window.AppBags.getRestockSources(item.item_id, _restockBag.location_id);
+      if (error) {
+        sel.innerHTML = '<option value="">โหลดต้นทางไม่สำเร็จ — ลองเปิดใหม่</option>';
+        item.source = null;
+        return;
+      }
+      item.sources = data || [];
+    }
+    if (!item.source) item.source = item.sources.length ? item.sources[0].id : 'new';
+
+    sel.innerHTML = item.sources.map((l) =>
+      `<option value="${_esc(l.id)}">${_esc(l.code)} — ${_esc(l.name || '')} (มี ${l.qty})</option>`).join('') +
+      `<option value="new">ของเข้าใหม่ (ไม่ได้หยิบจากคลัง)</option>`;
+    sel.value = item.source;
+    sel.addEventListener('change', () => {
+      item.source = sel.value;
+      item.selected_lot_id = null;
+      _loadRestockLots(container, idx);
     });
+    _loadRestockLots(container, idx);
+  }
+
+  async function _loadRestockLots(container, idx) {
+    const item = _shoppingList[idx];
+    if (!item.tracks_lots) return;
+    const pickerEl = container.querySelector(`.restock-lot-picker[data-idx="${idx}"]`);
+    if (!pickerEl) return;
+    pickerEl.innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>กำลังโหลดล็อต…</div>';
+
+    let lots = [];
+    if (item.source === 'new') {
+      const { data, error } = await (window.AppLots?.fetchAvailableLots(item.item_id) || { data: [], error: null });
+      if (error) { pickerEl.innerHTML = '<p class="text-danger small">โหลดล็อตไม่สำเร็จ</p>'; item.lots = []; return; }
+      lots = (data || []).map((l) => ({ id: l.id, lot_number: l.lot_number, expiry_date: l.expiry_date, status: l.status, qty: l.current_qty }));
+    } else {
+      const { data, error } = await window.AppBags.getLotsAtLocation(item.item_id, item.source);
+      if (error) { pickerEl.innerHTML = '<p class="text-danger small">โหลดล็อตไม่สำเร็จ</p>'; item.lots = []; return; }
+      lots = data || [];
+    }
+    if (item.source !== (container.querySelector(`.restock-source[data-idx="${idx}"]`)?.value)) return; // changed meanwhile
+    item.lots = lots;
+
+    if (!lots.length) {
+      pickerEl.innerHTML = item.source === 'new'
+        ? '<p class="text-muted small">ไม่มีล็อตในระบบ — รับเข้าล็อตใหม่ที่หน้า "คลัง" ก่อน</p>'
+        : '<p class="text-muted small">ตำแหน่งนี้ไม่มีล็อตที่ใช้ได้ — เลือกต้นทางอื่น</p>';
+      item.selected_lot_id = null;
+      return;
+    }
+    if (!lots.some((l) => l.id === item.selected_lot_id)) item.selected_lot_id = lots[0].id;
+
+    pickerEl.innerHTML = lots.map((lot, li) => {
+      const b = window.AppLots?.getLotBadge({ expiry_date: lot.expiry_date, status: lot.status, current_qty: lot.qty })
+             || { badgeClass: 'bg-secondary', label: '' };
+      return `
+        <div class="form-check">
+          <input class="form-check-input restock-lot-radio" type="radio"
+                 name="lot-${idx}" id="lot-${idx}-${li}" value="${_esc(lot.id)}"
+                 data-idx="${idx}" ${lot.id === item.selected_lot_id ? 'checked' : ''}>
+          <label class="form-check-label small" for="lot-${idx}-${li}">
+            ${_esc(lot.lot_number || '')}
+            วันหมดอายุ ${window.AppBags.formatThaiDate(lot.expiry_date)}
+            ${item.source === 'new' ? 'ทั้งระบบ' : 'ที่นี่'} ${lot.qty}
+            ${b.label ? `<span class="badge ${b.badgeClass}">${_esc(b.label)}</span>` : ''}
+          </label>
+        </div>`;
+    }).join('');
+
+    pickerEl.querySelectorAll('.restock-lot-radio').forEach((radio) => {
+      radio.addEventListener('change', () => { item.selected_lot_id = radio.value; });
+    });
+  }
+
+  // Why a line cannot be saved yet, or '' when it can.
+  function _restockLineProblem(r) {
+    if (!r.source) return 'ยังโหลดต้นทางไม่เสร็จ';
+    if (r.tracks_lots && !r.selected_lot_id) return 'ยังไม่ได้เลือกล็อต';
+    if (r.source !== 'new') {
+      const src = (r.sources || []).find((l) => l.id === r.source);
+      let max = src ? src.qty : 0;
+      if (r.tracks_lots) {
+        const lot = (r.lots || []).find((l) => l.id === r.selected_lot_id);
+        max = Math.min(max, lot ? lot.qty : 0);
+      }
+      if (r.restock_qty > max) return `ต้นทางมีแค่ ${max} ${r.unit || ''}`.trim();
+    }
+    return '';
   }
 
   function _proceedToStep2() {
@@ -781,6 +851,12 @@
     const hasItems = _shoppingList.some((r) => r.restock_qty > 0);
     if (!hasItems) {
       _toast('warning', 'กรุณากรอกจำนวนสำหรับอย่างน้อยหนึ่งรายการ หรือข้ามทั้งหมด');
+      return;
+    }
+    const bad = _shoppingList.filter((r) => r.restock_qty > 0)
+      .map((r) => ({ r, why: _restockLineProblem(r) })).filter((x) => x.why);
+    if (bad.length) {
+      _toast('warning', `${bad[0].r.name}: ${bad[0].why}`);
       return;
     }
     _renderRestockStep2();
@@ -887,7 +963,10 @@
             <span class="small">${r.mandatory ? '★' : '○'} ${_esc(r.name)}</span>
             <span>
               <span class="badge bg-primary">+${r.restock_qty} ${_esc(r.unit)}</span>
-              ${r.selected_lot_id ? `<span class="badge bg-secondary ms-1">ล็อต</span>` : ''}
+              <span class="badge bg-light text-dark border ms-1">${r.source === 'new'
+                ? 'ของเข้าใหม่'
+                : 'จาก ' + _esc(((r.sources || []).find((l) => l.id === r.source) || {}).code || '?')}</span>
+              ${r.selected_lot_id ? `<span class="badge bg-secondary ms-1">ล็อต ${_esc(((r.lots || []).find((l) => l.id === r.selected_lot_id) || {}).lot_number || '')}</span>` : ''}
             </span>
           </li>`).join('')}
       </ul>
@@ -913,75 +992,45 @@
   }
 
   async function _submitRestock() {
-    const btn       = document.getElementById('restock-confirm-btn');
-    const progText  = document.getElementById('restock-progress-text');
-    const resultEl  = document.getElementById('restock-result-list');
-
+    const btn      = document.getElementById('restock-confirm-btn');
+    const resultEl = document.getElementById('restock-result-list');
     if (!btn) return;
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>กำลังบันทึก…';
 
     const toRestock = _shoppingList.filter((r) => r.restock_qty > 0);
-    let successCount = 0;
-    let failCount    = 0;
-    const failures   = [];
+    const lines = toRestock.map((r) => ({
+      item_id: r.item_id,
+      qty:     r.restock_qty,
+      lot_id:  r.selected_lot_id || null,
+      from:    r.source === 'new' ? null : r.source,
+    }));
+    const note = 'bag:' + _restockBag.bag_code + ':restock:' + _restockRefId +
+                 (_restockPhoto ? ':photo:' + _restockPhoto : '');
 
-    for (let i = 0; i < toRestock.length; i++) {
-      const item = toRestock[i];
-      if (progText) progText.textContent = `กำลังบันทึก ${i + 1}/${toRestock.length}…`;
+    // All-or-nothing; the same _restockRefId on a retry cannot save twice.
+    const { error, alreadySaved } = await window.AppBags.restockBag({
+      bagId: _restockBag.location_id, clientRef: _restockRefId, note, lines,
+    });
 
-      const { error, alreadyPosted } = await window.AppBags.submitRestockItem({
-        location_id:    _restockBag.location_id,
-        item_id:        item.item_id,
-        qty_delta:      item.restock_qty,
-        lot_id:         item.selected_lot_id || null,
-        bag_code:       _restockBag.bag_code,
-        restock_ref_id: _restockRefId,
-        client_ref_id:  window.AppBags.generateUUID(),
-        note:           'bag:' + _restockBag.bag_code + ':restock:' + _restockRefId +
-                        (_restockPhoto ? ':photo:' + _restockPhoto : ''),
-      });
-
-      if (error && !alreadyPosted) {
-        failCount++;
-        failures.push({ name: item.name, error: error.message || 'ไม่ทราบสาเหตุ' });
-      } else {
-        successCount++;
-      }
-    }
-
-    if (progText) progText.textContent = '';
-
-    if (failCount === 0) {
-      _toast('success', `เติมของเสร็จสิ้น — ${successCount} รายการ`);
-      // Reload bag status and return to detail
-      const { data: refreshed } = await window.AppBags.getBagStatus(_restockBag.location_id);
-      if (refreshed) _restockBag = refreshed;
-      setTimeout(() => _showDetailView(_restockBag), 1000);
-    } else {
-      _toast('warning', `เติมของบางส่วน — สำเร็จ ${successCount}, ล้มเหลว ${failCount}`);
+    if (error) {
+      const msg = error.message || 'ไม่ทราบสาเหตุ';
+      _toast('error', 'เติมของไม่สำเร็จ — ยังไม่ได้บันทึกอะไร');
       if (resultEl) {
-        resultEl.innerHTML = `
-          <div class="alert alert-warning small">
-            <strong>รายการที่ล้มเหลว:</strong><br>
-            ${failures.map((f) => `${_esc(f.name)}: ${_esc(f.error)}`).join('<br>')}
-          </div>
-          <button class="btn btn-sm btn-outline-primary" id="restock-retry-btn">
-            ลองใหม่สำหรับรายการที่ล้มเหลว
-          </button>`;
-        resultEl.querySelector('#restock-retry-btn')?.addEventListener('click', () => {
-          // Re-filter shopping list to only failed items and re-submit
-          _shoppingList = _shoppingList.filter((r) =>
-            failures.some((f) => f.name === r.name) && r.restock_qty > 0
-          );
-          _submitRestock();
-        });
+        resultEl.innerHTML = `<div class="alert alert-danger small">${_esc(msg)}<br>
+          แก้รายการแล้วกดยืนยันอีกครั้งได้ — ไม่มีรายการไหนถูกบันทึกไปบางส่วน</div>`;
       }
       btn.disabled = false;
       btn.innerHTML = `<i class="bi bi-check2-circle me-1"></i>ยืนยันการเติมของ`;
+      return;
     }
 
-    // Refresh bag list in background
+    _toast('success', alreadySaved
+      ? 'การเติมของนี้บันทึกไปแล้ว'
+      : `เติมของเสร็จสิ้น — ${lines.length} รายการ`);
+    const { data: refreshed } = await window.AppBags.getBagStatus(_restockBag.location_id);
+    if (refreshed) _restockBag = refreshed;
+    setTimeout(() => _showDetailView(_restockBag), 1000);
     await _loadBagList();
   }
 

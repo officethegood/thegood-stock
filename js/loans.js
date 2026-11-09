@@ -446,6 +446,7 @@
         qty:              loan.qty,
         borrowerUsername: loan.borrower_username,
         note:             note || null,
+        borrowMovementId: loan.movement_id_borrow,
       });
 
       if (r.error) {

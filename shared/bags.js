@@ -373,50 +373,70 @@
   }
 
   /**
-   * Submit a single restock movement (one item in the shopping list).
-   * Caller loops over N items and calls this for each.
-   * Idempotent via client_ref_id: 409 on duplicate = treat as success.
+   * Where an item can be taken from to restock a bag: every location holding it,
+   * except the bag itself and its zones. Most stock first.
    *
-   * @param {{
-   *   location_id:    string,
-   *   item_id:        string,
-   *   qty_delta:      number,
-   *   lot_id?:        string|null,
-   *   bag_code:       string,
-   *   restock_ref_id: string,
-   *   client_ref_id:  string,
-   *   note?:          string,
-   * }} params
+   * @param {string} itemId
+   * @param {string} bagId
+   * @returns {Promise<{ data: Array<{id, code, name, type, qty}>|null, error: any }>}
    */
-  async function submitRestockItem(params) {
-    const {
-      location_id, item_id, qty_delta, lot_id = null,
-      bag_code, restock_ref_id, client_ref_id, note,
-    } = params;
+  async function getRestockSources(itemId, bagId) {
+    return _safe(async () => {
+      const r = await _sb().from('stock_item_locations')
+        .select('qty, locations!inner(id, code, name, type, parent_id, active)')
+        .eq('item_id', itemId)
+        .gt('qty', 0)
+        .order('qty', { ascending: false });
+      if (r.error) return r;
+      const rows = (r.data || [])
+        .map((x) => ({ ...x.locations, qty: x.qty }))
+        .filter((l) => l.id !== bagId && l.parent_id !== bagId);
+      return { data: rows, error: null };
+    });
+  }
 
-    const movement = {
-      movement_type: 'receive',
-      location_id,
-      item_id,
-      qty_delta,
-      lot_id:        lot_id || null,
-      reason:        'bag_restock',
-      note:          note || ('bag:' + bag_code + ':restock:' + restock_ref_id),
-      client_ref_id,
-    };
+  /**
+   * Lots of an item that are physically AT a location (usable: active, not expired).
+   * @returns {Promise<{ data: Array<{id, lot_number, expiry_date, status, qty}>|null, error: any }>}
+   */
+  async function getLotsAtLocation(itemId, locationId) {
+    return _safe(async () => {
+      const r = await _sb().from('v_item_location_lots')
+        .select('lot_id, lot_number, expiry_date, lot_status, qty, days_until_expiry')
+        .eq('item_id', itemId)
+        .eq('location_id', locationId)
+        .eq('lot_status', 'active')
+        .gte('days_until_expiry', 0)
+        .order('expiry_date', { ascending: true });
+      if (r.error) return r;
+      return {
+        data: (r.data || []).map((l) => ({
+          id: l.lot_id, lot_number: l.lot_number, expiry_date: l.expiry_date,
+          status: l.lot_status, qty: l.qty,
+        })),
+        error: null,
+      };
+    });
+  }
 
-    const result = await _safe(() =>
-      _sb().from('stock_movements').insert([movement]).select().single()
-    );
-
-    // 409 (duplicate client_ref_id) = already posted → treat as success
-    if (result.error) {
-      const code = result.error.code || (result.error.details && result.error.details.code);
-      if (code === '23505' || (result.error.message && result.error.message.includes('client_ref_id'))) {
-        return { data: movement, error: null, alreadyPosted: true };
-      }
+  /**
+   * Save a whole restock in one transaction (rpc_restock_bag, 20261109050000).
+   * Lines with `from` move stock out of that location; lines without are new stock
+   * received straight into the bag. Re-sending the same clientRef is refused by the DB
+   * (23505) — reported here as alreadySaved so a retry after a lost response is safe.
+   *
+   * @param {{ bagId: string, clientRef: string, note: string,
+   *           lines: Array<{ item_id: string, qty: number, lot_id: string|null, from: string|null }> }} p
+   * @returns {Promise<{ data: number|null, error: any, alreadySaved?: boolean }>}
+   */
+  async function restockBag({ bagId, clientRef, note, lines }) {
+    const r = await _safe(() => _sb().rpc('rpc_restock_bag', {
+      p_bag_id: bagId, p_client_ref: clientRef, p_note: note, p_lines: lines,
+    }));
+    if (r.error && (r.error.code === '23505' || /duplicate key/i.test(r.error.message || ''))) {
+      return { data: lines.length, error: null, alreadySaved: true };
     }
-    return result;
+    return r;
   }
 
   /**
@@ -537,7 +557,9 @@
     assignTemplateToBag,
     // Restock
     buildShoppingList,
-    submitRestockItem,
+    getRestockSources,
+    getLotsAtLocation,
+    restockBag,
     generateUUID,
     // Deploy / return (กระเป๋าขึ้นรถ)
     listVehicleLocations,

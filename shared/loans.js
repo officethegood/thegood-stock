@@ -201,7 +201,7 @@
       .select(`
         id, borrower_username, qty, status,
         borrowed_at, due_at, returned_at,
-        photo_borrow_url,
+        photo_borrow_url, movement_id_borrow,
         notes,
         stock_items!item_id(id, name, sku),
         locations!location_id_from(id, code, name)
@@ -256,7 +256,7 @@
       .select(`
         id, borrower_username, qty, status,
         borrowed_at, due_at,
-        photo_borrow_url,
+        photo_borrow_url, movement_id_borrow,
         locations!location_id_from(id, code, name)
       `)
       .eq('item_id', itemId)
@@ -353,7 +353,7 @@
    * @param {string} [p.clientRefId]
    * @returns {Promise<{ data: object|null, error: object|null }>}
    */
-  async function createReturn({ itemId, locationId, qty, borrowerUsername, note, clientRefId }) {
+  async function createReturn({ itemId, locationId, qty, borrowerUsername, note, clientRefId, borrowMovementId }) {
     const refId = clientRefId || _uuid();
     const payload = {
       item_id:       itemId,
@@ -363,6 +363,11 @@
       note:          note || null,
       client_ref_id: refId,
     };
+    // The loan the user picked (its movement_id_borrow). Without it the DB closes the
+    // newest open loan of this item, which is wrong when there are two (20261109010000).
+    if (borrowMovementId) {
+      payload.source_movement_id = borrowMovementId;
+    }
     if (borrowerUsername) {
       payload.borrower_username = borrowerUsername;
     }
@@ -429,7 +434,7 @@
         id, borrower_username, qty, status,
         borrowed_at, due_at, returned_at,
         photo_borrow_url, photo_return_url,
-        notes, created_at,
+        notes, created_at, movement_id_borrow,
         stock_items!item_id(id, name, sku),
         locations!location_id_from(id, code, name)
       `)

@@ -3153,7 +3153,10 @@
 
       _return.item = itemRes.data;
 
-      const loanRes = await window.AppLoans.findOpenLoansForItem(itemRes.data.id);
+      // Only the caller's own loans: the DB returns for the caller, so picking someone
+      // else's loan could only fail (RLS lets everyone read every loan).
+      const loanRes = await window.AppLoans.findOpenLoansForItem(
+        itemRes.data.id, window.getUserUsername?.() || undefined);
       if (loanRes.error || !loanRes.data?.length) {
         document.getElementById('return-loan-result').innerHTML = `
           <div class="alert alert-warning small">
@@ -3307,6 +3310,7 @@
       locationId: loan.locations?.id || loan.location_id_from,
       qty:        loan.qty,
       clientRefId: _return.clientRefId,
+      borrowMovementId: loan.movement_id_borrow,
     });
 
     if (r.error) {

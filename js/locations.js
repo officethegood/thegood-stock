@@ -1255,32 +1255,31 @@
       if (refs.silReal) blockers.push(`มีของเก็บอยู่ ${refs.silReal} รายการสินค้า (ย้ายออกก่อน)`);
       if (refs.tanks)   blockers.push(`มีถังออกซิเจน ${refs.tanks} ถัง (ย้ายถังออกก่อน)`);
       if (refs.loans)   blockers.push(`มีรายการยืม ${refs.loans} รายการอ้างอิง (ใช้ "ปิดใช้งาน" แทน)`);
+      // Stock history is the ledger; deleting it breaks lot totals (20261109020000).
+      const history = refs.movements + refs.oxMv;
+      if (history && !refs.silReal && !refs.tanks && !refs.loans) {
+        blockers.push(`ตำแหน่งนี้มีประวัติการเคลื่อนไหว ${history} รายการ — ใช้ "ปิดใช้งาน" แทน (แก้ไข → เอาเครื่องหมาย "ใช้งาน" ออก)`);
+      }
     }
     if (blockers.length) {
       showToast('error', `ลบไม่ได้ — ${blockers.join(' · ')}`);
       return;
     }
 
-    // History impact — purge will destroy these. Show in the confirm.
-    const impact = [];
-    if (refs) {
-      if (refs.movements) impact.push(`ประวัติเคลื่อนไหว ${refs.movements} รายการ`);
-      if (refs.oxMv)      impact.push(`ประวัติถัง O2 ${refs.oxMv} รายการ`);
-      if (refs.silZombie) impact.push(`แถว qty=0 อีก ${refs.silZombie} แถว`);
-    }
-    const msg = impact.length
-      ? `ลบ ${name}? — จะลบ ${impact.join(' · ')} ทิ้งด้วย (กู้คืนไม่ได้)`
-      : `ลบ ${name}?`;
-    const ok = await showConfirm(msg);
+    const ok = await showConfirm(`ลบ ${name}?`);
     if (!ok) return;
 
     // The locations table has RESTRICT FKs and stock_movements is append-only
     // (no client DELETE policy) — a plain DELETE 23503s. Go through the
-    // SECURITY DEFINER RPC which re-checks the guards and purges history.
+    // SECURITY DEFINER RPC which re-checks every guard.
     const sb = getSupabaseClient();
     const { error } = await sb.rpc('rpc_delete_location', { p_location_id: id });
     if (error) {
-      showToast('error', error.message || 'ลบไม่สำเร็จ');
+      // 23503 = something still references it (older DB without the history guard).
+      const msg = error.code === '23503'
+        ? 'ลบไม่ได้ — ตำแหน่งนี้มีประวัติการเคลื่อนไหวอ้างอิงอยู่ ใช้ "ปิดใช้งาน" แทน'
+        : (error.message || 'ลบไม่สำเร็จ');
+      showToast('error', msg);
       return;
     }
     _expanded.delete(id);
