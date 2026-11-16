@@ -86,12 +86,28 @@ CALL t_eq('return: picked loan decides the lot, not the client',
          WHERE sm.movement_type = 'return' AND sm.source_movement_id IS NOT NULL AND sl.lot_number = 'R-A'$q$), 1);
 ROLLBACK;
 
+-- 20261116010000: anyone may return a loan they pick (decision Pex 2026-11-16).
 BEGIN;
+SET LOCAL test.username = 'TG6401';
 SELECT r_move('borrow','RSTOCK','R-A',-1);
 SET LOCAL test.role = 'Employee';
 SET LOCAL test.username = 'someone-else';
-CALL t_raises('return: another person''s loan cannot be closed by picking it',
-  $$SELECT t_return('RSTOCK', 1, t_borrow_id('RSTOCK','R-A'))$$, 'ไม่พบรายการยืมที่เปิดอยู่');
+SELECT t_return('RSTOCK', 1, t_borrow_id('RSTOCK','R-A'));
+CALL t_eq('return: staff can return a loan someone else borrowed by picking it',
+  t_q($q$SELECT count(*) FROM stock_loans WHERE movement_id_borrow = t_borrow_id('RSTOCK','R-A')
+         AND status = 'returned' AND borrower_username = 'TG6401'$q$), 1);
+CALL t_eq('return: the person who brought it back is recorded',
+  t_q($q$SELECT count(*) FROM stock_movements WHERE movement_type = 'return'
+         AND source_movement_id = t_borrow_id('RSTOCK','R-A') AND performed_by = 'someone-else'$q$), 1);
+ROLLBACK;
+
+BEGIN;
+SET LOCAL test.username = 'TG6401';
+SELECT r_move('borrow','RSTOCK','R-A',-1);
+SET LOCAL test.role = 'Employee';
+SET LOCAL test.username = 'someone-else';
+CALL t_raises('return: without a picked loan staff still return only their own',
+  $$SELECT t_return('RSTOCK', 1, NULL)$$, 'ไม่พบรายการยืมที่เปิดอยู่');
 ROLLBACK;
 
 -- An Admin brings back equipment someone else borrowed (report 2026-11-16): the staff

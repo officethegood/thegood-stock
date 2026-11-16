@@ -3153,10 +3153,10 @@
 
       _return.item = itemRes.data;
 
-      // Who may return which loan mirrors the DB (validate_borrow_movement): an Admin
-      // returns any loan on the borrower's behalf; anyone else only their own, because
-      // the DB records the caller as the borrower. Equipment is often brought back by
-      // someone other than the borrower (report Chittawan 2026-11-16), so say who holds it.
+      // Anyone may return any open loan of the item: equipment is often brought back by
+      // someone other than the borrower (report Chittawan 2026-11-16, decision Pex). The DB
+      // books the return to the picked loan's borrower (20261116010000) and records who
+      // pressed the button as performed_by.
       const me      = window.getUserUsername?.() || '';
       const isAdmin = window.getUserRole?.() === 'Admin';
       const loanRes = await window.AppLoans.findOpenLoansForItem(itemRes.data.id);
@@ -3165,19 +3165,13 @@
           `<div class="alert alert-danger small">โหลดรายการยืมไม่สำเร็จ — ลองใหม่</div>`;
         return;
       }
-      const all    = loanRes.data || [];
-      const loans  = isAdmin ? all : all.filter((l) => l.borrower_username === me);
-      const others = all.filter((l) => !loans.includes(l));
+      const loans = loanRes.data || [];
       _return.isAdmin = isAdmin;
+      _return.me      = me;
 
       if (!loans.length) {
-        const who = [...new Set(others.map((l) => l.borrower_username))].map(_esc).join(', ');
-        document.getElementById('return-loan-result').innerHTML = others.length
-          ? `<div class="alert alert-warning small">
-               อุปกรณ์นี้ยืมโดย <strong>${who}</strong><br>
-               <small>คืนได้โดยผู้ยืมเอง หรือให้ Admin กดคืนแทน</small>
-             </div>`
-          : `<div class="alert alert-warning small">ไม่มีรายการยืมที่ยังค้างอยู่สำหรับสินค้านี้</div>`;
+        document.getElementById('return-loan-result').innerHTML =
+          `<div class="alert alert-warning small">ไม่มีรายการยืมที่ยังค้างอยู่สำหรับสินค้านี้</div>`;
         return;
       }
 
@@ -3192,7 +3186,7 @@
             <input class="form-check-input" type="radio" name="return-loan-radio"
                    id="loan-radio-${_esc(l.id)}" value="${_esc(l.id)}">
             <label class="form-check-label" for="loan-radio-${_esc(l.id)}">
-              ${isAdmin ? `<strong>${_esc(l.borrower_username || '')}</strong> · ` : ''}ยืมเมื่อ ${window.AppLoans ? window.AppLoans.formatThaiDate(l.borrowed_at) : l.borrowed_at}
+              <strong>${_esc(l.borrower_username || '')}</strong>${l.borrower_username === me ? ' (ของฉัน)' : ''} · ยืมเมื่อ ${window.AppLoans ? window.AppLoans.formatThaiDate(l.borrowed_at) : l.borrowed_at}
               · จำนวน ${l.qty} ชิ้น · ครบ ${due}${overdue}
             </label>
           </div>`;
@@ -3243,7 +3237,8 @@
         ${overdueMsg}
         <div class="alert alert-info small py-2 mb-3">
           <strong>${_esc(item?.name || '')} (${_esc(item?.sku || '')})</strong><br>
-          จำนวน: ${loan?.qty || 1} ชิ้น · ครบกำหนด: ${_esc(due)}
+          จำนวน: ${loan?.qty || 1} ชิ้น · ครบกำหนด: ${_esc(due)}<br>
+          ผู้ยืม: ${_esc(loan?.borrower_username || '')}${loan?.borrower_username === _return.me ? ' (ของฉัน)' : ' — คุณคืนแทนได้'}
         </div>
         <h6 class="mb-2">ขั้นที่ 2: ถ่ายรูปอุปกรณ์เมื่อคืน (ไม่บังคับ)</h6>
         ${photoLabel}
@@ -3293,6 +3288,7 @@
           <dt class="small text-muted">สินค้า</dt>
           <dd>${_esc(item?.name || '—')} <code class="small">${_esc(item?.sku || '')}</code></dd>
           <dt class="small text-muted">จำนวน</dt><dd>${loan?.qty || 1} ชิ้น</dd>
+          <dt class="small text-muted">ผู้ยืม</dt><dd>${_esc(loan?.borrower_username || '')}</dd>
           <dt class="small text-muted">ยืมเมื่อ</dt><dd>${_esc(borrowed)}</dd>
           <dt class="small text-muted">ครบกำหนด</dt>
           <dd>${_esc(due)} ${isOverdue ? '<span class="badge bg-danger ms-1">เลยกำหนด</span>' : ''}</dd>
@@ -3325,7 +3321,8 @@
       qty:        loan.qty,
       clientRefId: _return.clientRefId,
       borrowMovementId: loan.movement_id_borrow,
-      // Admin returns on the borrower's behalf; for staff the DB uses the caller.
+      // The DB takes the borrower from the picked loan (20261116010000); sending it too
+      // keeps an Admin's proxy return working on a DB without that migration.
       borrowerUsername: _return.isAdmin ? loan.borrower_username : undefined,
     });
 

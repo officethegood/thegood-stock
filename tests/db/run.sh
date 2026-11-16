@@ -67,7 +67,8 @@ for f in \
   20261109020000_delete_location_keeps_history \
   20261109030000_clear_location_refuses_drift \
   20261109040000_lowstock_skip_transfer \
-  20261109050000_rpc_restock_bag
+  20261109050000_rpc_restock_bag \
+  20261116010000_return_any_picked_loan
 do run "$M/$f.sql" >/dev/null; done
 
 run "$HERE/lot_location_test.sql"
