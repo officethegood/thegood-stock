@@ -3153,20 +3153,34 @@
 
       _return.item = itemRes.data;
 
-      // Only the caller's own loans: the DB returns for the caller, so picking someone
-      // else's loan could only fail (RLS lets everyone read every loan).
-      const loanRes = await window.AppLoans.findOpenLoansForItem(
-        itemRes.data.id, window.getUserUsername?.() || undefined);
-      if (loanRes.error || !loanRes.data?.length) {
-        document.getElementById('return-loan-result').innerHTML = `
-          <div class="alert alert-warning small">
-            ไม่มีรายการยืมที่ยังค้างอยู่สำหรับสินค้านี้<br>
-            <small>ถ้ายืมโดยผู้ใช้อื่น โปรดแจ้ง Admin</small>
-          </div>`;
+      // Who may return which loan mirrors the DB (validate_borrow_movement): an Admin
+      // returns any loan on the borrower's behalf; anyone else only their own, because
+      // the DB records the caller as the borrower. Equipment is often brought back by
+      // someone other than the borrower (report Chittawan 2026-11-16), so say who holds it.
+      const me      = window.getUserUsername?.() || '';
+      const isAdmin = window.getUserRole?.() === 'Admin';
+      const loanRes = await window.AppLoans.findOpenLoansForItem(itemRes.data.id);
+      if (loanRes.error) {
+        document.getElementById('return-loan-result').innerHTML =
+          `<div class="alert alert-danger small">โหลดรายการยืมไม่สำเร็จ — ลองใหม่</div>`;
+        return;
+      }
+      const all    = loanRes.data || [];
+      const loans  = isAdmin ? all : all.filter((l) => l.borrower_username === me);
+      const others = all.filter((l) => !loans.includes(l));
+      _return.isAdmin = isAdmin;
+
+      if (!loans.length) {
+        const who = [...new Set(others.map((l) => l.borrower_username))].map(_esc).join(', ');
+        document.getElementById('return-loan-result').innerHTML = others.length
+          ? `<div class="alert alert-warning small">
+               อุปกรณ์นี้ยืมโดย <strong>${who}</strong><br>
+               <small>คืนได้โดยผู้ยืมเอง หรือให้ Admin กดคืนแทน</small>
+             </div>`
+          : `<div class="alert alert-warning small">ไม่มีรายการยืมที่ยังค้างอยู่สำหรับสินค้านี้</div>`;
         return;
       }
 
-      const loans = loanRes.data;
       _return.loan = loans[0];  // most recent
 
       // If multiple loans, show selection (edge case per UX §6)
@@ -3178,7 +3192,7 @@
             <input class="form-check-input" type="radio" name="return-loan-radio"
                    id="loan-radio-${_esc(l.id)}" value="${_esc(l.id)}">
             <label class="form-check-label" for="loan-radio-${_esc(l.id)}">
-              ยืมเมื่อ ${window.AppLoans ? window.AppLoans.formatThaiDate(l.borrowed_at) : l.borrowed_at}
+              ${isAdmin ? `<strong>${_esc(l.borrower_username || '')}</strong> · ` : ''}ยืมเมื่อ ${window.AppLoans ? window.AppLoans.formatThaiDate(l.borrowed_at) : l.borrowed_at}
               · จำนวน ${l.qty} ชิ้น · ครบ ${due}${overdue}
             </label>
           </div>`;
@@ -3311,6 +3325,8 @@
       qty:        loan.qty,
       clientRefId: _return.clientRefId,
       borrowMovementId: loan.movement_id_borrow,
+      // Admin returns on the borrower's behalf; for staff the DB uses the caller.
+      borrowerUsername: _return.isAdmin ? loan.borrower_username : undefined,
     });
 
     if (r.error) {

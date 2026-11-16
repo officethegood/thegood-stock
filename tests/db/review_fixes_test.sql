@@ -94,6 +94,19 @@ CALL t_raises('return: another person''s loan cannot be closed by picking it',
   $$SELECT t_return('RSTOCK', 1, t_borrow_id('RSTOCK','R-A'))$$, 'ไม่พบรายการยืมที่เปิดอยู่');
 ROLLBACK;
 
+-- An Admin brings back equipment someone else borrowed (report 2026-11-16): the staff
+-- scan page now sends the borrower's username with the picked loan.
+BEGIN;
+SET LOCAL test.username = 'TG6401';
+SELECT r_move('borrow','RSTOCK','R-A',-1);
+SET LOCAL test.username = 'admin-on-duty';   -- role stays Admin
+INSERT INTO stock_movements(item_id, location_id, movement_type, qty_delta, source_movement_id, borrower_username)
+SELECT '00000000-0000-0000-0000-0000000000e1', l.id, 'return', 1, t_borrow_id('RSTOCK','R-A'), 'TG6401'
+FROM locations l WHERE l.code = 'RSTOCK';
+CALL t_eq('return: an Admin can return another person''s loan on their behalf',
+  t_q($q$SELECT count(*) FROM stock_loans WHERE movement_id_borrow = t_borrow_id('RSTOCK','R-A') AND status = 'returned'$q$), 1);
+ROLLBACK;
+
 -- ---- #5 Deleting a location never deletes stock history ----
 INSERT INTO locations(id, code) VALUES ('00000000-0000-0000-0000-0000000000e4','RUSED'),('00000000-0000-0000-0000-0000000000e5','RNEW');
 BEGIN;
